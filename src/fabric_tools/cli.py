@@ -15,6 +15,7 @@ from fabric_tools.confirm import (
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.notebook.definition import display_name_from_path
+from fabric_tools.notebook.ops import OpResult, run_download_batch, run_upload_batch
 from fabric_tools.parsing import (
     CommandMode,
     ParseError,
@@ -212,7 +213,6 @@ def _run_notebook_command(
                 failed = True
         raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
 
-    # Non-dry-run: confirmations now; mutation ops arrive in the next plan step.
     try:
         display_names = (
             _resolve_upload_names(items, names) if mode is CommandMode.UPLOAD else None
@@ -225,6 +225,9 @@ def _run_notebook_command(
     try:
         if mode is CommandMode.DOWNLOAD:
             confirm_download_overwrites(client, items, silent=silent)
+            op_results = run_download_batch(client, items)
+            _print_op_results(op_results)
+            _exit_from_op_results(op_results)
         elif mode is CommandMode.UPLOAD:
             confirm_upload_actions(
                 client,
@@ -232,21 +235,49 @@ def _run_notebook_command(
                 silent=silent,
                 display_names=display_names,
             )
-        # compare has no overwrite confirmation
+            op_results = run_upload_batch(
+                client,
+                items,
+                display_names=display_names,
+            )
+            _print_op_results(op_results)
+            for result in op_results:
+                if result.ok and result.workspace_id and result.item_id:
+                    # Always echo created/updated GUID pairs for traceability.
+                    if "created" in result.message:
+                        typer.secho(
+                            f"GUID: {result.workspace_id}:{result.item_id}",
+                            fg=typer.colors.CYAN,
+                        )
+            _exit_from_op_results(op_results)
+        else:
+            typer.echo(
+                f"notebook {mode.value}: parsed {len(items)} work item(s); "
+                "compare action not implemented yet."
+            )
+            raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
         typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
+    except typer.Exit:
+        raise
     except Exception as exc:  # noqa: BLE001
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
 
-    typer.echo(
-        f"notebook {mode.value}: parsed {len(items)} work item(s); "
-        "sync/compare action not implemented yet."
-    )
-    raise typer.Exit(code=EXIT_USER)
+
+def _print_op_results(results: list[OpResult]) -> None:
+    for result in results:
+        color = typer.colors.GREEN if result.ok else typer.colors.RED
+        typer.secho(result.message, fg=color, err=not result.ok)
+
+
+def _exit_from_op_results(results: list[OpResult]) -> None:
+    if all(result.ok for result in results):
+        raise typer.Exit(code=EXIT_OK)
+    raise typer.Exit(code=EXIT_API)
 
 
 def _resolve_upload_names(

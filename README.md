@@ -45,7 +45,23 @@ Flags:
 - `--silent` — skip confirmation prompts
 - `--dry-run` — validate only; either side may be omitted
 
-Sync/compare actions after validation are landing in upcoming steps.
+Sync actions:
+
+```bash
+# Download (format inferred from destination path)
+py -3 -m fabric_tools notebook download --silent \
+  --target <workspaceId>:<notebookId> --file ./etl.ipynb
+
+# Overwrite remote
+py -3 -m fabric_tools notebook upload --silent \
+  --target <workspaceId>:<notebookId> --file ./etl.ipynb
+
+# Create remote (prints workspaceId:itemId on success)
+py -3 -m fabric_tools notebook upload --silent \
+  --target <workspaceId> --file ./etl.ipynb --name "ETL"
+```
+
+Compare is planned next.
 
 Supported local formats:
 
