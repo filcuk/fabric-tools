@@ -40,6 +40,13 @@ notebook_app = typer.Typer(
 )
 app.add_typer(notebook_app, name="notebook")
 
+path_app = typer.Typer(
+    name="path",
+    help="Register fabric-tools on your user PATH so you can run it as 'fabric-tools'.",
+    no_args_is_help=True,
+)
+app.add_typer(path_app, name="path")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -93,6 +100,77 @@ def main(
     if ctx.invoked_subcommand is None:
         typer.echo(ctx.get_help())
         raise typer.Exit()
+
+
+@path_app.command("install")
+def path_install() -> None:
+    """Install fabric-tools into a stable folder and add it to your user PATH."""
+    from fabric_tools.path_setup import PathSetupError, install_to_user_path
+
+    try:
+        result = install_to_user_path()
+    except PathSetupError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    typer.secho(f"Installed launcher: {result['launcher']}", fg=typer.colors.GREEN)
+    typer.echo(f"Bin directory: {result['bin_dir']}")
+    if result["path_added"]:
+        typer.secho("Added bin directory to your user PATH.", fg=typer.colors.GREEN)
+    elif result["already_on_path"]:
+        typer.echo("Bin directory was already on your user PATH.")
+    typer.echo(
+        "Open a new terminal, then run: fabric-tools --help"
+    )
+    raise typer.Exit(code=EXIT_OK)
+
+
+@path_app.command("uninstall")
+def path_uninstall(
+    keep_files: bool = typer.Option(
+        False,
+        "--keep-files",
+        help="(optional) Leave installed files in place; only remove PATH entry.",
+    ),
+) -> None:
+    """Remove fabric-tools PATH registration (and installed files by default)."""
+    from fabric_tools.path_setup import PathSetupError, uninstall_from_user_path
+
+    try:
+        result = uninstall_from_user_path(delete_files=not keep_files)
+    except PathSetupError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    if result["removed_from_path"]:
+        typer.secho("Removed bin directory from your user PATH.", fg=typer.colors.GREEN)
+    else:
+        typer.echo("Bin directory was not present on your user PATH.")
+    if result["deleted_files"]:
+        typer.echo(f"Deleted: {result['deleted_files']}")
+    typer.echo("Open a new terminal for PATH changes to take effect.")
+    raise typer.Exit(code=EXIT_OK)
+
+
+@path_app.command("status")
+def path_status_cmd() -> None:
+    """Show whether fabric-tools is registered on PATH."""
+    from fabric_tools.path_setup import PathSetupError, path_status
+
+    try:
+        status = path_status()
+    except PathSetupError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    typer.echo(f"Bin directory: {status['bin_dir']}")
+    typer.echo(f"Exe present:   {status['exe_present']}")
+    typer.echo(f"Cmd present:   {status['cmd_present']}")
+    typer.echo(f"On user PATH:  {status['bin_dir_on_user_path']}")
+    typer.echo(f"Running frozen exe: {status['frozen']}")
+    which = status["which_fabric_tools"]
+    typer.echo(f"shutil.which('fabric-tools'): {which or '(not found in this process PATH)'}")
+    raise typer.Exit(code=EXIT_OK)
 
 
 @notebook_app.command("download")

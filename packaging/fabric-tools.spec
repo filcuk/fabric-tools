@@ -21,6 +21,7 @@ hiddenimports = [
     "fabric_tools.client",
     "fabric_tools.confirm",
     "fabric_tools.interactive",
+    "fabric_tools.path_setup",
     "fabric_tools.parsing",
     "fabric_tools.validate",
     "fabric_tools.exit_codes",

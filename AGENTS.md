@@ -2,15 +2,18 @@
 
 Guidance for AI agents and contributors working on this repository.
 
+Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVELOPMENT.md). End-user CLI docs are in [README.md](README.md).
+
 ## Project goal
 
-`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric. Phase 1: notebook download/upload sync only.
+`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric. Phase 1: notebook download/upload/compare sync.
 
 ## Layout
 
 - `src/fabric_tools/` — package root
   - `cli.py` — Typer entrypoint (`fabric-tools`), aliases, help text
   - `interactive.py` — `--interactive` / `-i` guided wizard
+  - `path_setup.py` — Windows user PATH install/uninstall (`fabric-tools path …`)
   - `auth.py` — Azure / Fabric token acquisition (SP env + interactive/device code)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
   - `parsing.py` — `--target` / `--file` parsing and mode validation
@@ -40,27 +43,15 @@ Guidance for AI agents and contributors working on this repository.
 
 ## Commands agents should know
 
+See [DEVELOPMENT.md](DEVELOPMENT.md) for full install/test/build steps.
+
 ```bash
 py -3 -m pip install -e ".[dev]"
 py -3 -m fabric_tools --version
 py -3 -m pytest
+powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 ```
 
 Prefer `py -3` on this machine when the default `python` is not 3.11+.
 
-## Tests
-
-```bash
-py -3 -m pip install -e ".[dev]"
-py -3 -m pytest
-```
-
-Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP), download/upload ops, compare diffs, dry-run validation, interactive wizard dispatch.
-
-## Windows exe
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
-```
-
-Keeps `packaging/fabric-tools.spec` checked in (`!packaging/*.spec` in `.gitignore`). Do not commit `dist/` or `build/`.
+Do not commit `dist/` or `build/`. Keep `packaging/fabric-tools.spec` checked in.
