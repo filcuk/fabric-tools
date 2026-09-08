@@ -27,6 +27,24 @@ py -3 -m fabric_tools notebook --help
 
 If Scripts is on your PATH, you can also run `fabric-tools` directly.
 
+Flags:
+
+- `--target` / `-t` / `--t` — `workspaceId` (create) or `workspaceId:artifactId` (download/overwrite/compare)
+- `--file` / `-f` / `--f` — local `.ipynb` or `*.Notebook` folder
+- `--silent` / `-s` / `--s` — skip confirmation prompts
+- `--dry-run` / `--dr` — validate only; either side may be omitted
+- `--interactive` / `-i` / `--i` — guided prompts to build a request
+
+```bash
+# Help
+py -3 -m fabric_tools
+py -3 -m fabric_tools notebook --help
+py -3 -m fabric_tools notebook download --help
+
+# Interactive wizard
+py -3 -m fabric_tools --interactive
+```
+
 ### Notebook commands
 
 ```bash
@@ -37,13 +55,6 @@ py -3 -m fabric_tools notebook upload --dry-run --file ./etl.ipynb
 py -3 -m fabric_tools notebook download --dry-run \
   --target 11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222
 ```
-
-Flags:
-
-- `--target` / `-t` — `workspaceId` (create) or `workspaceId:artifactId` (download/overwrite/compare). Repeatable or comma-separated.
-- `--file` / `-f` — local `.ipynb` or `*.Notebook` folder. One file may broadcast to multiple upload/download targets.
-- `--silent` — skip confirmation prompts
-- `--dry-run` — validate only; either side may be omitted
 
 Sync actions:
 

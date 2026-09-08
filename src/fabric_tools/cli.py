@@ -30,6 +30,7 @@ app = typer.Typer(
     name="fabric-tools",
     help="CLI for working with Microsoft Fabric artifacts.",
     no_args_is_help=True,
+    invoke_without_command=True,
 )
 
 notebook_app = typer.Typer(
@@ -46,8 +47,13 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+def _interactive_callback(value: bool) -> bool:
+    return value
+
+
 @app.callback()
 def main(
+    ctx: typer.Context,
     version: bool = typer.Option(
         False,
         "--version",
@@ -56,8 +62,37 @@ def main(
         callback=_version_callback,
         is_eager=True,
     ),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        "-i",
+        "--i",
+        help="Guided prompts to build and run a request.",
+        callback=_interactive_callback,
+    ),
 ) -> None:
-    """fabric-tools — Microsoft Fabric CLI."""
+    """fabric-tools — Microsoft Fabric CLI.
+
+    Run without arguments to list commands. Use ``--help`` on any command
+    for parameters (required vs optional).
+    """
+    if interactive:
+        if ctx.invoked_subcommand is not None:
+            typer.secho(
+                "Do not combine --interactive with a subcommand. "
+                "Use: fabric-tools --interactive",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_USER)
+        from fabric_tools.interactive import run_interactive_wizard
+
+        run_interactive_wizard()
+        return
+
+    if ctx.invoked_subcommand is None:
+        typer.echo(ctx.get_help())
+        raise typer.Exit()
 
 
 @notebook_app.command("download")
@@ -66,27 +101,34 @@ def notebook_download(
         None,
         "--target",
         "-t",
-        help="workspace:artifact GUID pair. Repeatable or comma-separated. One workspace only.",
+        "--t",
+        help="(required unless --dry-run files-only) workspace:artifact GUID. "
+        "Repeatable or comma-separated. One workspace only.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="Local .ipynb file or *.Notebook folder. Repeatable or comma-separated.",
+        "--f",
+        help="(required unless --dry-run targets-only) Local .ipynb or *.Notebook folder. "
+        "Repeatable or comma-separated. One file may broadcast to all targets.",
     ),
     silent: bool = typer.Option(
         False,
         "--silent",
-        help="Skip confirmation prompts.",
+        "-s",
+        "--s",
+        help="(optional) Skip confirmation prompts.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Validate targets and/or files only; do not download.",
+        "--dr",
+        help="(optional) Validate targets and/or files only; do not download.",
     ),
 ) -> None:
     """Download notebook(s) from Fabric to local files."""
-    _run_notebook_command(
+    run_notebook_command(
         CommandMode.DOWNLOAD,
         target_values=target,
         file_values=file,
@@ -101,33 +143,40 @@ def notebook_upload(
         None,
         "--target",
         "-t",
-        help="workspace GUID (create) or workspace:artifact (overwrite). Repeatable or comma-separated.",
+        "--t",
+        help="(required unless --dry-run files-only) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="Local .ipynb file or *.Notebook folder. Repeatable or comma-separated.",
+        "--f",
+        help="(required unless --dry-run targets-only) Local .ipynb or *.Notebook folder. "
+        "Repeatable or comma-separated. One file may broadcast to all targets.",
     ),
     name: Optional[list[str]] = typer.Option(
         None,
         "--name",
         "-n",
-        help="Display name for create uploads. Defaults to file/folder stem.",
+        help="(optional, create only) Display name. Defaults to file/folder stem.",
     ),
     silent: bool = typer.Option(
         False,
         "--silent",
-        help="Skip confirmation prompts.",
+        "-s",
+        "--s",
+        help="(optional) Skip confirmation prompts.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Validate targets and/or files only; do not upload.",
+        "--dr",
+        help="(optional) Validate targets and/or files only; do not upload.",
     ),
 ) -> None:
-    """Upload notebook(s) from local files to Fabric."""
-    _run_notebook_command(
+    """Upload notebook(s) from local files to Fabric (create or overwrite)."""
+    run_notebook_command(
         CommandMode.UPLOAD,
         target_values=target,
         file_values=file,
@@ -143,27 +192,32 @@ def notebook_compare(
         None,
         "--target",
         "-t",
-        help="workspace:artifact GUID pair. Repeatable or comma-separated. One workspace only.",
+        "--t",
+        help="(required unless --dry-run files-only) workspace:artifact GUID. "
+        "Repeatable or comma-separated. One workspace only. Must 1:1 match --file.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="Local .ipynb file or *.Notebook folder. Must 1:1 match targets.",
+        "--f",
+        help="(required unless --dry-run targets-only) Local .ipynb or *.Notebook folder. "
+        "Must 1:1 match --target (no broadcast).",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Validate targets and/or files only; do not compare.",
+        "--dr",
+        help="(optional) Validate targets and/or files only; do not compare.",
     ),
     ignore_outputs: bool = typer.Option(
         True,
         "--ignore-outputs/--include-outputs",
-        help="For .ipynb diffs, ignore cell outputs (default: ignore).",
+        help="(optional) For .ipynb diffs, ignore cell outputs (default: ignore).",
     ),
 ) -> None:
-    """Compare remote notebook(s) to local files."""
-    _run_notebook_command(
+    """Compare remote notebook(s) to local files (nbdime for .ipynb)."""
+    run_notebook_command(
         CommandMode.COMPARE,
         target_values=target,
         file_values=file,
@@ -173,16 +227,17 @@ def notebook_compare(
     )
 
 
-def _run_notebook_command(
+def run_notebook_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
     file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
-    names: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
     ignore_outputs: bool = True,
 ) -> None:
+    """Shared entry used by CLI commands and the interactive wizard."""
     try:
         targets = parse_target_values(target_values)
         files = parse_file_values(file_values)
@@ -251,7 +306,6 @@ def _run_notebook_command(
             _print_op_results(op_results)
             for result in op_results:
                 if result.ok and result.workspace_id and result.item_id:
-                    # Always echo created/updated GUID pairs for traceability.
                     if "created" in result.message:
                         typer.secho(
                             f"GUID: {result.workspace_id}:{result.item_id}",
@@ -318,7 +372,7 @@ def _exit_from_compare_results(results: list[CompareResult]) -> None:
 
 def _resolve_upload_names(
     items: list,
-    names: list[str] | None,
+    names: list[str | None] | list[str] | None,
 ) -> list[str]:
     if names and len(names) not in {1, len(items)}:
         raise ParseError(
@@ -326,8 +380,11 @@ def _resolve_upload_names(
         )
     resolved: list[str] = []
     for index, item in enumerate(items):
+        chosen: str | None = None
         if names:
-            resolved.append(names[0] if len(names) == 1 else names[index])
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
         elif item.file is not None:
             resolved.append(display_name_from_path(item.file))
         else:

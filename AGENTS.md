@@ -9,7 +9,8 @@ Guidance for AI agents and contributors working on this repository.
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`)
+  - `cli.py` — Typer entrypoint (`fabric-tools`), aliases, help text
+  - `interactive.py` — `--interactive` / `-i` guided wizard
   - `auth.py` — Azure / Fabric token acquisition (SP env + interactive/device code)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
   - `parsing.py` — `--target` / `--file` parsing and mode validation
