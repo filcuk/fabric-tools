@@ -12,39 +12,43 @@ from fabric_tools.interactive import run_interactive_wizard
 from fabric_tools.parsing import CommandMode
 
 
+class _Ask:
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def ask(self) -> Any:
+        return self._value
+
+
 def test_interactive_dispatches_compare(monkeypatch: pytest.MonkeyPatch) -> None:
-    prompts = iter(
+    selects = iter(["notebook", "compare", "execute"])
+    texts = iter(
         [
-            "notebook",
-            "compare",
             "./a.ipynb",
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
+    confirms = iter([False, True, True])  # add another?, ignore outputs?, proceed?
     captured: dict[str, Any] = {}
 
-    def fake_prompt(text: str, default: Any = None) -> str:
-        return next(prompts)
-
-    def fake_confirm(text: str, default: bool = False) -> bool:
-        lowered = text.lower()
-        if "ignore" in lowered or "proceed" in lowered:
-            return True
-        return False
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+    monkeypatch.setattr(
+        "questionary.confirm",
+        lambda *a, **k: _Ask(next(confirms)),
+    )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
         captured["mode"] = mode
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("typer.prompt", fake_prompt)
-    monkeypatch.setattr("typer.confirm", fake_confirm)
-    monkeypatch.setattr(
-        "fabric_tools.interactive.run_notebook_command",
-        fake_run,
-        raising=False,
-    )
-    # Wizard imports run_notebook_command from cli inside the function.
     monkeypatch.setattr("fabric_tools.cli.run_notebook_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
@@ -56,19 +60,26 @@ def test_interactive_dispatches_compare(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_interactive_abort_on_proceed(monkeypatch: pytest.MonkeyPatch) -> None:
-    prompts = iter(
+    selects = iter(["notebook", "download", "execute"])
+    texts = iter(
         [
-            "notebook",
-            "download",
             "./a.ipynb",
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
+    confirms = iter([False, False, False])  # add another?, silent?, proceed?
 
-    monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
     monkeypatch.setattr(
-        "typer.confirm",
-        lambda text, default=False: False,
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+    monkeypatch.setattr(
+        "questionary.confirm",
+        lambda *a, **k: _Ask(next(confirms)),
     )
 
     with pytest.raises(typer.Exit) as exc_info:

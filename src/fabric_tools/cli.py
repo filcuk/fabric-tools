@@ -29,7 +29,7 @@ from fabric_tools.validate import run_dry_run
 app = typer.Typer(
     name="fabric-tools",
     help="CLI for working with Microsoft Fabric artifacts.",
-    no_args_is_help=True,
+    no_args_is_help=False,
     invoke_without_command=True,
 )
 
@@ -93,11 +93,34 @@ def main(
             raise typer.Exit(code=EXIT_USER)
         from fabric_tools.interactive import run_interactive_wizard
 
-        run_interactive_wizard()
+        try:
+            run_interactive_wizard()
+        finally:
+            from fabric_tools.console_ux import pause_if_double_clicked
+
+            pause_if_double_clicked()
         return
 
     if ctx.invoked_subcommand is None:
+        from fabric_tools.console_ux import owns_console_alone, pause_if_double_clicked
+
         typer.echo(ctx.get_help())
+        if owns_console_alone():
+            typer.echo("")
+            typer.echo(
+                "This is a command-line tool. Prefer a terminal, e.g.:\n"
+                "  fabric-tools --help\n"
+                "  fabric-tools --interactive\n"
+            )
+            try:
+                if typer.confirm("Start interactive mode now?", default=True):
+                    from fabric_tools.interactive import run_interactive_wizard
+
+                    run_interactive_wizard()
+                else:
+                    pause_if_double_clicked()
+            except typer.Abort:
+                pause_if_double_clicked()
         raise typer.Exit()
 
 

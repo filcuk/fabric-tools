@@ -1,8 +1,10 @@
-"""Guided interactive CLI wizard."""
+"""Guided interactive CLI wizard with keyboard selections."""
 
 from __future__ import annotations
 
 import typer
+import questionary
+from questionary import Choice
 
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.parsing import CommandMode
@@ -10,13 +12,12 @@ from fabric_tools.parsing import CommandMode
 
 def run_interactive_wizard() -> None:
     """Prompt for tool/activity/parameters, then dispatch to the notebook command runner."""
-    # Import lazily to avoid circular imports with cli.
     from fabric_tools.cli import run_notebook_command
 
     typer.echo("fabric-tools interactive mode")
-    typer.echo("Press Ctrl+C to cancel at any time.\n")
+    typer.echo("Use arrow keys + Enter to select. Ctrl+C cancels.\n")
 
-    tool = _prompt_choice(
+    tool = _select(
         "Select tool",
         choices=["notebook"],
         default="notebook",
@@ -25,87 +26,81 @@ def run_interactive_wizard() -> None:
         typer.secho(f"Unsupported tool: {tool}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER)
 
-    activity = _prompt_choice(
+    activity = _select(
         "Select activity",
         choices=["download", "upload", "compare"],
         default="download",
     )
     mode = CommandMode(activity)
 
-    dry_run = typer.confirm("Dry-run only (validate, no sync/compare)?", default=False)
+    run_mode = _select(
+        "How should this run?",
+        choices=[
+            Choice("Execute (download/upload/compare)", value="execute"),
+            Choice("Dry-run: validate targets and files", value="dry_both"),
+            Choice("Dry-run: validate remote targets only", value="dry_targets"),
+            Choice("Dry-run: validate local files only", value="dry_files"),
+        ],
+        default="execute",
+    )
+    dry_run = run_mode != "execute"
 
     targets: list[str] = []
     files: list[str] = []
     names: list[str] = []
 
-    if dry_run and typer.confirm(
-        "Validate remote targets only (skip local files)?",
-        default=False,
-    ):
+    if run_mode == "dry_targets":
         while True:
-            target = typer.prompt(_target_prompt(mode), default="").strip()
+            target = _text(_target_prompt(mode), allow_empty=bool(targets))
             if not target:
-                if targets:
-                    break
-                typer.echo("Enter at least one target, or cancel with Ctrl+C.")
-                continue
-            targets.append(target)
-            if not typer.confirm("Add another target?", default=False):
                 break
-    elif dry_run and typer.confirm(
-        "Validate local files only (skip remote targets)?",
-        default=False,
-    ):
+            targets.append(target)
+            if not _confirm("Add another target?", default=False):
+                break
+    elif run_mode == "dry_files":
         while True:
-            path = typer.prompt(
+            path = _text(
                 "Enter file (.ipynb or *.Notebook folder)",
-                default="",
-            ).strip()
+                allow_empty=bool(files),
+            )
             if not path:
-                if files:
-                    break
-                typer.echo("Enter at least one file, or cancel with Ctrl+C.")
-                continue
+                break
             files.append(path)
-            if not typer.confirm("Add another file?", default=False):
+            if not _confirm("Add another file?", default=False):
                 break
     else:
-        typer.echo("\nEnter file/target pairs. Leave file blank when finished (after at least one).")
+        typer.echo("\nEnter file/target pairs.")
         while True:
-            path = typer.prompt(
+            path = _text(
                 "Enter file (.ipynb or *.Notebook folder)",
-                default="",
-            ).strip()
+                allow_empty=bool(files and targets),
+            )
             if not path:
                 if files and targets:
                     break
-                typer.echo("Enter at least one file/target pair, or cancel with Ctrl+C.")
+                typer.echo("Enter at least one file/target pair.")
                 continue
 
-            target = typer.prompt(_target_prompt(mode)).strip()
-            while not target:
-                typer.echo("Target is required for this pair.")
-                target = typer.prompt(_target_prompt(mode)).strip()
-
+            target = _text(_target_prompt(mode), allow_empty=False)
             files.append(path)
             targets.append(target)
 
             if mode is CommandMode.UPLOAD and ":" not in target:
-                name = typer.prompt(
-                    "Display name for create (Enter = derive from file)",
-                    default="",
-                ).strip()
+                name = _text(
+                    "Display name for create (leave blank to derive from file)",
+                    allow_empty=True,
+                )
                 names.append(name)
 
-            if not typer.confirm("Add another file/target pair?", default=False):
+            if not _confirm("Add another file/target pair?", default=False):
                 break
 
     silent = False
     ignore_outputs = True
     if not dry_run and mode is not CommandMode.COMPARE:
-        silent = typer.confirm("Silent mode (skip confirmation prompts)?", default=False)
+        silent = _confirm("Silent mode (skip confirmation prompts)?", default=False)
     if mode is CommandMode.COMPARE and not dry_run:
-        ignore_outputs = typer.confirm(
+        ignore_outputs = _confirm(
             "Ignore notebook cell outputs in .ipynb diffs?",
             default=True,
         )
@@ -129,7 +124,7 @@ def run_interactive_wizard() -> None:
             f"  names:    {', '.join(n or '(from file)' for n in resolved_names)}"
         )
 
-    if not typer.confirm("\nProceed?", default=True):
+    if not _confirm("Proceed?", default=True):
         typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=EXIT_USER)
 
@@ -150,10 +145,36 @@ def _target_prompt(mode: CommandMode) -> str:
     return "Enter target workspace:artifact"
 
 
-def _prompt_choice(label: str, *, choices: list[str], default: str) -> str:
-    choices_text = "/".join(choices)
+def _select(
+    message: str,
+    *,
+    choices: list[str] | list[Choice],
+    default: str | None = None,
+) -> str:
+    result = questionary.select(
+        message,
+        choices=choices,
+        default=default,
+        instruction="(use arrow keys)",
+    ).ask()
+    if result is None:
+        raise typer.Exit(code=EXIT_USER)
+    return str(result)
+
+
+def _confirm(message: str, *, default: bool = False) -> bool:
+    result = questionary.confirm(message, default=default).ask()
+    if result is None:
+        raise typer.Exit(code=EXIT_USER)
+    return bool(result)
+
+
+def _text(message: str, *, allow_empty: bool) -> str:
     while True:
-        value = typer.prompt(f"{label} [{choices_text}]", default=default).strip().lower()
-        if value in choices:
+        result = questionary.text(message).ask()
+        if result is None:
+            raise typer.Exit(code=EXIT_USER)
+        value = result.strip()
+        if value or allow_empty:
             return value
-        typer.echo(f"Please choose one of: {choices_text}")
+        typer.echo("A value is required.")
