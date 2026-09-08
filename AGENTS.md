@@ -10,8 +10,8 @@ Guidance for AI agents and contributors working on this repository.
 
 - `src/fabric_tools/` — package root
   - `cli.py` — Typer entrypoint (`fabric-tools`)
-  - `auth.py` — Azure / Fabric token acquisition (planned)
-  - `client.py` — Fabric REST client + LRO polling (planned)
+  - `auth.py` — Azure / Fabric token acquisition (SP env + interactive/device code)
+  - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
   - `confirm.py` — overwrite / create prompts (planned)
   - `notebook/` — definition pack/unpack and sync ops (planned)
 - `tests/` — unit tests (planned)

@@ -29,6 +29,18 @@ If Scripts is on your PATH, you can also run `fabric-tools` directly.
 
 Notebook download/upload options will be documented here as they land.
 
+## Authentication
+
+By default the CLI uses interactive Azure sign-in (browser, then device code).
+
+For automation, set a service principal:
+
+```bash
+AZURE_TENANT_ID=...
+AZURE_CLIENT_ID=...
+AZURE_CLIENT_SECRET=...
+```
+
 ## Development
 
 ```bash
