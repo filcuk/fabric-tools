@@ -18,9 +18,9 @@ Guidance for AI agents and contributors working on this repository.
   - `confirm.py` — overwrite / create prompts
   - `exit_codes.py` — CLI exit code constants
   - `notebook/` — definition pack/unpack (`definition.py`); download/create/overwrite (`ops.py`); compare (`compare.py`, nbdime)
-- `tests/` — unit tests (planned)
-- `packaging/` — PyInstaller spec (planned)
-- `scripts/` — build helpers (planned)
+- `tests/` — unit tests
+- `packaging/fabric-tools.spec` — PyInstaller one-file Windows build
+- `scripts/build_exe.ps1` — build helper for `dist/fabric-tools.exe`
 
 ## Conventions
 
@@ -56,3 +56,11 @@ py -3 -m pytest
 ```
 
 Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP), download/upload ops, compare diffs, dry-run validation, interactive wizard dispatch.
+
+## Windows exe
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
+```
+
+Keeps `packaging/fabric-tools.spec` checked in (`!packaging/*.spec` in `.gitignore`). Do not commit `dist/` or `build/`.
