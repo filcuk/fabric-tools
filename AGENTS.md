@@ -13,7 +13,7 @@ Guidance for AI agents and contributors working on this repository.
   - `auth.py` — Azure / Fabric token acquisition (SP env + interactive/device code)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
   - `confirm.py` — overwrite / create prompts (planned)
-  - `notebook/` — definition pack/unpack and sync ops (planned)
+  - `notebook/` — definition pack/unpack (`definition.py`); sync ops planned
 - `tests/` — unit tests (planned)
 - `packaging/` — PyInstaller spec (planned)
 - `scripts/` — build helpers (planned)

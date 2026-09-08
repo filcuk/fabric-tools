@@ -29,6 +29,11 @@ If Scripts is on your PATH, you can also run `fabric-tools` directly.
 
 Notebook download/upload options will be documented here as they land.
 
+Supported local formats (for upcoming sync commands):
+
+- `.ipynb` — Jupyter notebook file
+- `*.Notebook/` — Fabric Git folder with `notebook-content.*` and `.platform`
+
 ## Authentication
 
 By default the CLI uses interactive Azure sign-in (browser, then device code).
