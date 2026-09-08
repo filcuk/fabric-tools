@@ -1,4 +1,4 @@
-# Fabric Tools
+# <img src="res/app.svg" alt="" width="40" height="40" align="left"> Fabric Tools
 
 CLI for working with Microsoft Fabric artifacts.
 
