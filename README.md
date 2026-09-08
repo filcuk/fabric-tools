@@ -1,43 +1,35 @@
-# fabric-tools
+# Fabric Tools
 
 CLI for working with Microsoft Fabric artifacts.
 
-Phase 1 supports **notebook** download, upload (create/overwrite), and compare between Fabric and local files.
+## Quick start
 
-## Get started
-
-Use the standalone Windows executable (no Python install required):
-
-```powershell
-.\fabric-tools.exe --help
-.\fabric-tools.exe notebook --help
-.\fabric-tools.exe --interactive
-```
-
-### Register on PATH
-
-So you can run `fabric-tools` from any new terminal:
+Register the tool:
 
 ```powershell
 .\fabric-tools.exe path install
 ```
 
-Then open a **new** terminal and run:
+Open a new terminal and get started with the following:
 
 ```powershell
 fabric-tools --help
-fabric-tools path status
+fabric-tools notebook --help
+fabric-tools --interactive
 ```
 
-To undo:
+Check or remove registration:
 
 ```powershell
+fabric-tools path status
 fabric-tools path uninstall
 ```
 
-This copies the tool into `%LOCALAPPDATA%\fabric-tools\bin` and adds that folder to your user PATH.
+## Support
 
-Build instructions for contributors are in [DEVELOPMENT.md](DEVELOPMENT.md).
+- Notebooks
+  - `.ipynb` — Jupyter notebook
+  - `*.Notebook\` — Fabric Git folder with `notebook-content.*` and `.platform`
 
 ## Flags
 
@@ -50,40 +42,42 @@ Build instructions for contributors are in [DEVELOPMENT.md](DEVELOPMENT.md).
 | `--name` | `-n` | Display name for create uploads |
 | `--interactive` | `-i`, `--i` | Guided wizard to build a request |
 
-## Notebook commands
+## Example commands
 
 ```powershell
 # Dry-run: local file only
-.\fabric-tools.exe notebook upload --dr --f .\etl.ipynb
+fabric-tools notebook upload --dr --f .\etl.ipynb
 
-# Dry-run: remote target only (requires sign-in)
-.\fabric-tools.exe notebook download --dr `
+# Dry-run: remote target only
+fabric-tools notebook download --dr `
   --t 11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222
 
 # Download (format inferred from destination path)
-.\fabric-tools.exe notebook download --s `
+fabric-tools notebook download --s `
   --t <workspaceId>:<notebookId> --f .\etl.ipynb
 
 # Overwrite remote
-.\fabric-tools.exe notebook upload --s `
+fabric-tools notebook upload --s `
   --t <workspaceId>:<notebookId> --f .\etl.ipynb
 
-# Create remote (prints workspaceId:itemId on success)
-.\fabric-tools.exe notebook upload --s `
+# Create remote
+fabric-tools notebook upload --s `
   --t <workspaceId> --f .\etl.ipynb --n "ETL"
 
-# Compare remote vs local (nbdime for .ipynb; text diff for *.Notebook)
-.\fabric-tools.exe notebook compare `
+# Compare remote vs local
+fabric-tools notebook compare `
   --t <workspaceId>:<notebookId> --f .\etl.ipynb
-
-# Guided interactive setup
-.\fabric-tools.exe -i
 ```
 
-### Local formats
+## Authentication
 
-- `.ipynb` — Jupyter notebook
-- `*.Notebook\` — Fabric Git folder with `notebook-content.*` and `.platform`
+Interactive Azure sign-in by default.
+For automation, set a service principal:
+
+```powershell
+$env:AZURE_TENANT_ID="..."
+$env:AZURE_CLIENT_ID="..."
+$env:AZURE_CLIENT_SECRET="..."
 
 ### Exit codes
 
@@ -92,20 +86,11 @@ Build instructions for contributors are in [DEVELOPMENT.md](DEVELOPMENT.md).
 | `0` | Success (compare: all pairs identical) |
 | `1` | Validation error, user abort, or compare found differences |
 | `2` | Fabric API / operation failure |
-
-## Authentication
-
-Default: interactive Azure sign-in (browser, then device code).
-
-For automation, set a service principal:
-
-```powershell
-$env:AZURE_TENANT_ID="..."
-$env:AZURE_CLIENT_ID="..."
-$env:AZURE_CLIENT_SECRET="..."
 ```
 
-Unsigned `.exe` builds may trigger SmartScreen warnings.
+## Development
+
+Build instructions for contributors are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## License
 
