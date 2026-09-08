@@ -23,6 +23,7 @@ hiddenimports = [
     "fabric_tools.interactive",
     "fabric_tools.path_setup",
     "fabric_tools.console_ux",
+    "fabric_tools.manifest",
     "fabric_tools.parsing",
     "fabric_tools.validate",
     "fabric_tools.exit_codes",

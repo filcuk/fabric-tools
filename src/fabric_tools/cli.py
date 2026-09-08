@@ -14,17 +14,33 @@ from fabric_tools.confirm import (
     confirm_upload_actions,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
+from fabric_tools.manifest import (
+    ManifestError,
+    format_inspect,
+    item_id_overrides_from_results,
+    load_manifest,
+    manifest_from_work_items,
+    resolve_manifest_path,
+    save_manifest,
+    work_items_from_manifest,
+)
 from fabric_tools.notebook.compare import CompareResult, run_compare_batch
 from fabric_tools.notebook.definition import display_name_from_path
 from fabric_tools.notebook.ops import OpResult, run_download_batch, run_upload_batch
 from fabric_tools.parsing import (
     CommandMode,
     ParseError,
+    WorkItem,
     build_work_items,
     parse_file_values,
     parse_target_values,
 )
 from fabric_tools.validate import run_dry_run
+
+_MANIFEST_HELP = (
+    "(optional) Deployment manifest stem or path (.ftdep). "
+    "Alone: load targets/files. With a successful run: write/update the manifest."
+)
 
 app = typer.Typer(
     name="fabric-tools",
@@ -46,6 +62,26 @@ path_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(path_app, name="path")
+
+
+@app.command("inspect")
+def inspect_manifest(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="(required) Deployment manifest stem or path (.ftdep).",
+    ),
+) -> None:
+    """Show the contents of a deployment manifest (no Fabric API calls)."""
+    try:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+    except ManifestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    typer.echo(format_inspect(loaded, path=path))
+    raise typer.Exit(code=EXIT_OK)
 
 
 def _version_callback(value: bool) -> None:
@@ -198,15 +234,21 @@ def notebook_download(
         None,
         "--target",
         "-t",
-        help="(required unless --dry-run files-only) workspace:artifact GUID. "
+        help="(required unless --manifest or --dry-run files-only) workspace:artifact GUID. "
         "Repeatable or comma-separated. One workspace only.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required unless --dry-run targets-only) Local .ipynb or *.Notebook folder. "
+        help="(required unless --manifest or --dry-run targets-only) Local .ipynb or *.Notebook folder. "
         "Repeatable or comma-separated. One file may broadcast to all targets.",
+    ),
+    manifest: Optional[str] = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
     ),
     silent: bool = typer.Option(
         False,
@@ -228,6 +270,7 @@ def notebook_download(
         file_values=file,
         silent=silent,
         dry_run=dry_run,
+        manifest=manifest,
     )
 
 
@@ -237,14 +280,14 @@ def notebook_upload(
         None,
         "--target",
         "-t",
-        help="(required unless --dry-run files-only) workspace GUID (create) or "
+        help="(required unless --manifest or --dry-run files-only) workspace GUID (create) or "
         "workspace:artifact (overwrite). Repeatable or comma-separated.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required unless --dry-run targets-only) Local .ipynb or *.Notebook folder. "
+        help="(required unless --manifest or --dry-run targets-only) Local .ipynb or *.Notebook folder. "
         "Repeatable or comma-separated. One file may broadcast to all targets.",
     ),
     name: Optional[list[str]] = typer.Option(
@@ -252,6 +295,12 @@ def notebook_upload(
         "--name",
         "-n",
         help="(optional, create only) Display name. Defaults to file/folder stem.",
+    ),
+    manifest: Optional[str] = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
     ),
     silent: bool = typer.Option(
         False,
@@ -274,6 +323,7 @@ def notebook_upload(
         silent=silent,
         dry_run=dry_run,
         names=name,
+        manifest=manifest,
     )
 
 
@@ -283,15 +333,21 @@ def notebook_compare(
         None,
         "--target",
         "-t",
-        help="(required unless --dry-run files-only) workspace:artifact GUID. "
+        help="(required unless --manifest or --dry-run files-only) workspace:artifact GUID. "
         "Repeatable or comma-separated. One workspace only. Must 1:1 match --file.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required unless --dry-run targets-only) Local .ipynb or *.Notebook folder. "
+        help="(required unless --manifest or --dry-run targets-only) Local .ipynb or *.Notebook folder. "
         "Must 1:1 match --target (no broadcast).",
+    ),
+    manifest: Optional[str] = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
     ),
     dry_run: bool = typer.Option(
         False,
@@ -313,6 +369,7 @@ def notebook_compare(
         silent=True,
         dry_run=dry_run,
         ignore_outputs=ignore_outputs,
+        manifest=manifest,
     )
 
 
@@ -325,18 +382,21 @@ def run_notebook_command(
     dry_run: bool,
     names: list[str | None] | list[str] | None = None,
     ignore_outputs: bool = True,
+    manifest: str | None = None,
 ) -> None:
     """Shared entry used by CLI commands and the interactive wizard."""
     try:
-        targets = parse_target_values(target_values)
-        files = parse_file_values(file_values)
-        items = build_work_items(mode, targets, files, dry_run=dry_run)
-    except ParseError as exc:
+        items, resolved_names, has_targets, has_files = _resolve_notebook_inputs(
+            mode,
+            target_values=target_values,
+            file_values=file_values,
+            dry_run=dry_run,
+            names=names,
+            manifest=manifest,
+        )
+    except (ParseError, ManifestError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
-
-    has_targets = bool(targets)
-    has_files = bool(files)
 
     if dry_run:
         client: FabricClient | None = None
@@ -367,7 +427,9 @@ def run_notebook_command(
 
     try:
         display_names = (
-            _resolve_upload_names(items, names) if mode is CommandMode.UPLOAD else None
+            _resolve_upload_names(items, resolved_names)
+            if mode is CommandMode.UPLOAD
+            else None
         )
     except ParseError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
@@ -379,6 +441,12 @@ def run_notebook_command(
             confirm_download_overwrites(client, items, silent=silent)
             op_results = run_download_batch(client, items)
             _print_op_results(op_results)
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,
+            )
             _exit_from_op_results(op_results)
         elif mode is CommandMode.UPLOAD:
             confirm_upload_actions(
@@ -400,6 +468,12 @@ def run_notebook_command(
                             f"GUID: {result.workspace_id}:{result.item_id}",
                             fg=typer.colors.CYAN,
                         )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,
+            )
             _exit_from_op_results(op_results)
         elif mode is CommandMode.COMPARE:
             compare_results = run_compare_batch(
@@ -408,6 +482,12 @@ def run_notebook_command(
                 ignore_outputs=ignore_outputs,
             )
             _print_compare_results(compare_results)
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,
+            )
             _exit_from_compare_results(compare_results)
         else:
             typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
@@ -422,6 +502,76 @@ def run_notebook_command(
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
+
+
+def _resolve_notebook_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool]:
+    """Resolve targets/files from CLI and/or a deployment manifest."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    manifest_names: list[str | None] | None = None
+
+    if cli_targets or cli_files:
+        targets = cli_targets
+        files = cli_files
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(loaded)
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        if len(targets) != len(loaded_items) or len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace and file on each)"
+            )
+    else:
+        targets = []
+        files = []
+
+    items = build_work_items(mode, targets, files, dry_run=dry_run)
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files)
+
+
+def _write_manifest_after_success(
+    manifest: str | None,
+    items: list[WorkItem],
+    *,
+    display_names: list[str] | None,
+    op_results: list[OpResult] | None = None,
+    compare_results: list[CompareResult] | None = None,
+) -> None:
+    """Rewrite ``.ftdep`` when ``-m`` is set and the operation succeeded."""
+    if not manifest:
+        return
+    if op_results is not None and not all(result.ok for result in op_results):
+        return
+    if compare_results is not None and not all(result.ok for result in compare_results):
+        return
+
+    overrides = (
+        item_id_overrides_from_results(op_results) if op_results is not None else None
+    )
+    try:
+        built = manifest_from_work_items(
+            items,
+            display_names=display_names,
+            item_id_overrides=overrides,
+        )
+        path = save_manifest(manifest, built)
+    except ManifestError as exc:
+        typer.secho(f"manifest not written: {exc}", fg=typer.colors.YELLOW, err=True)
+        return
+    typer.secho(f"Wrote manifest: {path}", fg=typer.colors.GREEN)
 
 
 def _print_op_results(results: list[OpResult]) -> None:
