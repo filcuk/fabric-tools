@@ -64,7 +64,7 @@ def main(
     version: bool = typer.Option(
         False,
         "--version",
-        "-V",
+        "-v",
         help="Show version and exit.",
         callback=_version_callback,
         is_eager=True,
@@ -104,25 +104,22 @@ def main(
     if ctx.invoked_subcommand is None:
         from fabric_tools.console_ux import owns_console_alone, pause_if_double_clicked
 
-        typer.echo(ctx.get_help())
         if owns_console_alone():
-            typer.echo("")
+            # Double-click / Explorer launch: skip Click confirm (stdin may be EOF
+            # under Windows Terminal) and go straight into the wizard.
             typer.echo(
-                "This is a command-line tool. Prefer a terminal, e.g.:\n"
-                "  fabric-tools --help\n"
-                "  fabric-tools --interactive\n"
+                "Opened without arguments (double-click or empty launch).\n"
+                "Starting interactive mode.\n"
             )
             try:
-                if typer.confirm("Start interactive mode now?", default=True):
-                    from fabric_tools.interactive import run_interactive_wizard
+                from fabric_tools.interactive import run_interactive_wizard
 
-                    run_interactive_wizard()
-                else:
-                    pause_if_double_clicked()
-            except typer.Abort:
+                run_interactive_wizard()
+            finally:
                 pause_if_double_clicked()
+        else:
+            typer.echo(ctx.get_help())
         raise typer.Exit()
-
 
 @path_app.command("install")
 def path_install() -> None:
