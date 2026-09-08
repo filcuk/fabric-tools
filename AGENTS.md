@@ -11,8 +11,9 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), aliases, help text
-  - `interactive.py` — `--interactive` / `-i` guided wizard
+  - `cli.py` — Typer entrypoint (`fabric-tools`), aliases, help text, `inspect`
+  - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
+  - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers
   - `path_setup.py` — Windows user PATH install/uninstall (`fabric-tools path …`)
   - `auth.py` — Azure / Fabric token acquisition (SP env + interactive/device code)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
@@ -37,6 +38,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 
 - Targets: `--target <workspaceId>:<artifactId>` (create: `--target <workspaceId>` only)
 - Files: `--file` paired 1:1 with targets, or one file broadcast to N targets
+- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success rewrites (create backfills `itemId`). Top-level `inspect -m`. Interactive may offer save after execute.
 - Formats: `.ipynb` or Fabric Git `.Notebook` folder
 - Flags: `--silent`, `--dry-run`
 - Auth: interactive default; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`
