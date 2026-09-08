@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 import typer
 
@@ -383,8 +383,14 @@ def run_notebook_command(
     names: list[str | None] | list[str] | None = None,
     ignore_outputs: bool = True,
     manifest: str | None = None,
+    on_success: Callable[..., None] | None = None,
 ) -> None:
-    """Shared entry used by CLI commands and the interactive wizard."""
+    """Shared entry used by CLI commands and the interactive wizard.
+
+    *on_success* is called after a completed successful operation (all op/compare
+    results ok), before the process exit code is raised — used by interactive
+    mode to offer saving a deployment manifest.
+    """
     try:
         items, resolved_names, has_targets, has_files = _resolve_notebook_inputs(
             mode,
@@ -447,6 +453,12 @@ def run_notebook_command(
                 display_names=None,
                 op_results=op_results,
             )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,
+            )
             _exit_from_op_results(op_results)
         elif mode is CommandMode.UPLOAD:
             confirm_upload_actions(
@@ -474,6 +486,12 @@ def run_notebook_command(
                 display_names=display_names,
                 op_results=op_results,
             )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,
+            )
             _exit_from_op_results(op_results)
         elif mode is CommandMode.COMPARE:
             compare_results = run_compare_batch(
@@ -484,6 +502,12 @@ def run_notebook_command(
             _print_compare_results(compare_results)
             _write_manifest_after_success(
                 manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,
+            )
+            _notify_success(
+                on_success,
                 items,
                 display_names=None,
                 compare_results=compare_results,
@@ -503,6 +527,27 @@ def run_notebook_command(
     finally:
         client.close()
 
+
+def _notify_success(
+    on_success: Callable[..., None] | None,
+    items: list[WorkItem],
+    *,
+    display_names: list[str] | None,
+    op_results: list[OpResult] | None = None,
+    compare_results: list[CompareResult] | None = None,
+) -> None:
+    if on_success is None:
+        return
+    if op_results is not None and not all(result.ok for result in op_results):
+        return
+    if compare_results is not None and not all(result.ok for result in compare_results):
+        return
+    on_success(
+        items,
+        display_names=display_names,
+        op_results=op_results,
+        compare_results=compare_results,
+    )
 
 def _resolve_notebook_inputs(
     mode: CommandMode,

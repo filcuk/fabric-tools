@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+from typing import Sequence
+
 import typer
 import questionary
 from questionary import Choice
 
 from fabric_tools.exit_codes import EXIT_USER
-from fabric_tools.parsing import CommandMode
+from fabric_tools.manifest import (
+    ManifestError,
+    item_id_overrides_from_results,
+    manifest_from_work_items,
+    save_manifest,
+)
+from fabric_tools.notebook.compare import CompareResult
+from fabric_tools.notebook.ops import OpResult
+from fabric_tools.parsing import CommandMode, WorkItem
 
 
 def run_interactive_wizard() -> None:
@@ -128,6 +138,8 @@ def run_interactive_wizard() -> None:
         typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=EXIT_USER)
 
+    offer_manifest = not dry_run and bool(targets) and bool(files)
+
     run_notebook_command(
         mode,
         target_values=targets or None,
@@ -136,7 +148,45 @@ def run_interactive_wizard() -> None:
         dry_run=dry_run,
         names=resolved_names,
         ignore_outputs=ignore_outputs,
+        on_success=prompt_save_manifest if offer_manifest else None,
     )
+
+
+def prompt_save_manifest(
+    items: Sequence[WorkItem],
+    *,
+    display_names: list[str] | None = None,
+    op_results: list[OpResult] | None = None,
+    compare_results: list[CompareResult] | None = None,
+) -> None:
+    """Ask whether to write a ``.ftdep`` after a successful interactive run."""
+    if op_results is not None and not all(result.ok for result in op_results):
+        return
+    if compare_results is not None and not all(result.ok for result in compare_results):
+        return
+    if not items:
+        return
+    if not _confirm("Save deployment manifest?", default=False):
+        return
+
+    stem = _text(
+        "Manifest name or path (e.g. test → test.ftdep)",
+        allow_empty=False,
+    )
+    overrides = (
+        item_id_overrides_from_results(op_results) if op_results is not None else None
+    )
+    try:
+        built = manifest_from_work_items(
+            items,
+            display_names=display_names,
+            item_id_overrides=overrides,
+        )
+        path = save_manifest(stem, built)
+    except ManifestError as exc:
+        typer.secho(f"manifest not written: {exc}", fg=typer.colors.YELLOW, err=True)
+        return
+    typer.secho(f"Wrote manifest: {path}", fg=typer.colors.GREEN)
 
 
 def _target_prompt(mode: CommandMode) -> str:
