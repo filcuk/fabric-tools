@@ -47,3 +47,12 @@ py -3 -m pytest
 ```
 
 Prefer `py -3` on this machine when the default `python` is not 3.11+.
+
+## Tests
+
+```bash
+py -3 -m pip install -e ".[dev]"
+py -3 -m pytest
+```
+
+Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP), download/upload ops, compare diffs, dry-run validation, interactive wizard dispatch.

@@ -4,7 +4,7 @@ CLI for working with Microsoft Fabric artifacts.
 
 ## Status
 
-Phase 1 focuses on **notebook sync** (download / upload / compare) between Fabric and local files.
+Phase 1: **notebook** download, upload (create/overwrite), and compare between Fabric and local files.
 
 ## Requirements
 
@@ -17,75 +17,74 @@ Phase 1 focuses on **notebook sync** (download / upload / compare) between Fabri
 py -3 -m pip install -e ".[dev]"
 ```
 
-## Usage
+## Quick start
 
 ```bash
-py -3 -m fabric_tools --version
 py -3 -m fabric_tools --help
 py -3 -m fabric_tools notebook --help
-```
-
-If Scripts is on your PATH, you can also run `fabric-tools` directly.
-
-Flags:
-
-- `--target` / `-t` / `--t` — `workspaceId` (create) or `workspaceId:artifactId` (download/overwrite/compare)
-- `--file` / `-f` / `--f` — local `.ipynb` or `*.Notebook` folder
-- `--silent` / `-s` / `--s` — skip confirmation prompts
-- `--dry-run` / `--dr` — validate only; either side may be omitted
-- `--interactive` / `-i` / `--i` — guided prompts to build a request
-
-```bash
-# Help
-py -3 -m fabric_tools
-py -3 -m fabric_tools notebook --help
 py -3 -m fabric_tools notebook download --help
-
-# Interactive wizard
 py -3 -m fabric_tools --interactive
 ```
 
-### Notebook commands
+## Flags
+
+| Flag | Aliases | Purpose |
+|------|---------|---------|
+| `--target` | `-t`, `--t` | `workspaceId` (create) or `workspaceId:artifactId` |
+| `--file` | `-f`, `--f` | Local `.ipynb` or `*.Notebook` folder |
+| `--silent` | `-s`, `--s` | Skip confirmation prompts |
+| `--dry-run` | `--dr` | Validate only (either side may be omitted) |
+| `--name` | `-n` | Display name for create uploads |
+| `--interactive` | `-i`, `--i` | Guided wizard to build a request |
+
+## Notebook commands
 
 ```bash
-# Validate local notebook path only
-py -3 -m fabric_tools notebook upload --dry-run --file ./etl.ipynb
+# Dry-run: local file only
+py -3 -m fabric_tools notebook upload --dr --f ./etl.ipynb
 
-# Validate remote target only (requires auth)
-py -3 -m fabric_tools notebook download --dry-run \
-  --target 11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222
-```
+# Dry-run: remote target only (requires auth)
+py -3 -m fabric_tools notebook download --dr \
+  --t 11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222
 
-Sync actions:
-
-```bash
 # Download (format inferred from destination path)
-py -3 -m fabric_tools notebook download --silent \
-  --target <workspaceId>:<notebookId> --file ./etl.ipynb
+py -3 -m fabric_tools notebook download --s \
+  --t <workspaceId>:<notebookId> --f ./etl.ipynb
 
 # Overwrite remote
-py -3 -m fabric_tools notebook upload --silent \
-  --target <workspaceId>:<notebookId> --file ./etl.ipynb
+py -3 -m fabric_tools notebook upload --s \
+  --t <workspaceId>:<notebookId> --f ./etl.ipynb
 
 # Create remote (prints workspaceId:itemId on success)
-py -3 -m fabric_tools notebook upload --silent \
-  --target <workspaceId> --file ./etl.ipynb --name "ETL"
+py -3 -m fabric_tools notebook upload --s \
+  --t <workspaceId> --f ./etl.ipynb --n "ETL"
 
 # Compare remote vs local (nbdime for .ipynb; text diff for *.Notebook)
 py -3 -m fabric_tools notebook compare \
-  --target <workspaceId>:<notebookId> --file ./etl.ipynb
+  --t <workspaceId>:<notebookId> --f ./etl.ipynb
+
+# Guided interactive setup
+py -3 -m fabric_tools -i
 ```
 
-Supported local formats:
+### Local formats
 
-- `.ipynb` — Jupyter notebook file
-- `*.Notebook/` — Fabric Git folder with `notebook-content.*` and `.platform`
+- `.ipynb` — Jupyter notebook (`format=ipynb`)
+- `*.Notebook/` — Fabric Git folder with `notebook-content.*` and `.platform` (`format=fabricGitSource`)
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success (compare: all pairs identical) |
+| `1` | Validation error, user abort, or compare found differences |
+| `2` | Fabric API / operation failure |
 
 ## Authentication
 
-By default the CLI uses interactive Azure sign-in (browser, then device code).
+Default: interactive Azure sign-in (browser, then device code).
 
-For automation, set a service principal:
+Service principal:
 
 ```bash
 AZURE_TENANT_ID=...
@@ -96,8 +95,8 @@ AZURE_CLIENT_SECRET=...
 ## Development
 
 ```bash
-python -m pip install -e ".[dev]"
-pytest
+py -3 -m pip install -e ".[dev]"
+py -3 -m pytest
 ```
 
 ## License
