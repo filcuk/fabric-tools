@@ -1,0 +1,59 @@
+# AGENTS.md
+
+Guidance for AI agents and contributors working on this repository.
+
+Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVELOPMENT.md). End-user CLI docs are in [README.md](README.md).
+
+## Project goal
+
+`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric. Phase 1: notebook download/upload/compare sync.
+
+## Layout
+
+- `src/fabric_tools/` — package root
+  - `cli.py` — Typer entrypoint (`fabric-tools`), aliases, help text, `inspect`
+  - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
+  - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers
+  - `path_setup.py` — Windows user PATH install/uninstall (`fabric-tools path …`)
+  - `auth.py` — Azure / Fabric token acquisition (SP env + interactive/device code)
+  - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
+  - `parsing.py` — `--target` / `--file` parsing and mode validation
+  - `validate.py` — `--dry-run` remote/local checks
+  - `confirm.py` — overwrite / create prompts
+  - `exit_codes.py` — CLI exit code constants
+  - `notebook/` — definition pack/unpack (`definition.py`); selective cell merge (`cells.py`); download/create/overwrite (`ops.py`); compare (`compare.py`, nbdime)
+- `tests/` — unit tests
+- `packaging/fabric-tools.spec` — PyInstaller one-file Windows build
+- `scripts/build_exe.ps1` — build helper for `dist/fabric-tools.exe`
+
+## Conventions
+
+- Python 3.11+, `src/` layout, Hatchling build
+- CLI framework: Typer; HTTP: httpx; auth: azure-identity
+- Prefer small, focused modules over large catch-all files
+- Do not commit secrets, `.env`, or built `dist/` / `build/` artifacts
+- Plan execution: complete one plan step, stop for user review/commit, wait for `continue`
+
+## Phase 1 CLI contract (target)
+
+- Targets: `--target <workspaceId>:<artifactId>` (create: `--target <workspaceId>` only)
+- Files: `--file` paired 1:1 with targets, or one file broadcast to N targets
+- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success rewrites (create backfills `itemId`). Top-level `inspect -m`. Interactive may offer save after execute.
+- Formats: `.ipynb` or Fabric Git `.Notebook` folder
+- Flags: `--silent`, `--dry-run`; upload overwrite may use `--cells` / `-c` (1-based indices, single `.ipynb` only)
+- Auth: interactive default; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`
+
+## Commands agents should know
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for full install/test/build steps.
+
+```bash
+py -3 -m pip install -e ".[dev]"
+py -3 -m fabric_tools --version
+py -3 -m pytest
+powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
+```
+
+Prefer `py -3` on this machine when the default `python` is not 3.11+.
+
+Do not commit `dist/` or `build/`. Keep `packaging/fabric-tools.spec` checked in.
