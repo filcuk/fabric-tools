@@ -77,6 +77,7 @@ def confirm_upload_actions(
     *,
     silent: bool,
     display_names: list[str] | None = None,
+    cell_indices: list[int] | None = None,
 ) -> None:
     """Confirm create or remote overwrite before upload."""
     if silent or not items:
@@ -102,7 +103,11 @@ def confirm_upload_actions(
         confirm_or_abort("\n".join(lines), silent=False)
         return
 
-    lines = ["About to overwrite remote notebook(s):"]
+    if cell_indices is not None:
+        cells_label = ", ".join(str(index) for index in cell_indices)
+        lines = [f"About to overwrite cell(s) [{cells_label}] in remote notebook:"]
+    else:
+        lines = ["About to overwrite remote notebook(s):"]
     for item in items:
         assert item.target is not None
         workspace = resolve_workspace_name(client, item.target.workspace_id)

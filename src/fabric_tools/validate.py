@@ -5,7 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fabric_tools.client import FabricApiError, FabricClient
-from fabric_tools.notebook.definition import DefinitionError, validate_local_notebook
+from fabric_tools.notebook.cells import (
+    CellSelectionError,
+    format_cell_indices,
+    validate_cell_indices,
+)
+from fabric_tools.notebook.definition import (
+    DefinitionError,
+    NotebookFormat,
+    ipynb_from_definition,
+    read_ipynb,
+    validate_local_notebook,
+)
+from fabric_tools.notebook.ops import get_notebook_definition
 from fabric_tools.parsing import CommandMode, Target, WorkItem
 
 
@@ -22,6 +34,7 @@ def run_dry_run(
     client: FabricClient | None,
     has_targets: bool,
     has_files: bool,
+    cell_indices: list[int] | None = None,
 ) -> list[CheckResult]:
     """Validate remote and/or local sides without mutating anything."""
     results: list[CheckResult] = []
@@ -37,6 +50,9 @@ def run_dry_run(
                 )
             except DefinitionError as exc:
                 results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                continue
+            if cell_indices is not None and fmt is NotebookFormat.IPYNB:
+                results.append(_check_local_cells(item, cell_indices))
 
     if has_targets:
         if client is None:
@@ -51,9 +67,53 @@ def run_dry_run(
                 seen_workspaces.add(target.workspace_id)
                 results.append(_check_workspace(client, target.workspace_id))
             if target.item_id is not None:
-                results.append(_check_item(client, target, mode=mode))
+                item_check = _check_item(client, target, mode=mode)
+                results.append(item_check)
+                if (
+                    cell_indices is not None
+                    and item.file is not None
+                    and item_check.ok
+                ):
+                    results.append(_check_remote_cells(client, item, cell_indices))
 
     return results
+
+
+def _check_local_cells(item: WorkItem, cell_indices: list[int]) -> CheckResult:
+    assert item.file is not None
+    try:
+        notebook = read_ipynb(item.file)
+        validate_cell_indices(notebook, cell_indices, side="local")
+    except (DefinitionError, CellSelectionError) as exc:
+        return CheckResult(False, f"cells fail: {item.file} — {exc}")
+    return CheckResult(
+        True,
+        f"cells ok (local): [{format_cell_indices(cell_indices)}] in {item.file}",
+    )
+
+
+def _check_remote_cells(
+    client: FabricClient,
+    item: WorkItem,
+    cell_indices: list[int],
+) -> CheckResult:
+    assert item.target is not None and item.target.item_id is not None
+    label = item.target.label()
+    try:
+        definition = get_notebook_definition(
+            client,
+            item.target.workspace_id,
+            item.target.item_id,
+            format=NotebookFormat.IPYNB,
+        )
+        notebook = ipynb_from_definition(definition)
+        validate_cell_indices(notebook, cell_indices, side="remote")
+    except (FabricApiError, DefinitionError, CellSelectionError) as exc:
+        return CheckResult(False, f"cells fail: remote {label} — {exc}")
+    return CheckResult(
+        True,
+        f"cells ok (remote): [{format_cell_indices(cell_indices)}] in {label}",
+    )
 
 
 def _check_workspace(client: FabricClient, workspace_id: str) -> CheckResult:

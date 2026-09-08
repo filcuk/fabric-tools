@@ -25,6 +25,11 @@ from fabric_tools.manifest import (
     work_items_from_manifest,
 )
 from fabric_tools.notebook.compare import CompareResult, run_compare_batch
+from fabric_tools.notebook.cells import (
+    CellSelectionError,
+    parse_cell_indices,
+    validate_cells_usage,
+)
 from fabric_tools.notebook.definition import display_name_from_path
 from fabric_tools.notebook.ops import OpResult, run_download_batch, run_upload_batch
 from fabric_tools.parsing import (
@@ -296,6 +301,13 @@ def notebook_upload(
         "-n",
         help="(optional, create only) Display name. Defaults to file/folder stem.",
     ),
+    cells: Optional[list[str]] = typer.Option(
+        None,
+        "--cells",
+        "-c",
+        help="(optional, overwrite .ipynb only) 1-based cell indices to replace "
+        "(e.g. 1,3,5). Single notebook only; whole cells including outputs.",
+    ),
     manifest: Optional[str] = typer.Option(
         None,
         "--manifest",
@@ -323,6 +335,7 @@ def notebook_upload(
         silent=silent,
         dry_run=dry_run,
         names=name,
+        cells=cells,
         manifest=manifest,
     )
 
@@ -381,6 +394,7 @@ def run_notebook_command(
     silent: bool,
     dry_run: bool,
     names: list[str | None] | list[str] | None = None,
+    cells: list[str] | None = None,
     ignore_outputs: bool = True,
     manifest: str | None = None,
     on_success: Callable[..., None] | None = None,
@@ -392,6 +406,7 @@ def run_notebook_command(
     mode to offer saving a deployment manifest.
     """
     try:
+        cell_indices = parse_cell_indices(cells)
         items, resolved_names, has_targets, has_files = _resolve_notebook_inputs(
             mode,
             target_values=target_values,
@@ -400,7 +415,8 @@ def run_notebook_command(
             names=names,
             manifest=manifest,
         )
-    except (ParseError, ManifestError) as exc:
+        validate_cells_usage(mode, items, cell_indices, dry_run=dry_run)
+    except (ParseError, ManifestError, CellSelectionError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
@@ -415,6 +431,7 @@ def run_notebook_command(
                 client=client,
                 has_targets=has_targets,
                 has_files=has_files,
+                cell_indices=cell_indices,
             )
         except Exception as exc:  # noqa: BLE001 - surface auth/client failures cleanly
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
@@ -466,11 +483,13 @@ def run_notebook_command(
                 items,
                 silent=silent,
                 display_names=display_names,
+                cell_indices=cell_indices,
             )
             op_results = run_upload_batch(
                 client,
                 items,
                 display_names=display_names,
+                cell_indices=cell_indices,
             )
             _print_op_results(op_results)
             for result in op_results:

@@ -21,7 +21,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
   - `validate.py` — `--dry-run` remote/local checks
   - `confirm.py` — overwrite / create prompts
   - `exit_codes.py` — CLI exit code constants
-  - `notebook/` — definition pack/unpack (`definition.py`); download/create/overwrite (`ops.py`); compare (`compare.py`, nbdime)
+  - `notebook/` — definition pack/unpack (`definition.py`); selective cell merge (`cells.py`); download/create/overwrite (`ops.py`); compare (`compare.py`, nbdime)
 - `tests/` — unit tests
 - `packaging/fabric-tools.spec` — PyInstaller one-file Windows build
 - `scripts/build_exe.ps1` — build helper for `dist/fabric-tools.exe`
@@ -40,7 +40,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 - Files: `--file` paired 1:1 with targets, or one file broadcast to N targets
 - Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success rewrites (create backfills `itemId`). Top-level `inspect -m`. Interactive may offer save after execute.
 - Formats: `.ipynb` or Fabric Git `.Notebook` folder
-- Flags: `--silent`, `--dry-run`
+- Flags: `--silent`, `--dry-run`; upload overwrite may use `--cells` / `-c` (1-based indices, single `.ipynb` only)
 - Auth: interactive default; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`
 
 ## Commands agents should know

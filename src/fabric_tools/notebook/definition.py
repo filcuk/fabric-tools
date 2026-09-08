@@ -83,9 +83,7 @@ def pack_definition(path: Path | str) -> dict[str, Any]:
     p = Path(path)
     fmt = validate_local_notebook(p)
     if fmt is NotebookFormat.IPYNB:
-        raw = p.read_bytes()
-        parts = [_part(IPYNB_PART_PATH, raw)]
-        return {"format": fmt.value, "parts": parts}
+        return pack_ipynb_bytes(p.read_bytes())
 
     content_path = _find_fabric_git_content(p)
     assert content_path is not None
@@ -99,6 +97,43 @@ def pack_definition(path: Path | str) -> dict[str, Any]:
         if optional.is_file():
             parts.append(_part(optional_name, optional.read_bytes()))
     return {"format": fmt.value, "parts": parts}
+
+
+def pack_ipynb_bytes(raw: bytes) -> dict[str, Any]:
+    """Build an ipynb-format Fabric definition from raw .ipynb bytes."""
+    return {
+        "format": NotebookFormat.IPYNB.value,
+        "parts": [_part(IPYNB_PART_PATH, raw)],
+    }
+
+
+def pack_ipynb_dict(notebook: dict[str, Any]) -> dict[str, Any]:
+    """Build an ipynb-format Fabric definition from a notebook object."""
+    if "cells" not in notebook:
+        raise DefinitionError("Invalid notebook object: missing cells")
+    raw = json.dumps(notebook, ensure_ascii=False).encode("utf-8")
+    return pack_ipynb_bytes(raw)
+
+
+def read_ipynb(path: Path | str) -> dict[str, Any]:
+    """Load and validate a local ``.ipynb`` file."""
+    return _read_ipynb(Path(path))
+
+
+def ipynb_from_definition(definition: dict[str, Any]) -> dict[str, Any]:
+    """Decode the ``.ipynb`` content part from a Fabric definition response."""
+    parts = definition.get("parts")
+    if not isinstance(parts, list) or not parts:
+        raise DefinitionError("Definition response has no parts")
+    decoded = [_decode_part(part) for part in parts]
+    raw = _select_ipynb_bytes(decoded)
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise DefinitionError(f"Invalid remote .ipynb content: {exc}") from exc
+    if not isinstance(data, dict) or "cells" not in data:
+        raise DefinitionError("Invalid remote .ipynb content: missing cells")
+    return data
 
 
 def unpack_definition(

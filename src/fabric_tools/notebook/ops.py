@@ -7,13 +7,21 @@ from pathlib import Path
 from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.notebook.cells import (
+    CellSelectionError,
+    format_cell_indices,
+    merge_notebook_cells,
+)
 from fabric_tools.notebook.definition import (
     DefinitionError,
     NotebookFormat,
     definition_has_platform,
     detect_format,
     format_for_api,
+    ipynb_from_definition,
     pack_definition,
+    pack_ipynb_dict,
+    read_ipynb,
     unpack_definition,
 )
 from fabric_tools.parsing import WorkItem
@@ -73,6 +81,7 @@ def upload_notebook(
     item: WorkItem,
     *,
     display_name: str | None = None,
+    cell_indices: list[int] | None = None,
 ) -> OpResult:
     """Create or overwrite one notebook from a local path."""
     if item.target is None:
@@ -82,6 +91,10 @@ def upload_notebook(
 
     target = item.target
     path = item.file
+
+    if cell_indices is not None:
+        return _upload_selective_cells(client, item, cell_indices=cell_indices)
+
     try:
         definition = pack_definition(path)
     except DefinitionError as exc:
@@ -129,6 +142,68 @@ def upload_notebook(
     return OpResult(
         True,
         f"updated {target.label()} from {path}",
+        target.workspace_id,
+        target.item_id,
+    )
+
+
+def _upload_selective_cells(
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    cell_indices: list[int],
+) -> OpResult:
+    """Fetch remote notebook, replace selected cells from local, then update."""
+    assert item.target is not None and item.file is not None
+    target = item.target
+    path = item.file
+    assert target.item_id is not None
+    cells_label = format_cell_indices(cell_indices)
+
+    try:
+        local_nb = read_ipynb(path)
+        remote_definition = get_notebook_definition(
+            client,
+            target.workspace_id,
+            target.item_id,
+            format=NotebookFormat.IPYNB,
+        )
+        remote_nb = ipynb_from_definition(remote_definition)
+        merged = merge_notebook_cells(remote_nb, local_nb, cell_indices)
+        definition = pack_ipynb_dict(merged)
+    except (DefinitionError, CellSelectionError) as exc:
+        return OpResult(
+            False,
+            f"cell update failed {target.label()} from {path}: {exc}",
+            target.workspace_id,
+            target.item_id,
+        )
+    except FabricApiError as exc:
+        return OpResult(
+            False,
+            f"cell update failed {target.label()} from {path}: {exc}",
+            target.workspace_id,
+            target.item_id,
+        )
+
+    try:
+        update_notebook_definition(
+            client,
+            target.workspace_id,
+            target.item_id,
+            definition=definition,
+            update_metadata=False,
+        )
+    except FabricApiError as exc:
+        return OpResult(
+            False,
+            f"cell update failed {target.label()} from {path}: {exc}",
+            target.workspace_id,
+            target.item_id,
+        )
+    return OpResult(
+        True,
+        f"updated cells [{cells_label}] in {target.label()} from {path}",
         target.workspace_id,
         target.item_id,
     )
@@ -203,13 +278,21 @@ def run_upload_batch(
     items: list[WorkItem],
     *,
     display_names: list[str] | None = None,
+    cell_indices: list[int] | None = None,
 ) -> list[OpResult]:
     results: list[OpResult] = []
     for index, item in enumerate(items):
         name = None
         if display_names and index < len(display_names):
             name = display_names[index]
-        results.append(upload_notebook(client, item, display_name=name))
+        results.append(
+            upload_notebook(
+                client,
+                item,
+                display_name=name,
+                cell_indices=cell_indices,
+            )
+        )
     return results
 
 

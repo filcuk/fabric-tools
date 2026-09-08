@@ -41,6 +41,7 @@ fabric-tools path uninstall
 | `--silent` | `-s` | Skip confirmation prompts |
 | `--dry-run` | `-d` | Validate only (either side may be omitted) |
 | `--name` | `-n` | Display name for create uploads |
+| `--cells` | `-c` | Overwrite only listed 1-based cells (single `.ipynb`) |
 | `--interactive` | `-i` | Guided wizard to build a request |
 
 ## Example commands
@@ -57,6 +58,9 @@ fabric-tools notebook download -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
 
 # Overwrite remote
 fabric-tools notebook upload -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
+
+# Overwrite only specific cells (1-based; single .ipynb)
+fabric-tools notebook upload -s -t <workspaceId>:<notebookId> -f .\etl.ipynb -c 1,3,5
 
 # Create remote
 fabric-tools notebook upload -s -t <workspaceId> -f .\etl.ipynb -n "ETL"
