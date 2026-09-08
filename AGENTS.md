@@ -12,8 +12,11 @@ Guidance for AI agents and contributors working on this repository.
   - `cli.py` — Typer entrypoint (`fabric-tools`)
   - `auth.py` — Azure / Fabric token acquisition (SP env + interactive/device code)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
-  - `confirm.py` — overwrite / create prompts (planned)
-  - `notebook/` — definition pack/unpack (`definition.py`); sync ops planned
+  - `parsing.py` — `--target` / `--file` parsing and mode validation
+  - `validate.py` — `--dry-run` remote/local checks
+  - `confirm.py` — overwrite / create prompts
+  - `exit_codes.py` — CLI exit code constants
+  - `notebook/` — definition pack/unpack (`definition.py`); sync/compare ops planned
 - `tests/` — unit tests (planned)
 - `packaging/` — PyInstaller spec (planned)
 - `scripts/` — build helpers (planned)

@@ -27,9 +27,27 @@ py -3 -m fabric_tools notebook --help
 
 If Scripts is on your PATH, you can also run `fabric-tools` directly.
 
-Notebook download/upload options will be documented here as they land.
+### Notebook commands
 
-Supported local formats (for upcoming sync commands):
+```bash
+# Validate local notebook path only
+py -3 -m fabric_tools notebook upload --dry-run --file ./etl.ipynb
+
+# Validate remote target only (requires auth)
+py -3 -m fabric_tools notebook download --dry-run \
+  --target 11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222
+```
+
+Flags:
+
+- `--target` / `-t` — `workspaceId` (create) or `workspaceId:artifactId` (download/overwrite/compare). Repeatable or comma-separated.
+- `--file` / `-f` — local `.ipynb` or `*.Notebook` folder. One file may broadcast to multiple upload/download targets.
+- `--silent` — skip confirmation prompts
+- `--dry-run` — validate only; either side may be omitted
+
+Sync/compare actions after validation are landing in upcoming steps.
+
+Supported local formats:
 
 - `.ipynb` — Jupyter notebook file
 - `*.Notebook/` — Fabric Git folder with `notebook-content.*` and `.platform`

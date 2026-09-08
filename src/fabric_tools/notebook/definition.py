@@ -198,7 +198,8 @@ def _find_fabric_git_content(folder: Path) -> Path | None:
 
 def _read_ipynb(path: Path) -> dict[str, Any]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig tolerates a Windows BOM from editors/shells.
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise DefinitionError(f"Invalid .ipynb file '{path}': {exc}") from exc
     if not isinstance(data, dict) or "cells" not in data:
