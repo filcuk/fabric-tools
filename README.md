@@ -33,40 +33,35 @@ fabric-tools path uninstall
 
 ## Flags
 
-| Flag | Aliases | Purpose |
+| Flag | Alias | Purpose |
 |------|---------|---------|
-| `--target` | `-t`, `--t` | `workspaceId` (create) or `workspaceId:artifactId` |
-| `--file` | `-f`, `--f` | Local `.ipynb` or `*.Notebook` folder |
-| `--silent` | `-s`, `--s` | Skip confirmation prompts |
-| `--dry-run` | `--dr` | Validate only (either side may be omitted) |
+| `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` |
+| `--file` | `-f` | Local `.ipynb` or `*.Notebook` folder |
+| `--silent` | `-s` | Skip confirmation prompts |
+| `--dry-run` | `-d` | Validate only (either side may be omitted) |
 | `--name` | `-n` | Display name for create uploads |
-| `--interactive` | `-i`, `--i` | Guided wizard to build a request |
+| `--interactive` | `-i` | Guided wizard to build a request |
 
 ## Example commands
 
 ```powershell
 # Dry-run: local file only
-fabric-tools notebook upload --dr --f .\etl.ipynb
+fabric-tools notebook upload -d -f .\etl.ipynb
 
 # Dry-run: remote target only
-fabric-tools notebook download --dr `
-  --t 11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222
+fabric-tools notebook download -d -t <workspaceId>:<notebookId>
 
 # Download (format inferred from destination path)
-fabric-tools notebook download --s `
-  --t <workspaceId>:<notebookId> --f .\etl.ipynb
+fabric-tools notebook download -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
 
 # Overwrite remote
-fabric-tools notebook upload --s `
-  --t <workspaceId>:<notebookId> --f .\etl.ipynb
+fabric-tools notebook upload -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
 
 # Create remote
-fabric-tools notebook upload --s `
-  --t <workspaceId> --f .\etl.ipynb --n "ETL"
+fabric-tools notebook upload -s -t <workspaceId> -f .\etl.ipynb -n "ETL"
 
 # Compare remote vs local
-fabric-tools notebook compare `
-  --t <workspaceId>:<notebookId> --f .\etl.ipynb
+fabric-tools notebook compare -t <workspaceId>:<notebookId> -f .\etl.ipynb
 ```
 
 ## Authentication
@@ -78,6 +73,7 @@ For automation, set a service principal:
 $env:AZURE_TENANT_ID="..."
 $env:AZURE_CLIENT_ID="..."
 $env:AZURE_CLIENT_SECRET="..."
+```
 
 ### Exit codes
 
@@ -86,7 +82,6 @@ $env:AZURE_CLIENT_SECRET="..."
 | `0` | Success (compare: all pairs identical) |
 | `1` | Validation error, user abort, or compare found differences |
 | `2` | Fabric API / operation failure |
-```
 
 ## Development
 

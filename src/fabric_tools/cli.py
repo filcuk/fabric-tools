@@ -73,7 +73,6 @@ def main(
         False,
         "--interactive",
         "-i",
-        "--i",
         help="Guided prompts to build and run a request.",
         callback=_interactive_callback,
     ),
@@ -179,7 +178,6 @@ def notebook_download(
         None,
         "--target",
         "-t",
-        "--t",
         help="(required unless --dry-run files-only) workspace:artifact GUID. "
         "Repeatable or comma-separated. One workspace only.",
     ),
@@ -187,7 +185,6 @@ def notebook_download(
         None,
         "--file",
         "-f",
-        "--f",
         help="(required unless --dry-run targets-only) Local .ipynb or *.Notebook folder. "
         "Repeatable or comma-separated. One file may broadcast to all targets.",
     ),
@@ -195,13 +192,12 @@ def notebook_download(
         False,
         "--silent",
         "-s",
-        "--s",
         help="(optional) Skip confirmation prompts.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        "--dr",
+        "-d",
         help="(optional) Validate targets and/or files only; do not download.",
     ),
 ) -> None:
@@ -221,7 +217,6 @@ def notebook_upload(
         None,
         "--target",
         "-t",
-        "--t",
         help="(required unless --dry-run files-only) workspace GUID (create) or "
         "workspace:artifact (overwrite). Repeatable or comma-separated.",
     ),
@@ -229,7 +224,6 @@ def notebook_upload(
         None,
         "--file",
         "-f",
-        "--f",
         help="(required unless --dry-run targets-only) Local .ipynb or *.Notebook folder. "
         "Repeatable or comma-separated. One file may broadcast to all targets.",
     ),
@@ -243,13 +237,12 @@ def notebook_upload(
         False,
         "--silent",
         "-s",
-        "--s",
         help="(optional) Skip confirmation prompts.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        "--dr",
+        "-d",
         help="(optional) Validate targets and/or files only; do not upload.",
     ),
 ) -> None:
@@ -270,7 +263,6 @@ def notebook_compare(
         None,
         "--target",
         "-t",
-        "--t",
         help="(required unless --dry-run files-only) workspace:artifact GUID. "
         "Repeatable or comma-separated. One workspace only. Must 1:1 match --file.",
     ),
@@ -278,14 +270,13 @@ def notebook_compare(
         None,
         "--file",
         "-f",
-        "--f",
         help="(required unless --dry-run targets-only) Local .ipynb or *.Notebook folder. "
         "Must 1:1 match --target (no broadcast).",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        "--dr",
+        "-d",
         help="(optional) Validate targets and/or files only; do not compare.",
     ),
     ignore_outputs: bool = typer.Option(
