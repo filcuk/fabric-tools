@@ -4,7 +4,7 @@ CLI for working with Microsoft Fabric artifacts.
 
 ## Status
 
-Phase 1 focuses on **notebook sync** (download / upload) between Fabric and local files. The CLI scaffolding is in place; sync commands are under development.
+Phase 1 focuses on **notebook sync** (download / upload / compare) between Fabric and local files.
 
 ## Requirements
 
@@ -59,9 +59,11 @@ py -3 -m fabric_tools notebook upload --silent \
 # Create remote (prints workspaceId:itemId on success)
 py -3 -m fabric_tools notebook upload --silent \
   --target <workspaceId> --file ./etl.ipynb --name "ETL"
-```
 
-Compare is planned next.
+# Compare remote vs local (nbdime for .ipynb; text diff for *.Notebook)
+py -3 -m fabric_tools notebook compare \
+  --target <workspaceId>:<notebookId> --file ./etl.ipynb
+```
 
 Supported local formats:
 

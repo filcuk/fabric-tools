@@ -16,7 +16,7 @@ Guidance for AI agents and contributors working on this repository.
   - `validate.py` — `--dry-run` remote/local checks
   - `confirm.py` — overwrite / create prompts
   - `exit_codes.py` — CLI exit code constants
-  - `notebook/` — definition pack/unpack (`definition.py`); download/create/overwrite (`ops.py`); compare planned
+  - `notebook/` — definition pack/unpack (`definition.py`); download/create/overwrite (`ops.py`); compare (`compare.py`, nbdime)
 - `tests/` — unit tests (planned)
 - `packaging/` — PyInstaller spec (planned)
 - `scripts/` — build helpers (planned)

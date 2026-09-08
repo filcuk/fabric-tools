@@ -1,5 +1,6 @@
 """Notebook sync operations."""
 
+from fabric_tools.notebook.compare import CompareResult, compare_notebook, run_compare_batch
 from fabric_tools.notebook.definition import (
     DefinitionError,
     NotebookFormat,
@@ -23,9 +24,11 @@ from fabric_tools.notebook.ops import (
 )
 
 __all__ = [
+    "CompareResult",
     "DefinitionError",
     "NotebookFormat",
     "OpResult",
+    "compare_notebook",
     "create_notebook",
     "definition_has_platform",
     "detect_format",
@@ -34,6 +37,7 @@ __all__ = [
     "format_for_api",
     "get_notebook_definition",
     "pack_definition",
+    "run_compare_batch",
     "run_download_batch",
     "run_upload_batch",
     "unpack_definition",

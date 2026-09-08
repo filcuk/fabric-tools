@@ -14,6 +14,7 @@ from fabric_tools.confirm import (
     confirm_upload_actions,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
+from fabric_tools.notebook.compare import CompareResult, run_compare_batch
 from fabric_tools.notebook.definition import display_name_from_path
 from fabric_tools.notebook.ops import OpResult, run_download_batch, run_upload_batch
 from fabric_tools.parsing import (
@@ -155,6 +156,11 @@ def notebook_compare(
         "--dry-run",
         help="Validate targets and/or files only; do not compare.",
     ),
+    ignore_outputs: bool = typer.Option(
+        True,
+        "--ignore-outputs/--include-outputs",
+        help="For .ipynb diffs, ignore cell outputs (default: ignore).",
+    ),
 ) -> None:
     """Compare remote notebook(s) to local files."""
     _run_notebook_command(
@@ -163,6 +169,7 @@ def notebook_compare(
         file_values=file,
         silent=True,
         dry_run=dry_run,
+        ignore_outputs=ignore_outputs,
     )
 
 
@@ -174,6 +181,7 @@ def _run_notebook_command(
     silent: bool,
     dry_run: bool,
     names: list[str] | None = None,
+    ignore_outputs: bool = True,
 ) -> None:
     try:
         targets = parse_target_values(target_values)
@@ -250,11 +258,16 @@ def _run_notebook_command(
                             fg=typer.colors.CYAN,
                         )
             _exit_from_op_results(op_results)
-        else:
-            typer.echo(
-                f"notebook {mode.value}: parsed {len(items)} work item(s); "
-                "compare action not implemented yet."
+        elif mode is CommandMode.COMPARE:
+            compare_results = run_compare_batch(
+                client,
+                items,
+                ignore_outputs=ignore_outputs,
             )
+            _print_compare_results(compare_results)
+            _exit_from_compare_results(compare_results)
+        else:
+            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
         typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
@@ -278,6 +291,29 @@ def _exit_from_op_results(results: list[OpResult]) -> None:
     if all(result.ok for result in results):
         raise typer.Exit(code=EXIT_OK)
     raise typer.Exit(code=EXIT_API)
+
+
+def _print_compare_results(results: list[CompareResult]) -> None:
+    for result in results:
+        typer.secho(result.header, fg=typer.colors.CYAN, bold=True)
+        if result.error:
+            typer.secho(result.error, fg=typer.colors.RED, err=True)
+            continue
+        if result.identical:
+            typer.secho("identical", fg=typer.colors.GREEN)
+        else:
+            typer.secho("differences found", fg=typer.colors.YELLOW)
+            if result.diff_text:
+                typer.echo(result.diff_text.rstrip())
+        typer.echo("")
+
+
+def _exit_from_compare_results(results: list[CompareResult]) -> None:
+    if any(not result.ok for result in results):
+        raise typer.Exit(code=EXIT_API)
+    if any(not result.identical for result in results):
+        raise typer.Exit(code=EXIT_USER)
+    raise typer.Exit(code=EXIT_OK)
 
 
 def _resolve_upload_names(
