@@ -17,6 +17,7 @@ fabric-tools --help
 fabric-tools notebook --help
 fabric-tools dataflow-gen1 --help
 fabric-tools --interactive
+fabric-tools update --check
 ```
 
 Check or remove registration:
@@ -104,6 +105,10 @@ fabric-tools inspect -m test
 
 # List all manifests in the current folder
 fabric-tools inspect
+
+# Check GitHub Releases for a newer fabric-tools version
+fabric-tools update --check
+fabric-tools update -c
 ```
 
 ## Authentication
@@ -126,9 +131,9 @@ $env:AZURE_CLIENT_SECRET="..."
 
 | Code | Meaning |
 |------|---------|
-| `0` | Success (compare: all pairs identical) |
-| `1` | Validation error, user abort, or compare found differences |
-| `2` | Fabric / Power BI API or operation failure |
+| `0` | Success (compare: all pairs identical; `update --check`: up to date) |
+| `1` | Validation error, user abort, compare found differences, or newer release available |
+| `2` | Fabric / Power BI API or operation failure (also: update check network/API failure) |
 
 ## Development
 

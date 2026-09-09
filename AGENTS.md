@@ -11,10 +11,11 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow-gen1` groups, `inspect`
+  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow-gen1` groups, `inspect`, `update`
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow-gen1`)
   - `path_setup.py` — Windows user PATH install/uninstall (`fabric-tools path …`)
+  - `update_check.py` — GitHub Releases latest-version check (`fabric-tools update --check`)
   - `auth.py` — Azure token acquisition (Fabric + Power BI scopes; SP env, WAM broker, browser/device code; persistent cache)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
   - `powerbi_client.py` — Power BI REST client (Gen1 dataflow get/delete/import + poll)

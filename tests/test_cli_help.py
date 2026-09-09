@@ -12,6 +12,14 @@ def test_root_help_lists_dataflow_gen1() -> None:
     assert result.exit_code == 0
     assert "dataflow-gen1" in result.stdout
     assert "notebook" in result.stdout
+    assert "update" in result.stdout
+
+
+def test_update_help_lists_check() -> None:
+    result = CliRunner().invoke(app, ["update", "--help"])
+    assert result.exit_code == 0
+    assert "--check" in result.stdout
+    assert "-c" in result.stdout
 
 
 def test_dataflow_gen1_help_lists_commands() -> None:

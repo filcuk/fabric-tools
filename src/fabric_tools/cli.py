@@ -59,6 +59,7 @@ from fabric_tools.parsing import (
 )
 from fabric_tools.powerbi_client import PowerBiClient
 from fabric_tools.status import busy
+from fabric_tools.update_check import UpdateCheckError, check_for_update
 from fabric_tools.validate import run_dry_run, run_dry_run_dataflow_gen1
 
 _MANIFEST_HELP = (
@@ -125,6 +126,46 @@ path_app = typer.Typer(
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(path_app, name="path")
+
+
+@app.command("update")
+def update_cmd(
+    check: bool = typer.Option(
+        False,
+        "--check",
+        "-c",
+        help="Check GitHub Releases for a newer fabric-tools version.",
+    ),
+) -> None:
+    """Check for updates from GitHub Releases."""
+    if not check:
+        typer.secho(
+            "Specify --check / -c to check for a newer release.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USER)
+
+    try:
+        with busy("Checking for updates..."):
+            result = check_for_update()
+    except UpdateCheckError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+
+    typer.echo(f"Current version: {result.current}")
+    latest_label = f"{result.latest} ({result.tag_name})"
+    if result.prerelease:
+        latest_label += " [pre-release]"
+    typer.echo(f"Latest release:  {latest_label}")
+    if result.update_available:
+        typer.secho("A newer release is available.", fg=typer.colors.GREEN)
+        if result.release_url:
+            typer.echo(result.release_url)
+        raise typer.Exit(code=EXIT_USER)
+
+    typer.echo("You are up to date.")
+    raise typer.Exit(code=EXIT_OK)
 
 
 @app.command("inspect")
