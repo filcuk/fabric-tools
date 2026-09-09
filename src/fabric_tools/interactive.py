@@ -10,6 +10,8 @@ from questionary import Choice
 
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.manifest import (
+    KIND_DATAFLOW_GEN1,
+    KIND_NOTEBOOK,
     ManifestError,
     item_id_overrides_from_results,
     manifest_from_work_items,
@@ -21,47 +23,80 @@ from fabric_tools.parsing import CommandMode, WorkItem
 
 
 def run_interactive_wizard() -> None:
-    """Prompt for tool/activity/parameters, then dispatch to the notebook command runner."""
-    from fabric_tools.cli import run_notebook_command
+    """Prompt for tool/activity/parameters, then dispatch to the matching runner."""
+    from fabric_tools.cli import run_dataflow_gen1_command, run_notebook_command
 
     typer.echo("fabric-tools interactive mode")
     typer.echo("Use arrow keys + Enter to select. Ctrl+C cancels.\n")
 
     tool = _select(
         "Select tool",
-        choices=["notebook"],
+        choices=["notebook", "dataflow-gen1"],
         default="notebook",
     )
-    if tool != "notebook":
-        typer.secho(f"Unsupported tool: {tool}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=EXIT_USER)
 
     activity = _select(
         "Select activity",
-        choices=["download", "upload", "compare"],
+        choices=["download", "deploy", "compare", "delete"],
         default="download",
     )
     mode = CommandMode(activity)
 
-    run_mode = _select(
-        "How should this run?",
-        choices=[
-            Choice("Execute (download/upload/compare)", value="execute"),
-            Choice("Dry-run: validate targets and files", value="dry_both"),
+    if mode is CommandMode.DELETE:
+        run_choices = [
+            Choice("Execute (delete)", value="execute"),
+            Choice("Dry-run: validate remote targets only", value="dry_targets"),
+        ]
+    else:
+        run_choices = [
+            Choice(f"Execute ({activity})", value="execute"),
+            Choice("Dry-run: validate targets and sources", value="dry_both"),
             Choice("Dry-run: validate remote targets only", value="dry_targets"),
             Choice("Dry-run: validate local files only", value="dry_files"),
-        ],
+        ]
+
+    run_mode = _select(
+        "How should this run?",
+        choices=run_choices,
         default="execute",
     )
     dry_run = run_mode != "execute"
 
     targets: list[str] = []
     files: list[str] = []
+    origins: list[str] = []
     names: list[str] = []
 
-    if run_mode == "dry_targets":
+    file_prompt = (
+        "Enter file (model.json)"
+        if tool == "dataflow-gen1"
+        else "Enter file (.ipynb or *.Notebook folder)"
+    )
+    origin_label = (
+        "Power BI origin (workspace:artifact)"
+        if tool == "dataflow-gen1"
+        else "Fabric origin (workspace:artifact)"
+    )
+
+    source_kind = "file"
+    if mode is CommandMode.DELETE:
+        source_kind = "none"
+    elif mode in {CommandMode.DEPLOY, CommandMode.COMPARE} and run_mode != "dry_files":
+        if run_mode == "dry_targets":
+            source_kind = "none"
+        else:
+            source_kind = _select(
+                "Select source",
+                choices=[
+                    Choice("Local file / folder", value="file"),
+                    Choice(origin_label, value="origin"),
+                ],
+                default="file",
+            )
+
+    if mode is CommandMode.DELETE or run_mode == "dry_targets":
         while True:
-            target = _text(_target_prompt(mode), allow_empty=bool(targets))
+            target = _text(_target_prompt(mode, tool=tool), allow_empty=bool(targets))
             if not target:
                 break
             targets.append(target)
@@ -69,20 +104,43 @@ def run_interactive_wizard() -> None:
                 break
     elif run_mode == "dry_files":
         while True:
-            path = _text(
-                "Enter file (.ipynb or *.Notebook folder)",
-                allow_empty=bool(files),
-            )
+            path = _text(file_prompt, allow_empty=bool(files))
             if not path:
                 break
             files.append(path)
             if not _confirm("Add another file?", default=False):
                 break
+    elif source_kind == "origin":
+        typer.echo("\nEnter origin/target pairs.")
+        while True:
+            origin = _text(
+                "Enter origin workspace:artifact",
+                allow_empty=bool(origins and targets),
+            )
+            if not origin:
+                if origins and targets:
+                    break
+                typer.echo("Enter at least one origin/target pair.")
+                continue
+
+            target = _text(_target_prompt(mode, tool=tool), allow_empty=False)
+            origins.append(origin)
+            targets.append(target)
+
+            if mode is CommandMode.DEPLOY and ":" not in target:
+                name = _text(
+                    "Display name for create (leave blank to use origin name)",
+                    allow_empty=True,
+                )
+                names.append(name)
+
+            if not _confirm("Add another origin/target pair?", default=False):
+                break
     else:
         typer.echo("\nEnter file/target pairs.")
         while True:
             path = _text(
-                "Enter file (.ipynb or *.Notebook folder)",
+                file_prompt,
                 allow_empty=bool(files and targets),
             )
             if not path:
@@ -91,11 +149,11 @@ def run_interactive_wizard() -> None:
                 typer.echo("Enter at least one file/target pair.")
                 continue
 
-            target = _text(_target_prompt(mode), allow_empty=False)
+            target = _text(_target_prompt(mode, tool=tool), allow_empty=False)
             files.append(path)
             targets.append(target)
 
-            if mode is CommandMode.UPLOAD and ":" not in target:
+            if mode is CommandMode.DEPLOY and ":" not in target:
                 name = _text(
                     "Display name for create (leave blank to derive from file)",
                     allow_empty=True,
@@ -106,13 +164,13 @@ def run_interactive_wizard() -> None:
                 break
 
     silent = False
-    ignore_outputs = True
+    ignore_outputs = False
     if not dry_run and mode is not CommandMode.COMPARE:
         silent = _confirm("Silent mode (skip confirmation prompts)?", default=False)
-    if mode is CommandMode.COMPARE and not dry_run:
+    if tool == "notebook" and mode is CommandMode.COMPARE and not dry_run:
         ignore_outputs = _confirm(
             "Ignore notebook cell outputs in .ipynb diffs?",
-            default=True,
+            default=False,
         )
 
     resolved_names: list[str | None] | None = None
@@ -129,27 +187,52 @@ def run_interactive_wizard() -> None:
         typer.echo(f"  targets:  {', '.join(targets)}")
     if files:
         typer.echo(f"  files:    {', '.join(files)}")
+    if origins:
+        typer.echo(f"  origins:  {', '.join(origins)}")
     if resolved_names:
         typer.echo(
-            f"  names:    {', '.join(n or '(from file)' for n in resolved_names)}"
+            f"  names:    {', '.join(n or '(from source)' for n in resolved_names)}"
         )
 
     if not _confirm("Proceed?", default=True):
         typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=EXIT_USER)
 
-    offer_manifest = not dry_run and bool(targets) and bool(files)
-
-    run_notebook_command(
-        mode,
-        target_values=targets or None,
-        file_values=files or None,
-        silent=silent,
-        dry_run=dry_run,
-        names=resolved_names,
-        ignore_outputs=ignore_outputs,
-        on_success=prompt_save_manifest if offer_manifest else None,
+    offer_manifest = (
+        mode is not CommandMode.DELETE
+        and bool(targets)
+        and (bool(files) or bool(origins))
     )
+    kind = KIND_DATAFLOW_GEN1 if tool == "dataflow-gen1" else KIND_NOTEBOOK
+    on_success = (
+        (lambda *a, **k: prompt_save_manifest(*a, kind=kind, **k))
+        if offer_manifest
+        else None
+    )
+
+    if tool == "dataflow-gen1":
+        run_dataflow_gen1_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    else:
+        run_notebook_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            ignore_outputs=ignore_outputs,
+            on_success=on_success,
+        )
 
 
 def prompt_save_manifest(
@@ -158,8 +241,9 @@ def prompt_save_manifest(
     display_names: list[str] | None = None,
     op_results: list[OpResult] | None = None,
     compare_results: list[CompareResult] | None = None,
+    kind: str = KIND_NOTEBOOK,
 ) -> None:
-    """Ask whether to write a ``.ftdep`` after a successful interactive run."""
+    """Ask whether to write a ``.ftdep`` after a successful interactive run or dry-run."""
     if op_results is not None and not all(result.ok for result in op_results):
         return
     if compare_results is not None and not all(result.ok for result in compare_results):
@@ -179,6 +263,7 @@ def prompt_save_manifest(
     try:
         built = manifest_from_work_items(
             items,
+            kind=kind,
             display_names=display_names,
             item_id_overrides=overrides,
         )
@@ -189,8 +274,12 @@ def prompt_save_manifest(
     typer.secho(f"Wrote manifest: {path}", fg=typer.colors.GREEN)
 
 
-def _target_prompt(mode: CommandMode) -> str:
-    if mode is CommandMode.UPLOAD:
+def _target_prompt(mode: CommandMode, *, tool: str) -> str:
+    if mode is CommandMode.DELETE:
+        return "Enter target workspace:artifact"
+    if mode is CommandMode.DEPLOY:
+        if tool == "dataflow-gen1":
+            return "Enter target workspace GUID (create only)"
         return "Enter target workspace GUID (create) or workspace:artifact (overwrite)"
     return "Enter target workspace:artifact"
 
@@ -227,4 +316,4 @@ def _text(message: str, *, allow_empty: bool) -> str:
         value = result.strip()
         if value or allow_empty:
             return value
-        typer.echo("A value is required.")
+        typer.echo("Value required.")

@@ -46,7 +46,7 @@ py -3 -m pip install -e ".[dev]"
 py -3 -m pytest
 ```
 
-Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP), download/upload ops, compare diffs, dry-run validation, interactive wizard dispatch.
+Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP), download/deploy ops, compare diffs, dry-run validation, interactive wizard dispatch.
 
 ## Build Windows executable
 
@@ -69,4 +69,4 @@ Notes:
 - Spec file: [`packaging/fabric-tools.spec`](packaging/fabric-tools.spec) (kept in git via `!packaging/*.spec`)
 - Do not commit `dist/` or `build/`
 - Unsigned binaries may trigger SmartScreen warnings
-- Auth from the exe uses interactive browser/device-code or `AZURE_*` service principal env vars
+- Auth from the exe uses Windows WAM (when available), browser/device-code, or `AZURE_*` service principal env vars; tokens persist under `%LOCALAPPDATA%\fabric-tools`

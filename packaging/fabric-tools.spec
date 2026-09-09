@@ -38,6 +38,7 @@ hiddenimports = [
     "anyio",
     "certifi",
     "azure.identity",
+    "azure.identity.broker",
     "azure.core",
     "msal",
     "msal_extensions",
@@ -58,7 +59,7 @@ for package in ("certifi", "rfc3987_syntax", "jsonschema", "nbformat"):
     datas += collect_data_files(package)
     hiddenimports += collect_submodules(package)
 
-for package in ("azure.identity", "msal", "cryptography"):
+for package in ("azure.identity", "azure.identity.broker", "msal", "cryptography"):
     try:
         pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
         datas += pkg_datas

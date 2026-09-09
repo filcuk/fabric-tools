@@ -1,4 +1,4 @@
-"""Selective cell replacement for notebook overwrite uploads."""
+"""Selective cell replacement for notebook overwrite deploys."""
 
 from __future__ import annotations
 
@@ -53,17 +53,19 @@ def validate_cells_usage(
     *,
     dry_run: bool,
 ) -> None:
-    """Enforce ``--cells`` constraints (single overwrite .ipynb upload)."""
+    """Enforce ``--cells`` constraints (single overwrite .ipynb deploy)."""
     if cell_indices is None:
         return
-    if mode is not CommandMode.UPLOAD:
-        raise ParseError("--cells is only valid with notebook upload")
+    if mode is not CommandMode.DEPLOY:
+        raise ParseError("--cells is only valid with notebook deploy")
     if len(items) != 1:
         raise ParseError(
             "--cells requires exactly one notebook pair "
             "(one --target and one --file; multi-target is not supported)"
         )
     item = items[0]
+    if item.origin is not None:
+        raise ParseError("--cells requires a local --file (.ipynb); not valid with --origin")
     if item.file is None:
         raise ParseError("--cells requires a local --file (.ipynb)")
     try:
