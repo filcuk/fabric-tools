@@ -11,6 +11,7 @@ from fabric_tools.parsing import (
     ParseError,
     build_work_items,
     parse_file_values,
+    parse_origin_values,
     parse_target_values,
     rejoin_spaced_csv_argv,
 )
@@ -28,11 +29,57 @@ def test_parse_targets_comma_and_create() -> None:
     assert targets[2].is_create
 
 
+def test_parse_targets_shorthand_inherits_workspace() -> None:
+    targets = parse_target_values([f"{WS}:{A},{B}"])
+    assert len(targets) == 2
+    assert targets[0].workspace_id == WS
+    assert targets[0].item_id == A
+    assert targets[1].workspace_id == WS
+    assert targets[1].item_id == B
+
+
+def test_parse_targets_form2_separate_flags() -> None:
+    targets = parse_target_values([f"{WS}:{A},{B}", f"{WS2}:{A},{B}"])
+    assert len(targets) == 4
+    assert targets[0].workspace_id == WS
+    assert targets[1].workspace_id == WS
+    assert targets[2].workspace_id == WS2
+    assert targets[3].workspace_id == WS2
+    assert [t.item_id for t in targets] == [A, B, A, B]
+
+
+def test_parse_targets_rejects_multi_workspace_overwrite_in_one_flag() -> None:
+    with pytest.raises(ParseError, match="one workspace"):
+        parse_target_values([f"{WS}:{A},{WS2}:{B}"])
+    with pytest.raises(ParseError, match="one workspace"):
+        parse_target_values([f"{WS}:{A},{B},{WS2}:{A}"])
+
+
+def test_parse_targets_allows_multi_workspace_create_csv() -> None:
+    targets = parse_target_values([f"{WS},{WS2}"])
+    assert len(targets) == 2
+    assert targets[0].is_create and targets[0].workspace_id == WS
+    assert targets[1].is_create and targets[1].workspace_id == WS2
+
+
 def test_parse_targets_allows_spaces_after_commas() -> None:
     targets = parse_target_values([f"{WS}:{A}, {WS}:{B}"])
     assert len(targets) == 2
     assert targets[0].item_id == A
     assert targets[1].item_id == B
+
+
+def test_parse_origin_shorthand_inherits_workspace() -> None:
+    origins = parse_origin_values([f"{WS}:{A},{B}"])
+    assert len(origins) == 2
+    assert origins[0].workspace_id == WS
+    assert origins[1].workspace_id == WS
+    assert origins[1].item_id == B
+
+
+def test_parse_origin_rejects_multi_workspace_in_one_flag() -> None:
+    with pytest.raises(ParseError, match="one workspace"):
+        parse_origin_values([f"{WS}:{A},{WS2}:{B}"])
 
 
 def test_rejoin_spaced_csv_argv_for_targets() -> None:
@@ -96,7 +143,7 @@ def test_compare_rejects_broadcast() -> None:
 
 
 def test_download_rejects_multiple_workspaces() -> None:
-    targets = parse_target_values([f"{WS}:{A},{WS2}:{B}"])
+    targets = parse_target_values([f"{WS}:{A}", f"{WS2}:{B}"])
     files = parse_file_values(["a.ipynb", "b.ipynb"])
     with pytest.raises(ParseError, match="one workspace"):
         build_work_items(CommandMode.DOWNLOAD, targets, files, dry_run=False)
@@ -132,16 +179,12 @@ def test_invalid_guid() -> None:
 
 
 def test_parse_origin_requires_artifact() -> None:
-    from fabric_tools.parsing import parse_origin_values
-
     with pytest.raises(ParseError, match="workspace:artifact"):
         parse_origin_values([WS])
 
 
 def test_deploy_origin_broadcast() -> None:
-    from fabric_tools.parsing import parse_origin_values
-
-    targets = parse_target_values([f"{WS}:{A},{WS2}:{B}"])
+    targets = parse_target_values([f"{WS}:{A}", f"{WS2}:{B}"])
     origins = parse_origin_values([f"{WS}:{A}"])
     items = build_work_items(
         CommandMode.DEPLOY, targets, [], origins=origins, dry_run=False
@@ -156,9 +199,7 @@ def test_deploy_origin_broadcast() -> None:
 
 
 def test_compare_origin_requires_one_to_one() -> None:
-    from fabric_tools.parsing import parse_origin_values
-
-    targets = parse_target_values([f"{WS}:{A},{WS2}:{B}"])
+    targets = parse_target_values([f"{WS}:{A}", f"{WS2}:{B}"])
     origins = parse_origin_values([f"{WS}:{A}"])
     with pytest.raises(ParseError, match="1:1"):
         build_work_items(
@@ -167,8 +208,6 @@ def test_compare_origin_requires_one_to_one() -> None:
 
 
 def test_rejects_file_and_origin_together() -> None:
-    from fabric_tools.parsing import parse_origin_values
-
     targets = parse_target_values([f"{WS}:{A}"])
     files = parse_file_values(["a.ipynb"])
     origins = parse_origin_values([f"{WS}:{A}"])
@@ -179,7 +218,7 @@ def test_rejects_file_and_origin_together() -> None:
 
 
 def test_delete_targets_only() -> None:
-    targets = parse_target_values([f"{WS}:{A},{WS2}:{B}"])
+    targets = parse_target_values([f"{WS}:{A}", f"{WS2}:{B}"])
     items = build_work_items(CommandMode.DELETE, targets, [], dry_run=False)
     assert len(items) == 2
     assert items[0].file is None

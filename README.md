@@ -42,9 +42,9 @@ fabric-tools path uninstall
 
 | Flag | Alias | Purpose |
 |------|---------|---------|
-| `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated) |
+| `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated). Overwrite CSV: one workspace per `-t` (bare artifact ids inherit that workspace). Create CSV may list multiple workspaces. |
 | `--file` | `-f` | Local notebook path/folder or Gen1 `model.json` (repeatable or comma-separated) |
-| `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`) |
+| `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as `--target`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
 | `--dry-run` | `-d` | Validate only (either side may be omitted); with `-m`, writes the manifest on success |
@@ -73,8 +73,14 @@ fabric-tools notebook deploy -s -t <workspaceId>:<notebookId> -f .\etl.ipynb -c 
 # Deploy create from local file
 fabric-tools notebook deploy -s -t <workspaceId> -f .\etl.ipynb -n "ETL"
 
-# Deploy from Fabric origin (e.g. dev) to test and prod
-fabric-tools notebook deploy -s -o <devWs>:<notebookId> -t <testWs>:<notebookId>,<prodWs>:<notebookId>
+# Deploy create to multiple workspaces (same file)
+fabric-tools notebook deploy -s -t <ws1>,<ws2> -f .\etl.ipynb -n "ETL"
+
+# Deploy overwrite to two notebooks in the same workspace (shorthand)
+fabric-tools notebook deploy -s -t <workspaceId>:<nb1>,<nb2> -f .\etl.ipynb
+
+# Deploy from Fabric origin (e.g. dev) to test and prod (separate -t per workspace)
+fabric-tools notebook deploy -s -o <devWs>:<notebookId> -t <testWs>:<notebookId> -t <prodWs>:<notebookId>
 
 # Compare remote vs local
 fabric-tools notebook compare -t <workspaceId>:<notebookId> -f .\etl.ipynb

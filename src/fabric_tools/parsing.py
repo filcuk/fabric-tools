@@ -95,24 +95,32 @@ class WorkItem:
 
 
 def parse_target_values(values: list[str] | None) -> list[Target]:
-    """Parse repeatable/comma-separated ``--target`` values into Target objects."""
+    """Parse repeatable/comma-separated ``--target`` values into Target objects.
+
+    Within one flag value, bare artifact GUIDs after ``workspace:artifact`` inherit
+    that workspace. Overwrite-scoped values must use a single workspace; create CSV
+    may list multiple workspaces.
+    """
     if not values:
         return []
     targets: list[Target] = []
     for raw in values:
-        for piece in _split_csv(raw):
-            targets.append(_parse_one_target(piece))
+        targets.extend(_expand_scoped_targets(raw, allow_create=True, option="--target"))
     return targets
 
 
 def parse_origin_values(values: list[str] | None) -> list[Target]:
-    """Parse repeatable/comma-separated ``--origin`` values (workspace:artifact only)."""
+    """Parse repeatable/comma-separated ``--origin`` values (workspace:artifact only).
+
+    Same per-flag shorthand as targets; each overwrite-scoped value is one workspace.
+    """
     if not values:
         return []
     origins: list[Target] = []
     for raw in values:
-        for piece in _split_csv(raw):
-            origins.append(_parse_one_origin(piece))
+        origins.extend(
+            _expand_scoped_targets(raw, allow_create=False, option="--origin")
+        )
     return origins
 
 
@@ -330,42 +338,59 @@ def _require_create_only_deploy(targets: list[Target]) -> None:
         )
 
 
-def _parse_one_target(value: str) -> Target:
-    text = value.strip()
-    if not text:
-        raise ParseError("empty --target value")
+def _expand_scoped_targets(
+    raw: str,
+    *,
+    allow_create: bool,
+    option: str,
+) -> list[Target]:
+    """Expand one flag value with optional workspace shorthand for bare GUIDs."""
+    pieces = _split_csv(raw)
+    if not pieces:
+        raise ParseError(f"empty {option} value")
 
-    if ":" in text:
-        workspace_raw, item_raw = text.split(":", 1)
-        workspace_id = _parse_guid(workspace_raw.strip(), what="workspace id")
-        item_raw = item_raw.strip()
-        if not item_raw:
-            return Target(workspace_id=workspace_id, item_id=None)
-        item_id = _parse_guid(item_raw, what="artifact id")
-        return Target(workspace_id=workspace_id, item_id=item_id)
+    targets: list[Target] = []
+    current_ws: str | None = None
 
-    workspace_id = _parse_guid(text, what="workspace id")
-    return Target(workspace_id=workspace_id, item_id=None)
+    for piece in pieces:
+        if ":" in piece:
+            workspace_raw, item_raw = piece.split(":", 1)
+            workspace_id = _parse_guid(workspace_raw.strip(), what="workspace id")
+            item_raw = item_raw.strip()
+            if not item_raw:
+                if not allow_create:
+                    raise ParseError(
+                        f"{option} requires workspace:artifact; "
+                        f"missing artifact id on '{piece}'"
+                    )
+                targets.append(Target(workspace_id=workspace_id, item_id=None))
+                continue
+            item_id = _parse_guid(item_raw, what="artifact id")
+            targets.append(Target(workspace_id=workspace_id, item_id=item_id))
+            current_ws = workspace_id
+            continue
 
+        bare_id = _parse_guid(piece, what="workspace id" if current_ws is None else "artifact id")
+        if current_ws is not None:
+            targets.append(Target(workspace_id=current_ws, item_id=bare_id))
+            continue
+        if not allow_create:
+            raise ParseError(
+                f"{option} requires workspace:artifact; got '{piece}' "
+                "(workspace only is not allowed)"
+            )
+        targets.append(Target(workspace_id=bare_id, item_id=None))
 
-def _parse_one_origin(value: str) -> Target:
-    text = value.strip()
-    if not text:
-        raise ParseError("empty --origin value")
-    if ":" not in text:
-        raise ParseError(
-            f"--origin requires workspace:artifact; got '{text}' "
-            "(workspace only is not allowed)"
-        )
-    workspace_raw, item_raw = text.split(":", 1)
-    workspace_id = _parse_guid(workspace_raw.strip(), what="workspace id")
-    item_raw = item_raw.strip()
-    if not item_raw:
-        raise ParseError(
-            f"--origin requires workspace:artifact; missing artifact id on '{text}'"
-        )
-    item_id = _parse_guid(item_raw, what="artifact id")
-    return Target(workspace_id=workspace_id, item_id=item_id)
+    if any(not t.is_create for t in targets):
+        workspaces = {t.workspace_id for t in targets}
+        if len(workspaces) > 1:
+            raise ParseError(
+                f"one {option} value may only refer to one workspace for "
+                f"overwrite targets; got {len(workspaces)}: "
+                + ", ".join(sorted(workspaces))
+                + ". Use separate flags per workspace."
+            )
+    return targets
 
 
 def _parse_guid(value: str, *, what: str) -> str:
