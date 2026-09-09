@@ -199,6 +199,25 @@ def item_id_overrides_from_results(
     return overrides
 
 
+def list_manifest_paths(directory: str | Path | None = None) -> list[Path]:
+    """Return ``*.ftdep`` files in *directory* (default: cwd), sorted by name."""
+    root = Path.cwd() if directory is None else Path(directory)
+    if not root.is_dir():
+        raise ManifestError(f"directory not found: {root}")
+    return sorted(
+        (p for p in root.iterdir() if p.is_file() and p.suffix.lower() == MANIFEST_SUFFIX),
+        key=lambda p: p.name.lower(),
+    )
+
+
+def format_inspect_line(manifest: DeploymentManifest, *, path: Path) -> str:
+    """One-line summary for listing manifests in a directory."""
+    return (
+        f"{path.name}  kind={manifest.kind}  "
+        f"schemaVersion={manifest.schema_version}  entries={len(manifest.entries)}"
+    )
+
+
 def format_inspect(manifest: DeploymentManifest, *, path: Path | None = None) -> str:
     """Human-readable summary for ``fabric-tools inspect``."""
     lines: list[str] = []

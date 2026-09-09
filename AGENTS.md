@@ -38,7 +38,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 
 - Targets: `--target <workspaceId>:<artifactId>` (create: `--target <workspaceId>` only)
 - Files: `--file` paired 1:1 with targets, or one file broadcast to N targets
-- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Top-level `inspect -m`. Interactive may offer save after execute or dry-run.
+- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Top-level `inspect` lists `.ftdep` in cwd; `inspect -m` shows one. Interactive may offer save after execute or dry-run.
 - Formats: `.ipynb` or Fabric Git `.Notebook` folder
 - Flags: `--silent`, `--dry-run`; upload overwrite may use `--cells` / `-c` (1-based indices, single `.ipynb` only)
 - Auth: interactive default; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`

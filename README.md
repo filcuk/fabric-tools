@@ -79,6 +79,9 @@ fabric-tools notebook compare -m test
 
 # Show what a manifest contains (no Fabric API calls)
 fabric-tools inspect -m test
+
+# List all manifests in the current folder
+fabric-tools inspect
 ```
 
 ## Authentication

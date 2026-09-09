@@ -18,7 +18,9 @@ from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     ManifestError,
     format_inspect,
+    format_inspect_line,
     item_id_overrides_from_results,
+    list_manifest_paths,
     load_manifest,
     manifest_from_work_items,
     resolve_manifest_path,
@@ -104,14 +106,18 @@ app.add_typer(path_app, name="path")
 
 @app.command("inspect")
 def inspect_manifest(
-    manifest: str = typer.Option(
-        ...,
+    manifest: Optional[str] = typer.Option(
+        None,
         "--manifest",
         "-m",
-        help="(required) Deployment manifest stem or path (.ftdep).",
+        help="Deployment manifest stem or path (.ftdep). Omit to list all manifests in the current folder.",
     ),
 ) -> None:
-    """Show the contents of a deployment manifest (no Fabric API calls)."""
+    """Show deployment manifest contents, or list manifests in the current folder."""
+    if not manifest:
+        _inspect_list_cwd()
+        raise typer.Exit(code=EXIT_OK)
+
     try:
         path = resolve_manifest_path(manifest)
         loaded = load_manifest(path)
@@ -120,6 +126,27 @@ def inspect_manifest(
         raise typer.Exit(code=EXIT_USER) from exc
     typer.echo(format_inspect(loaded, path=path))
     raise typer.Exit(code=EXIT_OK)
+
+
+def _inspect_list_cwd() -> None:
+    """Print one-line summaries for each ``.ftdep`` in the current directory."""
+    try:
+        paths = list_manifest_paths()
+    except ManifestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    if not paths:
+        typer.echo("No .ftdep manifests in the current folder.")
+        return
+
+    for path in paths:
+        try:
+            loaded = load_manifest(path)
+        except ManifestError as exc:
+            typer.secho(f"{path.name}  error: {exc}", fg=typer.colors.YELLOW, err=True)
+            continue
+        typer.echo(format_inspect_line(loaded, path=path))
 
 
 def _version_callback(value: bool) -> None:

@@ -13,7 +13,9 @@ from fabric_tools.client import FabricApiError
 from fabric_tools.manifest import (
     ManifestError,
     format_inspect,
+    format_inspect_line,
     item_id_overrides_from_results,
+    list_manifest_paths,
     load_manifest,
     manifest_from_work_items,
     resolve_manifest_path,
@@ -93,6 +95,23 @@ def test_format_inspect_includes_kind() -> None:
     text = format_inspect(manifest_from_work_items(items), path=Path("m.ftdep"))
     assert "kind: notebook" in text
     assert WS in text
+
+
+def test_format_inspect_line() -> None:
+    items = [WorkItem(Target(WS, ITEM), Path("a.ipynb"))]
+    line = format_inspect_line(
+        manifest_from_work_items(items),
+        path=Path("demo.ftdep"),
+    )
+    assert line == "demo.ftdep  kind=notebook  schemaVersion=1  entries=1"
+
+
+def test_list_manifest_paths(tmp_path: Path) -> None:
+    (tmp_path / "b.ftdep").write_text("{}", encoding="utf-8")
+    (tmp_path / "a.ftdep").write_text("{}", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    names = [p.name for p in list_manifest_paths(tmp_path)]
+    assert names == ["a.ftdep", "b.ftdep"]
 
 
 def test_item_id_overrides_from_results() -> None:
@@ -263,6 +282,41 @@ def test_inspect_cli(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "kind: notebook" in result.stdout
     assert "entries: 1" in result.stdout
+
+
+def test_inspect_list_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    save_manifest(
+        tmp_path / "alpha",
+        manifest_from_work_items([WorkItem(Target(WS, ITEM), nb)]),
+    )
+    save_manifest(
+        tmp_path / "beta",
+        manifest_from_work_items(
+            [
+                WorkItem(Target(WS, ITEM), nb),
+                WorkItem(Target(WS, ITEM2), nb),
+            ]
+        ),
+    )
+    (tmp_path / "broken.ftdep").write_text("{not-json", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect"])
+    assert result.exit_code == 0
+    assert "alpha.ftdep  kind=notebook  schemaVersion=1  entries=1" in result.stdout
+    assert "beta.ftdep  kind=notebook  schemaVersion=1  entries=2" in result.stdout
+    assert "broken.ftdep  error:" in result.stderr
+
+
+def test_inspect_list_cwd_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect"])
+    assert result.exit_code == 0
+    assert "No .ftdep manifests" in result.stdout
 
 
 def test_inspect_missing_manifest() -> None:
