@@ -63,6 +63,22 @@ def test_persisting_credential_saves_record_once(tmp_path: Path, monkeypatch) ->
     assert loaded.username == "u@example.com"
 
 
+def test_token_provider_uses_requested_scope() -> None:
+    cred = MagicMock()
+    cred.get_token.return_value = AccessToken("pbi-tok", 9999999999)
+    provide = auth.token_provider(cred, scope=auth.POWER_BI_SCOPE)
+    assert provide() == "pbi-tok"
+    cred.get_token.assert_called_once_with(auth.POWER_BI_SCOPE)
+
+
+def test_token_provider_defaults_to_fabric_scope() -> None:
+    cred = MagicMock()
+    cred.get_token.return_value = AccessToken("fab-tok", 9999999999)
+    provide = auth.token_provider(cred)
+    assert provide() == "fab-tok"
+    cred.get_token.assert_called_once_with(auth.FABRIC_SCOPE)
+
+
 def test_create_credential_chain_includes_environment(monkeypatch) -> None:
     monkeypatch.setattr(auth, "load_authentication_record", lambda: None)
     monkeypatch.setattr(auth, "_broker_credential", lambda: None)

@@ -17,6 +17,7 @@ from azure.identity import (
 )
 
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
+POWER_BI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 _CACHE_NAME = "fabric-tools"
 _AUTH_RECORD_FILENAME = "msal-auth-record.json"
 
@@ -152,17 +153,21 @@ def get_access_token(
     *,
     scope: str = FABRIC_SCOPE,
 ) -> AccessToken:
-    """Acquire an access token for the Fabric API."""
+    """Acquire an access token for the given API scope (Fabric by default)."""
     cred = credential or create_credential()
     return cred.get_token(scope)
 
 
-def token_provider(credential: TokenCredential | None = None) -> TokenProvider:
+def token_provider(
+    credential: TokenCredential | None = None,
+    *,
+    scope: str = FABRIC_SCOPE,
+) -> TokenProvider:
     """Return a zero-arg callable that yields a fresh bearer token string."""
     cred = credential or create_credential()
 
     def _provide() -> str:
-        return get_access_token(cred).token
+        return get_access_token(cred, scope=scope).token
 
     return _provide
 
