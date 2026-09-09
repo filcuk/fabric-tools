@@ -27,6 +27,7 @@ from fabric_tools.notebook.definition import (
     unpack_definition,
 )
 from fabric_tools.parsing import WorkItem
+from fabric_tools.status import update as update_status
 
 
 @dataclass
@@ -353,7 +354,16 @@ def update_notebook_definition(
 
 
 def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
-    return [download_notebook(client, item) for item in items]
+    results: list[OpResult] = []
+    for item in items:
+        target = item.target
+        dest = item.file
+        if target is not None and dest is not None:
+            update_status(f"Downloading {target.label()} -> {dest}...")
+        else:
+            update_status("Downloading notebook...")
+        results.append(download_notebook(client, item))
+    return results
 
 
 def run_deploy_batch(
@@ -369,6 +379,17 @@ def run_deploy_batch(
         name = None
         if display_names and index < len(display_names):
             name = display_names[index]
+        target = item.target
+        if target is not None and target.is_create:
+            label = name or (item.file.name if item.file is not None else "notebook")
+            update_status(f"Creating '{label}' in {target.workspace_id}...")
+        elif target is not None and cell_indices is not None:
+            cells_label = format_cell_indices(cell_indices)
+            update_status(f"Updating cells [{cells_label}] in {target.label()}...")
+        elif target is not None:
+            update_status(f"Deploying to {target.label()}...")
+        else:
+            update_status("Deploying notebook...")
         results.append(
             deploy_notebook(
                 client,

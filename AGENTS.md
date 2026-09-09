@@ -20,6 +20,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
   - `parsing.py` — `--target` / `--file` / `--origin` parsing and mode validation
   - `validate.py` — `--dry-run` remote/local checks
   - `confirm.py` — overwrite / create prompts
+  - `status.py` — Rich spinner / status line for auth and long-running work
   - `exit_codes.py` — CLI exit code constants
   - `notebook/` — definition pack/unpack (`definition.py`); selective cell merge (`cells.py`); download/create/overwrite (`ops.py`); compare (`compare.py`, nbdime)
 - `tests/` — unit tests

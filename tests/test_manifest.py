@@ -193,6 +193,9 @@ def test_dry_run_writes_manifest_on_success(
     )
 
     class OkClient:
+        def ensure_authenticated(self) -> None:
+            return None
+
         def get_workspace(self, workspace_id: str) -> dict:
             return {"id": workspace_id, "displayName": "Dev"}
 
@@ -245,6 +248,9 @@ def test_dry_run_skips_manifest_on_failure(
     )
 
     class BadClient:
+        def ensure_authenticated(self) -> None:
+            return None
+
         def get_workspace(self, workspace_id: str) -> dict:
             raise FabricApiError("missing", status_code=404, error_code="WorkspaceNotFound")
 

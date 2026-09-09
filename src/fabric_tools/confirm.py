@@ -8,6 +8,7 @@ import typer
 
 from fabric_tools.client import FabricApiError, FabricClient
 from fabric_tools.parsing import Target, WorkItem
+from fabric_tools.status import busy
 
 
 class ConfirmationAborted(Exception):
@@ -62,11 +63,12 @@ def confirm_download_overwrites(
         return
 
     lines = ["About to overwrite local path(s):"]
-    for item in existing:
-        assert item.target is not None and item.file is not None
-        remote = resolve_item_name(client, item.target)
-        workspace = resolve_workspace_name(client, item.target.workspace_id)
-        lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+    with busy("Resolving targets..."):
+        for item in existing:
+            assert item.target is not None and item.file is not None
+            remote = resolve_item_name(client, item.target)
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -89,21 +91,22 @@ def confirm_deploy_actions(
 
     if first.is_create:
         lines = ["About to create notebook(s):"]
-        for index, item in enumerate(items):
-            assert item.target is not None
-            workspace = resolve_workspace_name(client, item.target.workspace_id)
-            name: str | None = None
-            if display_names and index < len(display_names) and display_names[index]:
-                name = display_names[index]
-            if not name:
-                if item.file is not None:
-                    name = item.file.name
-                elif item.origin is not None:
-                    name = resolve_item_name(client, item.origin)
-                else:
-                    name = "(unnamed)"
-            source = _source_phrase(client, item)
-            lines.append(f"  - '{name}' in {workspace}{source}")
+        with busy("Resolving targets..."):
+            for index, item in enumerate(items):
+                assert item.target is not None
+                workspace = resolve_workspace_name(client, item.target.workspace_id)
+                name: str | None = None
+                if display_names and index < len(display_names) and display_names[index]:
+                    name = display_names[index]
+                if not name:
+                    if item.file is not None:
+                        name = item.file.name
+                    elif item.origin is not None:
+                        name = resolve_item_name(client, item.origin)
+                    else:
+                        name = "(unnamed)"
+                source = _source_phrase(client, item)
+                lines.append(f"  - '{name}' in {workspace}{source}")
         lines.append("Are you sure?")
         confirm_or_abort("\n".join(lines), silent=False)
         return
@@ -113,12 +116,13 @@ def confirm_deploy_actions(
         lines = [f"About to overwrite cell(s) [{cells_label}] in remote notebook:"]
     else:
         lines = ["About to overwrite remote notebook(s):"]
-    for item in items:
-        assert item.target is not None
-        workspace = resolve_workspace_name(client, item.target.workspace_id)
-        remote = resolve_item_name(client, item.target)
-        source = _source_phrase(client, item, prefix=" with")
-        lines.append(f"  - {remote} in {workspace}{source}")
+    with busy("Resolving targets..."):
+        for item in items:
+            assert item.target is not None
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            remote = resolve_item_name(client, item.target)
+            source = _source_phrase(client, item, prefix=" with")
+            lines.append(f"  - {remote} in {workspace}{source}")
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 

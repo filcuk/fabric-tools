@@ -45,6 +45,7 @@ from fabric_tools.parsing import (
     parse_target_values,
     rejoin_spaced_csv_argv,
 )
+from fabric_tools.status import busy
 from fabric_tools.validate import run_dry_run
 
 _MANIFEST_HELP = (
@@ -515,16 +516,19 @@ def run_notebook_command(
         client: FabricClient | None = None
         try:
             if has_targets or has_origins:
-                client = FabricClient()
-            results = run_dry_run(
-                mode,
-                items,
-                client=client,
-                has_targets=has_targets,
-                has_files=has_files,
-                has_origins=has_origins,
-                cell_indices=cell_indices,
-            )
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    client.ensure_authenticated()
+            with busy("Checking..."):
+                results = run_dry_run(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                    cell_indices=cell_indices,
+                )
         except Exception as exc:  # noqa: BLE001 - surface auth/client failures cleanly
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -570,11 +574,14 @@ def run_notebook_command(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    client = FabricClient()
+    with busy("Authenticating..."):
+        client = FabricClient()
+        client.ensure_authenticated()
     try:
         if mode is CommandMode.DOWNLOAD:
             confirm_download_overwrites(client, items, silent=silent)
-            op_results = run_download_batch(client, items)
+            with busy("Downloading..."):
+                op_results = run_download_batch(client, items)
             _print_op_results(op_results)
             _write_manifest_after_success(
                 manifest,
@@ -597,12 +604,13 @@ def run_notebook_command(
                 display_names=display_names,
                 cell_indices=cell_indices,
             )
-            op_results = run_deploy_batch(
-                client,
-                items,
-                display_names=display_names,
-                cell_indices=cell_indices,
-            )
+            with busy("Deploying..."):
+                op_results = run_deploy_batch(
+                    client,
+                    items,
+                    display_names=display_names,
+                    cell_indices=cell_indices,
+                )
             _print_op_results(op_results)
             for result in op_results:
                 if result.ok and result.workspace_id and result.item_id:
@@ -625,11 +633,12 @@ def run_notebook_command(
             )
             _exit_from_op_results(op_results)
         elif mode is CommandMode.COMPARE:
-            compare_results = run_compare_batch(
-                client,
-                items,
-                ignore_outputs=ignore_outputs,
-            )
+            with busy("Comparing..."):
+                compare_results = run_compare_batch(
+                    client,
+                    items,
+                    ignore_outputs=ignore_outputs,
+                )
             _print_compare_results(compare_results)
             _write_manifest_after_success(
                 manifest,

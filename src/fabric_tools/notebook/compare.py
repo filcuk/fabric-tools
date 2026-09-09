@@ -26,6 +26,7 @@ from fabric_tools.notebook.definition import (
 )
 from fabric_tools.notebook.ops import get_notebook_definition
 from fabric_tools.parsing import WorkItem
+from fabric_tools.status import update as update_status
 
 
 @dataclass
@@ -220,9 +221,20 @@ def run_compare_batch(
     *,
     ignore_outputs: bool = False,
 ) -> list[CompareResult]:
-    return [
-        compare_notebook(client, item, ignore_outputs=ignore_outputs) for item in items
-    ]
+    results: list[CompareResult] = []
+    for item in items:
+        if item.target is not None and item.file is not None:
+            update_status(f"Comparing {item.target.label()} <-> {item.file}...")
+        elif item.target is not None and item.origin is not None:
+            update_status(
+                f"Comparing {item.target.label()} <-> origin {item.origin.label()}..."
+            )
+        else:
+            update_status("Comparing notebooks...")
+        results.append(
+            compare_notebook(client, item, ignore_outputs=ignore_outputs)
+        )
+    return results
 
 
 def _diff_ipynb(
