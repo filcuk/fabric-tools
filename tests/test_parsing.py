@@ -69,10 +69,10 @@ def test_rejoin_spaced_csv_argv_leaves_non_csv_alone() -> None:
 
 
 def test_rejoin_spaced_csv_argv_for_cells() -> None:
-    argv = ["notebook", "upload", "-c", "1,", "3,", "5", "-t", WS]
+    argv = ["notebook", "deploy", "-c", "1,", "3,", "5", "-t", WS]
     assert rejoin_spaced_csv_argv(argv) == [
         "notebook",
-        "upload",
+        "deploy",
         "-c",
         "1, 3, 5",
         "-t",
@@ -102,16 +102,16 @@ def test_download_rejects_multiple_workspaces() -> None:
         build_work_items(CommandMode.DOWNLOAD, targets, files, dry_run=False)
 
 
-def test_upload_rejects_mixed_create_and_overwrite() -> None:
+def test_deploy_rejects_mixed_create_and_overwrite() -> None:
     targets = parse_target_values([WS, f"{WS}:{A}"])
     files = parse_file_values(["a.ipynb", "b.ipynb"])
     with pytest.raises(ParseError, match="cannot mix"):
-        build_work_items(CommandMode.UPLOAD, targets, files, dry_run=False)
+        build_work_items(CommandMode.DEPLOY, targets, files, dry_run=False)
 
 
 def test_dry_run_files_only() -> None:
     items = build_work_items(
-        CommandMode.UPLOAD,
+        CommandMode.DEPLOY,
         [],
         parse_file_values(["a.ipynb"]),
         dry_run=True,
@@ -123,9 +123,56 @@ def test_dry_run_files_only() -> None:
 
 def test_dry_run_requires_something() -> None:
     with pytest.raises(ParseError, match="at least one"):
-        build_work_items(CommandMode.UPLOAD, [], [], dry_run=True)
+        build_work_items(CommandMode.DEPLOY, [], [], dry_run=True)
 
 
 def test_invalid_guid() -> None:
     with pytest.raises(ParseError, match="invalid workspace"):
         parse_target_values(["not-a-guid"])
+
+
+def test_parse_origin_requires_artifact() -> None:
+    from fabric_tools.parsing import parse_origin_values
+
+    with pytest.raises(ParseError, match="workspace:artifact"):
+        parse_origin_values([WS])
+
+
+def test_deploy_origin_broadcast() -> None:
+    from fabric_tools.parsing import parse_origin_values
+
+    targets = parse_target_values([f"{WS}:{A},{WS2}:{B}"])
+    origins = parse_origin_values([f"{WS}:{A}"])
+    items = build_work_items(
+        CommandMode.DEPLOY, targets, [], origins=origins, dry_run=False
+    )
+    assert len(items) == 2
+    assert items[0].origin == items[1].origin
+    assert items[0].file is None
+    assert items[0].target is not None
+    assert items[0].target.workspace_id == WS
+    assert items[1].target is not None
+    assert items[1].target.workspace_id == WS2
+
+
+def test_compare_origin_requires_one_to_one() -> None:
+    from fabric_tools.parsing import parse_origin_values
+
+    targets = parse_target_values([f"{WS}:{A},{WS2}:{B}"])
+    origins = parse_origin_values([f"{WS}:{A}"])
+    with pytest.raises(ParseError, match="1:1"):
+        build_work_items(
+            CommandMode.COMPARE, targets, [], origins=origins, dry_run=False
+        )
+
+
+def test_rejects_file_and_origin_together() -> None:
+    from fabric_tools.parsing import parse_origin_values
+
+    targets = parse_target_values([f"{WS}:{A}"])
+    files = parse_file_values(["a.ipynb"])
+    origins = parse_origin_values([f"{WS}:{A}"])
+    with pytest.raises(ParseError, match="either --file or --origin"):
+        build_work_items(
+            CommandMode.DEPLOY, targets, files, origins=origins, dry_run=False
+        )

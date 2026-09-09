@@ -132,15 +132,16 @@ def test_resolve_notebook_inputs_from_manifest(tmp_path: Path) -> None:
             display_names=["ETL"],
         ),
     )
-    items, names, has_t, has_f = _resolve_notebook_inputs(
+    items, names, has_t, has_f, has_o = _resolve_notebook_inputs(
         CommandMode.COMPARE,
         target_values=None,
         file_values=None,
+        origin_values=None,
         dry_run=False,
         names=None,
         manifest=str(tmp_path / "test"),
     )
-    assert has_t and has_f
+    assert has_t and has_f and not has_o
     assert names == ["ETL"]
     assert items[0].file == nb.resolve()
 
@@ -212,7 +213,7 @@ def test_dry_run_writes_manifest_on_success(
         app,
         [
             "notebook",
-            "upload",
+            "deploy",
             "-d",
             "-t",
             f"{WS}:{ITEM}",
@@ -256,7 +257,7 @@ def test_dry_run_skips_manifest_on_failure(
         app,
         [
             "notebook",
-            "upload",
+            "deploy",
             "-d",
             "-t",
             f"{WS}:{ITEM}",
@@ -323,3 +324,50 @@ def test_inspect_missing_manifest() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["inspect", "-m", "does-not-exist-xyz"])
     assert result.exit_code == 1
+
+
+def test_origin_manifest_v2_round_trip(tmp_path: Path) -> None:
+    origin = Target(WS, ITEM)
+    target = Target(WS, ITEM2)
+    items = [WorkItem(target, None, origin=origin)]
+    built = manifest_from_work_items(items)
+    assert built.schema_version == 2
+    path = save_manifest(tmp_path / "origin-deploy", built)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["schemaVersion"] == 2
+    assert raw["entries"][0]["originWorkspaceId"] == WS
+    assert raw["entries"][0]["originItemId"] == ITEM
+    assert "file" not in raw["entries"][0]
+
+    loaded = load_manifest(path)
+    work_items, _ = work_items_from_manifest(loaded)
+    assert work_items[0].file is None
+    assert work_items[0].origin is not None
+    assert work_items[0].origin.item_id == ITEM
+    assert "<-" in format_inspect(loaded)
+    assert ITEM in format_inspect(loaded)
+
+
+def test_v1_manifest_still_loads(tmp_path: Path) -> None:
+    path = tmp_path / "legacy.ftdep"
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "kind": "notebook",
+                "entries": [
+                    {
+                        "workspaceId": WS,
+                        "itemId": ITEM,
+                        "file": "etl.ipynb",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = load_manifest(path)
+    assert loaded.schema_version == 1
+    items, _ = work_items_from_manifest(loaded)
+    assert items[0].file is not None
+    assert items[0].origin is None

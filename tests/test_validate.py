@@ -36,7 +36,7 @@ def test_dry_run_local_ok(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     results = run_dry_run(
-        CommandMode.UPLOAD,
+        CommandMode.DEPLOY,
         [WorkItem(None, nb)],
         client=None,
         has_targets=False,
@@ -62,7 +62,7 @@ def test_dry_run_broadcast_file_validated_once(tmp_path: Path) -> None:
         WorkItem(Target(ws2, item2), nb),
     ]
     results = run_dry_run(
-        CommandMode.UPLOAD,
+        CommandMode.DEPLOY,
         items,
         client=FakeClient(),  # type: ignore[arg-type]
         has_targets=True,
@@ -107,3 +107,25 @@ def test_dry_run_remote_missing_item() -> None:
         has_files=False,
     )
     assert any(not r.ok and "ItemNotFound" in r.message for r in results)
+
+
+def test_dry_run_origin_ok() -> None:
+    ws = "11111111-1111-1111-1111-111111111111"
+    origin_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    target_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    item = WorkItem(
+        Target(ws, target_id),
+        None,
+        origin=Target(ws, origin_id),
+    )
+    results = run_dry_run(
+        CommandMode.DEPLOY,
+        [item],
+        client=FakeClient(),  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=False,
+        has_origins=True,
+    )
+    assert all(r.ok for r in results)
+    assert any("origin notebook" in r.message for r in results)
+    assert any("target notebook" in r.message for r in results)

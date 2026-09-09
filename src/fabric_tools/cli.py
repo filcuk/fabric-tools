@@ -11,8 +11,8 @@ from fabric_tools import __version__
 from fabric_tools.client import FabricClient
 from fabric_tools.confirm import (
     ConfirmationAborted,
+    confirm_deploy_actions,
     confirm_download_overwrites,
-    confirm_upload_actions,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
@@ -34,13 +34,14 @@ from fabric_tools.notebook.cells import (
     validate_cells_usage,
 )
 from fabric_tools.notebook.definition import display_name_from_path
-from fabric_tools.notebook.ops import OpResult, run_download_batch, run_upload_batch
+from fabric_tools.notebook.ops import OpResult, run_deploy_batch, run_download_batch
 from fabric_tools.parsing import (
     CommandMode,
     ParseError,
     WorkItem,
     build_work_items,
     parse_file_values,
+    parse_origin_values,
     parse_target_values,
     rejoin_spaced_csv_argv,
 )
@@ -48,7 +49,7 @@ from fabric_tools.validate import run_dry_run
 
 _MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
-    "Alone: load targets/files. With a successful run or dry-run: write/update the manifest."
+    "Alone: load targets/files/origins. With a successful run or dry-run: write/update the manifest."
 )
 
 _BANNER = r"""
@@ -89,7 +90,7 @@ app = typer.Typer(
 
 notebook_app = typer.Typer(
     name="notebook",
-    help="Download, upload, and compare Fabric notebooks.",
+    help="Download, deploy, and compare Fabric notebooks.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -340,8 +341,8 @@ def notebook_download(
     )
 
 
-@notebook_app.command("upload")
-def notebook_upload(
+@notebook_app.command("deploy")
+def notebook_deploy(
     target: Optional[list[str]] = typer.Option(
         None,
         "--target",
@@ -354,22 +355,32 @@ def notebook_upload(
         None,
         "--file",
         "-f",
-        help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
+        help="(required without -m/-o or -d) Local .ipynb or *.Notebook folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One file may broadcast to all targets.",
+        "One file may broadcast to all targets. Mutually exclusive with --origin.",
+    ),
+    origin: Optional[list[str]] = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact source. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One origin may broadcast to all targets. Mutually exclusive with --file.",
     ),
     name: Optional[list[str]] = typer.Option(
         None,
         "--name",
         "-n",
-        help="(optional, create only) Display name. Defaults to file/folder stem.",
+        help="(optional, create only) Display name. Defaults to file/folder stem "
+        "or origin display name.",
     ),
     cells: Optional[list[str]] = typer.Option(
         None,
         "--cells",
         "-c",
         help="(optional, overwrite .ipynb only) 1-based cell indices to replace "
-        "(e.g. 1,3,5 or 1, 3, 5). Single notebook only; whole cells including outputs.",
+        "(e.g. 1,3,5 or 1, 3, 5). Single notebook only; whole cells including outputs. "
+        "Not valid with --origin.",
     ),
     manifest: Optional[str] = typer.Option(
         None,
@@ -387,14 +398,15 @@ def notebook_upload(
         False,
         "--dry-run",
         "-d",
-        help="(optional) Validate targets and/or files only; do not upload.",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
     ),
 ) -> None:
-    """Upload notebook(s) from local files to Fabric (create or overwrite)."""
+    """Deploy notebook(s) from local files or a Fabric origin (create or overwrite)."""
     run_notebook_command(
-        CommandMode.UPLOAD,
+        CommandMode.DEPLOY,
         target_values=target,
         file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         names=name,
@@ -411,15 +423,23 @@ def notebook_compare(
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One workspace only. Must 1:1 match --file.",
+        "With --file: one workspace only. Must 1:1 match --file or --origin.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
+        help="(required without -m/-o or -d) Local .ipynb or *.Notebook folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "Must 1:1 match --target (no broadcast).",
+        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+    ),
+    origin: Optional[list[str]] = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact to compare against "
+        "--target. Must 1:1 match --target (no broadcast). "
+        "Mutually exclusive with --file.",
     ),
     manifest: Optional[str] = typer.Option(
         None,
@@ -431,7 +451,7 @@ def notebook_compare(
         False,
         "--dry-run",
         "-d",
-        help="(optional) Validate targets and/or files only; do not compare.",
+        help="(optional) Validate targets and/or sources only; do not compare.",
     ),
     include_outputs: bool = typer.Option(
         True,
@@ -440,11 +460,12 @@ def notebook_compare(
         help="(optional) For .ipynb diffs, include cell outputs.",
     ),
 ) -> None:
-    """Compare remote notebook to local file (nbdime for .ipynb)."""
+    """Compare target notebook to a local file or Fabric origin (nbdime for .ipynb)."""
     run_notebook_command(
         CommandMode.COMPARE,
         target_values=target,
         file_values=file,
+        origin_values=origin,
         silent=True,
         dry_run=dry_run,
         ignore_outputs=not include_outputs,
@@ -459,6 +480,7 @@ def run_notebook_command(
     file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     cells: list[str] | None = None,
     ignore_outputs: bool = False,
@@ -473,13 +495,16 @@ def run_notebook_command(
     """
     try:
         cell_indices = parse_cell_indices(cells)
-        items, resolved_names, has_targets, has_files = _resolve_notebook_inputs(
-            mode,
-            target_values=target_values,
-            file_values=file_values,
-            dry_run=dry_run,
-            names=names,
-            manifest=manifest,
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_notebook_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
         )
         validate_cells_usage(mode, items, cell_indices, dry_run=dry_run)
     except (ParseError, ManifestError, CellSelectionError) as exc:
@@ -489,7 +514,7 @@ def run_notebook_command(
     if dry_run:
         client: FabricClient | None = None
         try:
-            if has_targets:
+            if has_targets or has_origins:
                 client = FabricClient()
             results = run_dry_run(
                 mode,
@@ -497,6 +522,7 @@ def run_notebook_command(
                 client=client,
                 has_targets=has_targets,
                 has_files=has_files,
+                has_origins=has_origins,
                 cell_indices=cell_indices,
             )
         except Exception as exc:  # noqa: BLE001 - surface auth/client failures cleanly
@@ -512,11 +538,11 @@ def run_notebook_command(
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
-        if not failed and has_targets and has_files:
+        if not failed and has_targets and (has_files or has_origins):
             try:
                 display_names = (
-                    _resolve_upload_names(items, resolved_names)
-                    if mode is CommandMode.UPLOAD
+                    _resolve_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
                     else None
                 )
             except ParseError as exc:
@@ -536,8 +562,8 @@ def run_notebook_command(
 
     try:
         display_names = (
-            _resolve_upload_names(items, resolved_names)
-            if mode is CommandMode.UPLOAD
+            _resolve_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
             else None
         )
     except ParseError as exc:
@@ -563,15 +589,15 @@ def run_notebook_command(
                 op_results=op_results,
             )
             _exit_from_op_results(op_results)
-        elif mode is CommandMode.UPLOAD:
-            confirm_upload_actions(
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_actions(
                 client,
                 items,
                 silent=silent,
                 display_names=display_names,
                 cell_indices=cell_indices,
             )
-            op_results = run_upload_batch(
+            op_results = run_deploy_batch(
                 client,
                 items,
                 display_names=display_names,
@@ -659,37 +685,60 @@ def _resolve_notebook_inputs(
     *,
     target_values: list[str] | None,
     file_values: list[str] | None,
+    origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
-) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool]:
-    """Resolve targets/files from CLI and/or a deployment manifest."""
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve targets/files/origins from CLI and/or a deployment manifest."""
     cli_targets = parse_target_values(target_values)
     cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
     manifest_names: list[str | None] | None = None
 
-    if cli_targets or cli_files:
+    if cli_targets or cli_files or cli_origins:
         targets = cli_targets
         files = cli_files
+        origins = cli_origins
     elif manifest:
         path = resolve_manifest_path(manifest)
         loaded = load_manifest(path)
         loaded_items, manifest_names = work_items_from_manifest(loaded)
         targets = [item.target for item in loaded_items if item.target is not None]
         files = [item.file for item in loaded_items if item.file is not None]
-        if len(targets) != len(loaded_items) or len(files) != len(loaded_items):
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
             raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace and file on each)"
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
             )
     else:
         targets = []
         files = []
+        origins = []
 
-    items = build_work_items(mode, targets, files, dry_run=dry_run)
+    items = build_work_items(
+        mode, targets, files, origins=origins, dry_run=dry_run
+    )
     effective_names: list[str | None] | list[str] | None = (
         names if names else manifest_names
     )
-    return items, effective_names, bool(targets), bool(files)
+    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _write_manifest_after_success(
@@ -759,7 +808,7 @@ def _exit_from_compare_results(results: list[CompareResult]) -> None:
     raise typer.Exit(code=EXIT_OK)
 
 
-def _resolve_upload_names(
+def _resolve_deploy_names(
     items: list,
     names: list[str | None] | list[str] | None,
 ) -> list[str]:
@@ -777,7 +826,8 @@ def _resolve_upload_names(
         elif item.file is not None:
             resolved.append(display_name_from_path(item.file))
         else:
-            resolved.append("Notebook")
+            # Origin create resolves display name at deploy time via get_item.
+            resolved.append("")
     return resolved
 
 

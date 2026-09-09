@@ -35,10 +35,24 @@ def test_ipynb_diff_detects_change(tmp_path: Path) -> None:
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", MissingIDFieldWarning)
-        different = _diff_ipynb("hdr", remote_path=a, local_path=b, ignore_outputs=True)
+        different = _diff_ipynb(
+            "hdr",
+            left_path=a,
+            right_path=b,
+            left_label="remote:a.ipynb",
+            right_label="local:b.ipynb",
+            ignore_outputs=True,
+        )
     assert different.ok and not different.identical and different.diff_text
 
-    same = _diff_ipynb("hdr", remote_path=a, local_path=a, ignore_outputs=True)
+    same = _diff_ipynb(
+        "hdr",
+        left_path=a,
+        right_path=a,
+        left_label="remote:a.ipynb",
+        right_label="local:a.ipynb",
+        ignore_outputs=True,
+    )
     assert same.ok and same.identical
 
 

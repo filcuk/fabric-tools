@@ -68,7 +68,7 @@ def test_validate_cells_usage_rejects_multi(tmp_path: Path) -> None:
         WorkItem(Target(WS, A), nb),
     ]
     with pytest.raises(ParseError, match="exactly one"):
-        validate_cells_usage(CommandMode.UPLOAD, items, [1], dry_run=False)
+        validate_cells_usage(CommandMode.DEPLOY, items, [1], dry_run=False)
 
 
 def test_validate_cells_usage_rejects_create(tmp_path: Path) -> None:
@@ -76,4 +76,11 @@ def test_validate_cells_usage_rejects_create(tmp_path: Path) -> None:
     nb.write_text('{"nbformat":4,"nbformat_minor":5,"cells":[],"metadata":{}}', encoding="utf-8")
     items = [WorkItem(Target(WS), nb)]
     with pytest.raises(ParseError, match="overwrite"):
-        validate_cells_usage(CommandMode.UPLOAD, items, [1], dry_run=False)
+        validate_cells_usage(CommandMode.DEPLOY, items, [1], dry_run=False)
+
+
+def test_validate_cells_usage_rejects_origin() -> None:
+    origin = Target(WS, A)
+    items = [WorkItem(Target(WS, A), None, origin=origin)]
+    with pytest.raises(ParseError, match="--origin"):
+        validate_cells_usage(CommandMode.DEPLOY, items, [1], dry_run=False)

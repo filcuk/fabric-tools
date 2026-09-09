@@ -15,18 +15,19 @@ from fabric_tools.notebook.definition import (
     format_for_api,
     merge_remote_dependencies,
     pack_definition,
+    strip_preserved_dependencies,
     unpack_definition,
     validate_local_notebook,
 )
 from fabric_tools.notebook.ops import (
     OpResult,
     create_notebook,
+    deploy_notebook,
     download_notebook,
     get_notebook_definition,
+    run_deploy_batch,
     run_download_batch,
-    run_upload_batch,
     update_notebook_definition,
-    upload_notebook,
 )
 
 __all__ = [
@@ -38,6 +39,7 @@ __all__ = [
     "compare_notebook",
     "create_notebook",
     "definition_has_platform",
+    "deploy_notebook",
     "detect_format",
     "display_name_from_path",
     "download_notebook",
@@ -48,10 +50,10 @@ __all__ = [
     "pack_definition",
     "parse_cell_indices",
     "run_compare_batch",
+    "run_deploy_batch",
     "run_download_batch",
-    "run_upload_batch",
+    "strip_preserved_dependencies",
     "unpack_definition",
     "update_notebook_definition",
-    "upload_notebook",
     "validate_local_notebook",
 ]

@@ -46,7 +46,7 @@ py -3 -m pip install -e ".[dev]"
 py -3 -m pytest
 ```
 
-Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP), download/upload ops, compare diffs, dry-run validation, interactive wizard dispatch.
+Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP), download/deploy ops, compare diffs, dry-run validation, interactive wizard dispatch.
 
 ## Build Windows executable
 

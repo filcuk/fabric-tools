@@ -1,4 +1,4 @@
-"""Notebook download / create / overwrite operations."""
+"""Notebook download / create / overwrite (deploy) operations."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from fabric_tools.notebook.definition import (
     pack_definition,
     pack_ipynb_dict,
     read_ipynb,
+    strip_preserved_dependencies,
     unpack_definition,
 )
 from fabric_tools.parsing import WorkItem
@@ -77,32 +78,57 @@ def download_notebook(
     )
 
 
-def upload_notebook(
+def deploy_notebook(
     client: FabricClient,
     item: WorkItem,
     *,
     display_name: str | None = None,
     cell_indices: list[int] | None = None,
+    origin_definition_cache: dict[str, dict[str, Any]] | None = None,
 ) -> OpResult:
-    """Create or overwrite one notebook from a local path."""
+    """Create or overwrite one notebook from a local path or Fabric origin."""
     if item.target is None:
-        return OpResult(False, "upload requires a --target")
-    if item.file is None:
-        return OpResult(False, "upload requires a local --file path")
+        return OpResult(False, "deploy requires a --target")
+    if item.file is None and item.origin is None:
+        return OpResult(False, "deploy requires a local --file or --origin")
+    if item.file is not None and item.origin is not None:
+        return OpResult(False, "deploy cannot use both --file and --origin")
 
     target = item.target
-    path = item.file
 
     if cell_indices is not None:
-        return _upload_selective_cells(client, item, cell_indices=cell_indices)
+        return _deploy_selective_cells(client, item, cell_indices=cell_indices)
 
     try:
-        definition = pack_definition(path)
-    except DefinitionError as exc:
-        return OpResult(False, f"upload pack failed {path}: {exc}", target.workspace_id)
+        definition, source_label = _resolve_source_definition(
+            client,
+            item,
+            origin_definition_cache=origin_definition_cache,
+        )
+    except (FabricApiError, DefinitionError) as exc:
+        return OpResult(
+            False,
+            f"deploy source failed: {exc}",
+            target.workspace_id,
+            target.item_id,
+        )
 
     if target.is_create:
-        name = display_name or path.name
+        name = display_name
+        if not name:
+            if item.file is not None:
+                name = item.file.name
+            else:
+                assert item.origin is not None and item.origin.item_id is not None
+                try:
+                    meta = client.get_item(
+                        item.origin.workspace_id, item.origin.item_id
+                    )
+                    name = str(
+                        meta.get("displayName") or meta.get("name") or "Notebook"
+                    )
+                except FabricApiError:
+                    name = "Notebook"
         try:
             created = create_notebook(
                 client,
@@ -113,13 +139,13 @@ def upload_notebook(
         except FabricApiError as exc:
             return OpResult(
                 False,
-                f"create failed in {target.workspace_id} from {path}: {exc}",
+                f"create failed in {target.workspace_id} from {source_label}: {exc}",
                 target.workspace_id,
             )
         item_id = str(created.get("id") or "")
         return OpResult(
             True,
-            f"created {target.workspace_id}:{item_id} from {path} (name='{name}')",
+            f"created {target.workspace_id}:{item_id} from {source_label} (name='{name}')",
             target.workspace_id,
             item_id or None,
         )
@@ -127,8 +153,21 @@ def upload_notebook(
     assert target.item_id is not None
     preserved_keys: list[str] = []
     try:
-        if detect_format(path) is NotebookFormat.IPYNB:
-            local_nb = read_ipynb(path)
+        if item.origin is not None:
+            origin_nb = ipynb_from_definition(definition)
+            stripped = strip_preserved_dependencies(origin_nb)
+            remote_definition = get_notebook_definition(
+                client,
+                target.workspace_id,
+                target.item_id,
+                format=NotebookFormat.IPYNB,
+            )
+            remote_nb = ipynb_from_definition(remote_definition)
+            merged_nb, preserved_keys = merge_remote_dependencies(stripped, remote_nb)
+            definition = pack_ipynb_dict(merged_nb)
+        elif detect_format(item.file) is NotebookFormat.IPYNB:  # type: ignore[arg-type]
+            assert item.file is not None
+            local_nb = read_ipynb(item.file)
             remote_definition = get_notebook_definition(
                 client,
                 target.workspace_id,
@@ -149,7 +188,7 @@ def upload_notebook(
     except (FabricApiError, DefinitionError) as exc:
         return OpResult(
             False,
-            f"overwrite failed {target.label()} from {path}: {exc}",
+            f"overwrite failed {target.label()} from {source_label}: {exc}",
             target.workspace_id,
             target.item_id,
         )
@@ -158,13 +197,40 @@ def upload_notebook(
         suffix = f" (preserved remote {', '.join(preserved_keys)})"
     return OpResult(
         True,
-        f"updated {target.label()} from {path}{suffix}",
+        f"updated {target.label()} from {source_label}{suffix}",
         target.workspace_id,
         target.item_id,
     )
 
 
-def _upload_selective_cells(
+def _resolve_source_definition(
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    origin_definition_cache: dict[str, dict[str, Any]] | None,
+) -> tuple[dict[str, Any], str]:
+    if item.file is not None:
+        return pack_definition(item.file), str(item.file)
+
+    assert item.origin is not None and item.origin.item_id is not None
+    origin = item.origin
+    label = f"origin {origin.label()}"
+    cache_key = origin.label()
+    if origin_definition_cache is not None and cache_key in origin_definition_cache:
+        return origin_definition_cache[cache_key], label
+
+    definition = get_notebook_definition(
+        client,
+        origin.workspace_id,
+        origin.item_id,
+        format=NotebookFormat.IPYNB,
+    )
+    if origin_definition_cache is not None:
+        origin_definition_cache[cache_key] = definition
+    return definition, label
+
+
+def _deploy_selective_cells(
     client: FabricClient,
     item: WorkItem,
     *,
@@ -290,7 +356,7 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     return [download_notebook(client, item) for item in items]
 
 
-def run_upload_batch(
+def run_deploy_batch(
     client: FabricClient,
     items: list[WorkItem],
     *,
@@ -298,16 +364,18 @@ def run_upload_batch(
     cell_indices: list[int] | None = None,
 ) -> list[OpResult]:
     results: list[OpResult] = []
+    origin_cache: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(items):
         name = None
         if display_names and index < len(display_names):
             name = display_names[index]
         results.append(
-            upload_notebook(
+            deploy_notebook(
                 client,
                 item,
                 display_name=name,
                 cell_indices=cell_indices,
+                origin_definition_cache=origin_cache,
             )
         )
     return results

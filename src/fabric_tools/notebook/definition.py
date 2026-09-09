@@ -159,6 +159,22 @@ def read_ipynb(path: Path | str) -> dict[str, Any]:
     return _read_ipynb(Path(path))
 
 
+def strip_preserved_dependencies(notebook: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of *notebook* without lakehouse/environment dependency keys."""
+    stripped = deepcopy(notebook)
+    meta = stripped.get("metadata")
+    if not isinstance(meta, dict):
+        return stripped
+    deps = meta.get("dependencies")
+    if not isinstance(deps, dict):
+        return stripped
+    for key in PRESERVE_DEPENDENCY_KEYS:
+        deps.pop(key, None)
+    if not deps:
+        meta.pop("dependencies", None)
+    return stripped
+
+
 def merge_remote_dependencies(
     local: dict[str, Any],
     remote: dict[str, Any],

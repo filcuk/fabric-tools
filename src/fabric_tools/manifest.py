@@ -9,7 +9,9 @@ from typing import Any, Sequence
 
 from fabric_tools.parsing import Target, WorkItem
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION_V1 = 1
+SCHEMA_VERSION_V2 = 2
+SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION_V1, SCHEMA_VERSION_V2})
 MANIFEST_SUFFIX = ".ftdep"
 KIND_NOTEBOOK = "notebook"
 
@@ -21,16 +23,26 @@ class ManifestError(ValueError):
 @dataclass(frozen=True)
 class ManifestEntry:
     workspace_id: str
-    file: Path
+    file: Path | None = None
     item_id: str | None = None
     display_name: str | None = None
+    origin_workspace_id: str | None = None
+    origin_item_id: str | None = None
+
+    @property
+    def has_file(self) -> bool:
+        return self.file is not None
+
+    @property
+    def has_origin(self) -> bool:
+        return self.origin_workspace_id is not None and self.origin_item_id is not None
 
 
 @dataclass(frozen=True)
 class DeploymentManifest:
     kind: str
     entries: tuple[ManifestEntry, ...]
-    schema_version: int = SCHEMA_VERSION
+    schema_version: int = SCHEMA_VERSION_V1
 
 
 def resolve_manifest_path(value: str | Path) -> Path:
@@ -56,13 +68,13 @@ def load_manifest(path: str | Path) -> DeploymentManifest:
     if not isinstance(raw, dict):
         raise ManifestError(f"manifest root must be a JSON object: {resolved}")
 
-    schema_version = raw.get("schemaVersion", SCHEMA_VERSION)
+    schema_version = raw.get("schemaVersion", SCHEMA_VERSION_V1)
     if not isinstance(schema_version, int):
         raise ManifestError(f"invalid schemaVersion in {resolved}")
-    if schema_version != SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ManifestError(
             f"unsupported schemaVersion {schema_version} in {resolved} "
-            f"(expected {SCHEMA_VERSION})"
+            f"(supported: {', '.join(str(v) for v in sorted(SUPPORTED_SCHEMA_VERSIONS))})"
         )
 
     kind = raw.get("kind")
@@ -76,7 +88,15 @@ def load_manifest(path: str | Path) -> DeploymentManifest:
     base = resolved.parent
     entries: list[ManifestEntry] = []
     for index, item in enumerate(entries_raw):
-        entries.append(_parse_entry(item, base=base, index=index, path=resolved))
+        entries.append(
+            _parse_entry(
+                item,
+                base=base,
+                index=index,
+                path=resolved,
+                schema_version=schema_version,
+            )
+        )
 
     return DeploymentManifest(
         kind=kind.strip(),
@@ -128,7 +148,15 @@ def work_items_from_manifest(
     names: list[str | None] = []
     for entry in manifest.entries:
         target = Target(workspace_id=entry.workspace_id, item_id=entry.item_id)
-        items.append(WorkItem(target=target, file=entry.file))
+        origin: Target | None = None
+        if entry.has_origin:
+            assert entry.origin_workspace_id is not None
+            assert entry.origin_item_id is not None
+            origin = Target(
+                workspace_id=entry.origin_workspace_id,
+                item_id=entry.origin_item_id,
+            )
+        items.append(WorkItem(target=target, file=entry.file, origin=origin))
         names.append(entry.display_name)
     return items, names
 
@@ -142,8 +170,10 @@ def manifest_from_work_items(
 ) -> DeploymentManifest:
     """Build a manifest from effective work items.
 
-    *item_id_overrides* (e.g. create-upload results) replaces ``None`` item ids
+    *item_id_overrides* (e.g. create-deploy results) replaces ``None`` item ids
     when the override at the same index is set.
+
+    Writes schemaVersion 2 when any entry uses a Fabric origin; otherwise v1.
     """
     if not items:
         raise ManifestError("cannot build manifest from empty work item list")
@@ -169,22 +199,40 @@ def manifest_from_work_items(
         )
 
     entries: list[ManifestEntry] = []
+    uses_origin = False
     for item, name, override_id in zip(items, names, overrides, strict=True):
         if item.target is None:
             raise ManifestError("manifest entry requires a target")
-        if item.file is None:
-            raise ManifestError("manifest entry requires a local file path")
+        if item.file is None and item.origin is None:
+            raise ManifestError("manifest entry requires a local file or origin")
+        if item.file is not None and item.origin is not None:
+            raise ManifestError("manifest entry cannot have both file and origin")
         item_id = override_id if override_id else item.target.item_id
+        origin_ws = None
+        origin_item = None
+        if item.origin is not None:
+            if item.origin.item_id is None:
+                raise ManifestError("manifest origin requires workspace:artifact")
+            uses_origin = True
+            origin_ws = item.origin.workspace_id
+            origin_item = item.origin.item_id
         entries.append(
             ManifestEntry(
                 workspace_id=item.target.workspace_id,
                 item_id=item_id,
                 file=item.file,
                 display_name=name,
+                origin_workspace_id=origin_ws,
+                origin_item_id=origin_item,
             )
         )
 
-    return DeploymentManifest(kind=kind, entries=tuple(entries))
+    schema_version = SCHEMA_VERSION_V2 if uses_origin else SCHEMA_VERSION_V1
+    return DeploymentManifest(
+        kind=kind,
+        entries=tuple(entries),
+        schema_version=schema_version,
+    )
 
 
 def item_id_overrides_from_results(
@@ -233,7 +281,11 @@ def format_inspect(manifest: DeploymentManifest, *, path: Path | None = None) ->
             else f"{entry.workspace_id} (create)"
         )
         name_part = f", name={entry.display_name!r}" if entry.display_name else ""
-        lines.append(f"  {index}. {target} <- {entry.file}{name_part}")
+        if entry.has_origin:
+            source = f"{entry.origin_workspace_id}:{entry.origin_item_id}"
+        else:
+            source = str(entry.file)
+        lines.append(f"  {index}. {target} <- {source}{name_part}")
     return "\n".join(lines)
 
 
@@ -243,6 +295,7 @@ def _parse_entry(
     base: Path,
     index: int,
     path: Path,
+    schema_version: int,
 ) -> ManifestEntry:
     if not isinstance(raw, dict):
         raise ManifestError(f"entries[{index}] must be an object in {path}")
@@ -260,13 +313,50 @@ def _parse_entry(
         raise ManifestError(f"entries[{index}].itemId must be a string or null in {path}")
 
     file_raw = raw.get("file")
-    if not isinstance(file_raw, str) or not file_raw.strip():
-        raise ManifestError(f"entries[{index}].file is required in {path}")
-    file_path = Path(file_raw)
-    if not file_path.is_absolute():
-        file_path = (base / file_path).resolve()
+    origin_ws_raw = raw.get("originWorkspaceId")
+    origin_item_raw = raw.get("originItemId")
+
+    file_path: Path | None = None
+    origin_workspace_id: str | None = None
+    origin_item_id: str | None = None
+
+    has_file = isinstance(file_raw, str) and bool(file_raw.strip())
+    has_origin_ws = isinstance(origin_ws_raw, str) and bool(origin_ws_raw.strip())
+    has_origin_item = isinstance(origin_item_raw, str) and bool(origin_item_raw.strip())
+
+    if schema_version == SCHEMA_VERSION_V1:
+        if not has_file:
+            raise ManifestError(f"entries[{index}].file is required in {path}")
+        if has_origin_ws or has_origin_item:
+            raise ManifestError(
+                f"entries[{index}] origin fields require schemaVersion 2 in {path}"
+            )
     else:
-        file_path = file_path.resolve()
+        if has_file and (has_origin_ws or has_origin_item):
+            raise ManifestError(
+                f"entries[{index}] must use either file or origin, not both in {path}"
+            )
+        if not has_file and not (has_origin_ws and has_origin_item):
+            raise ManifestError(
+                f"entries[{index}] requires file or originWorkspaceId+originItemId "
+                f"in {path}"
+            )
+        if has_origin_ws != has_origin_item:
+            raise ManifestError(
+                f"entries[{index}] originWorkspaceId and originItemId must both be set "
+                f"in {path}"
+            )
+
+    if has_file:
+        file_path = Path(file_raw)  # type: ignore[arg-type]
+        if not file_path.is_absolute():
+            file_path = (base / file_path).resolve()
+        else:
+            file_path = file_path.resolve()
+
+    if has_origin_ws and has_origin_item:
+        origin_workspace_id = str(origin_ws_raw).strip()
+        origin_item_id = str(origin_item_raw).strip()
 
     display_name = raw.get("displayName")
     if display_name is not None and not isinstance(display_name, str):
@@ -281,21 +371,27 @@ def _parse_entry(
         item_id=item_id,
         file=file_path,
         display_name=display_name,
+        origin_workspace_id=origin_workspace_id,
+        origin_item_id=origin_item_id,
     )
 
 
 def _entry_to_json(entry: ManifestEntry, *, base: Path) -> dict[str, Any]:
-    try:
-        stored = entry.file.resolve().relative_to(base.resolve())
-        file_value = stored.as_posix()
-    except ValueError:
-        file_value = str(entry.file.resolve())
-
     payload: dict[str, Any] = {
         "workspaceId": entry.workspace_id,
         "itemId": entry.item_id,
-        "file": file_value,
     }
+    if entry.has_file:
+        assert entry.file is not None
+        try:
+            stored = entry.file.resolve().relative_to(base.resolve())
+            file_value = stored.as_posix()
+        except ValueError:
+            file_value = str(entry.file.resolve())
+        payload["file"] = file_value
+    if entry.has_origin:
+        payload["originWorkspaceId"] = entry.origin_workspace_id
+        payload["originItemId"] = entry.origin_item_id
     if entry.display_name:
         payload["displayName"] = entry.display_name
     return payload

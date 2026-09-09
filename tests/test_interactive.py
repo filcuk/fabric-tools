@@ -21,7 +21,7 @@ class _Ask:
 
 
 def test_interactive_dispatches_compare(monkeypatch: pytest.MonkeyPatch) -> None:
-    selects = iter(["notebook", "compare", "execute"])
+    selects = iter(["notebook", "compare", "execute", "file"])
     texts = iter(
         [
             "./a.ipynb",

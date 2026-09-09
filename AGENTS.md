@@ -6,7 +6,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 
 ## Project goal
 
-`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric. Phase 1: notebook download/upload/compare sync.
+`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric. Phase 1: notebook download/deploy/compare sync.
 
 ## Layout
 
@@ -17,7 +17,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
   - `path_setup.py` — Windows user PATH install/uninstall (`fabric-tools path …`)
   - `auth.py` — Azure / Fabric token acquisition (SP env, WAM broker, browser/device code; persistent cache)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
-  - `parsing.py` — `--target` / `--file` parsing and mode validation
+  - `parsing.py` — `--target` / `--file` / `--origin` parsing and mode validation
   - `validate.py` — `--dry-run` remote/local checks
   - `confirm.py` — overwrite / create prompts
   - `exit_codes.py` — CLI exit code constants
@@ -37,12 +37,14 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 ## Phase 1 CLI contract (target)
 
 - Targets: `--target <workspaceId>:<artifactId>` (create: `--target <workspaceId>` only)
-- Files: `--file` paired 1:1 with targets, or one file broadcast to N targets
-- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Top-level `inspect` lists `.ftdep` in cwd; `inspect -m` shows one. Interactive may offer save after execute or dry-run.
+- Files: `--file` paired 1:1 with targets, or one file broadcast to N targets (deploy/download)
+- Origins: `--origin` / `-o` `<workspaceId>:<artifactId>` as Fabric source for deploy/compare (mutually exclusive with `--file`; deploy may broadcast one origin to N targets; compare is 1:1)
+- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Schema v1 = file sources; v2 adds origin fields. Top-level `inspect` lists `.ftdep` in cwd; `inspect -m` shows one. Interactive may offer save after execute or dry-run.
 - Formats: `.ipynb` or Fabric Git `.Notebook` folder
-- Flags: `--silent`, `--dry-run`; upload overwrite may use `--cells` / `-c` (1-based indices, single `.ipynb` only)
+- Flags: `--silent`, `--dry-run`; deploy overwrite may use `--cells` / `-c` (1-based indices, single local `.ipynb` only)
 - Auth: interactive default; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`
 - Full `.ipynb` overwrite: fetch remote definition and merge omitted `metadata.dependencies` (`lakehouse`, `environment`) from remote before `updateDefinition`
+- Origin overwrite: strip origin `lakehouse`/`environment`, then preserve each target’s dependency metadata
 
 ## Commands agents should know
 

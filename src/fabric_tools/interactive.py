@@ -38,7 +38,7 @@ def run_interactive_wizard() -> None:
 
     activity = _select(
         "Select activity",
-        choices=["download", "upload", "compare"],
+        choices=["download", "deploy", "compare"],
         default="download",
     )
     mode = CommandMode(activity)
@@ -46,8 +46,8 @@ def run_interactive_wizard() -> None:
     run_mode = _select(
         "How should this run?",
         choices=[
-            Choice("Execute (download/upload/compare)", value="execute"),
-            Choice("Dry-run: validate targets and files", value="dry_both"),
+            Choice("Execute (download/deploy/compare)", value="execute"),
+            Choice("Dry-run: validate targets and sources", value="dry_both"),
             Choice("Dry-run: validate remote targets only", value="dry_targets"),
             Choice("Dry-run: validate local files only", value="dry_files"),
         ],
@@ -57,7 +57,22 @@ def run_interactive_wizard() -> None:
 
     targets: list[str] = []
     files: list[str] = []
+    origins: list[str] = []
     names: list[str] = []
+
+    source_kind = "file"
+    if mode in {CommandMode.DEPLOY, CommandMode.COMPARE} and run_mode != "dry_files":
+        if run_mode == "dry_targets":
+            source_kind = "none"
+        else:
+            source_kind = _select(
+                "Select source",
+                choices=[
+                    Choice("Local file / folder", value="file"),
+                    Choice("Fabric origin (workspace:artifact)", value="origin"),
+                ],
+                default="file",
+            )
 
     if run_mode == "dry_targets":
         while True:
@@ -78,6 +93,32 @@ def run_interactive_wizard() -> None:
             files.append(path)
             if not _confirm("Add another file?", default=False):
                 break
+    elif source_kind == "origin":
+        typer.echo("\nEnter origin/target pairs.")
+        while True:
+            origin = _text(
+                "Enter origin workspace:artifact",
+                allow_empty=bool(origins and targets),
+            )
+            if not origin:
+                if origins and targets:
+                    break
+                typer.echo("Enter at least one origin/target pair.")
+                continue
+
+            target = _text(_target_prompt(mode), allow_empty=False)
+            origins.append(origin)
+            targets.append(target)
+
+            if mode is CommandMode.DEPLOY and ":" not in target:
+                name = _text(
+                    "Display name for create (leave blank to use origin name)",
+                    allow_empty=True,
+                )
+                names.append(name)
+
+            if not _confirm("Add another origin/target pair?", default=False):
+                break
     else:
         typer.echo("\nEnter file/target pairs.")
         while True:
@@ -95,7 +136,7 @@ def run_interactive_wizard() -> None:
             files.append(path)
             targets.append(target)
 
-            if mode is CommandMode.UPLOAD and ":" not in target:
+            if mode is CommandMode.DEPLOY and ":" not in target:
                 name = _text(
                     "Display name for create (leave blank to derive from file)",
                     allow_empty=True,
@@ -129,21 +170,24 @@ def run_interactive_wizard() -> None:
         typer.echo(f"  targets:  {', '.join(targets)}")
     if files:
         typer.echo(f"  files:    {', '.join(files)}")
+    if origins:
+        typer.echo(f"  origins:  {', '.join(origins)}")
     if resolved_names:
         typer.echo(
-            f"  names:    {', '.join(n or '(from file)' for n in resolved_names)}"
+            f"  names:    {', '.join(n or '(from source)' for n in resolved_names)}"
         )
 
     if not _confirm("Proceed?", default=True):
         typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=EXIT_USER)
 
-    offer_manifest = bool(targets) and bool(files)
+    offer_manifest = bool(targets) and (bool(files) or bool(origins))
 
     run_notebook_command(
         mode,
         target_values=targets or None,
         file_values=files or None,
+        origin_values=origins or None,
         silent=silent,
         dry_run=dry_run,
         names=resolved_names,
@@ -190,7 +234,7 @@ def prompt_save_manifest(
 
 
 def _target_prompt(mode: CommandMode) -> str:
-    if mode is CommandMode.UPLOAD:
+    if mode is CommandMode.DEPLOY:
         return "Enter target workspace GUID (create) or workspace:artifact (overwrite)"
     return "Enter target workspace:artifact"
 
@@ -227,4 +271,4 @@ def _text(message: str, *, allow_empty: bool) -> str:
         value = result.strip()
         if value or allow_empty:
             return value
-        typer.echo("A value is required.")
+        typer.echo("Value required.")

@@ -1,4 +1,4 @@
-"""Compare remote Fabric notebooks to local files."""
+"""Compare remote Fabric notebooks to local files or other remotes."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def compare_notebook(
     *,
     ignore_outputs: bool = False,
 ) -> CompareResult:
-    """Fetch remote definition to a temp path and diff against the local file."""
+    """Diff target notebook against a local file or a Fabric origin."""
     if item.target is None or item.target.item_id is None:
         return CompareResult(
             ok=False,
@@ -52,14 +52,36 @@ def compare_notebook(
             header="compare",
             error="compare requires workspace:artifact target",
         )
-    if item.file is None:
+    if item.file is None and item.origin is None:
         return CompareResult(
             ok=False,
             identical=False,
             header="compare",
-            error="compare requires a local --file path",
+            error="compare requires a local --file or --origin",
+        )
+    if item.file is not None and item.origin is not None:
+        return CompareResult(
+            ok=False,
+            identical=False,
+            header="compare",
+            error="compare cannot use both --file and --origin",
         )
 
+    if item.origin is not None:
+        return _compare_origin_to_target(
+            client, item, ignore_outputs=ignore_outputs
+        )
+    return _compare_file_to_target(client, item, ignore_outputs=ignore_outputs)
+
+
+def _compare_file_to_target(
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    ignore_outputs: bool,
+) -> CompareResult:
+    assert item.target is not None and item.target.item_id is not None
+    assert item.file is not None
     target = item.target
     local_path = item.file
     try:
@@ -110,14 +132,85 @@ def compare_notebook(
         if fmt is NotebookFormat.IPYNB:
             return _diff_ipynb(
                 header,
-                remote_path=remote_path,
-                local_path=local_path,
+                left_path=remote_path,
+                right_path=local_path,
+                left_label=f"remote:{remote_path.name}",
+                right_label=f"local:{local_path}",
                 ignore_outputs=ignore_outputs,
             )
         return _diff_fabric_git(
             header,
             remote_dir=remote_path,
             local_dir=local_path,
+        )
+
+
+def _compare_origin_to_target(
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    ignore_outputs: bool,
+) -> CompareResult:
+    assert item.target is not None and item.target.item_id is not None
+    assert item.origin is not None and item.origin.item_id is not None
+    target = item.target
+    origin = item.origin
+
+    origin_label = resolve_item_name(client, origin)
+    origin_ws = resolve_workspace_name(client, origin.workspace_id)
+    target_label = resolve_item_name(client, target)
+    target_ws = resolve_workspace_name(client, target.workspace_id)
+    header = (
+        f"origin {origin_label} in {origin_ws}  vs  "
+        f"target {target_label} in {target_ws}"
+    )
+
+    try:
+        origin_definition = get_notebook_definition(
+            client,
+            origin.workspace_id,
+            origin.item_id,
+            format=NotebookFormat.IPYNB,
+        )
+        target_definition = get_notebook_definition(
+            client,
+            target.workspace_id,
+            target.item_id,
+            format=NotebookFormat.IPYNB,
+        )
+    except FabricApiError as exc:
+        return CompareResult(
+            ok=False,
+            identical=False,
+            header=header,
+            error=f"failed to fetch remote definition: {exc}",
+        )
+
+    with tempfile.TemporaryDirectory(prefix="fabric-tools-compare-") as tmp:
+        tmp_root = Path(tmp)
+        origin_path = tmp_root / "origin.ipynb"
+        target_path = tmp_root / "target.ipynb"
+        try:
+            unpack_definition(
+                origin_definition, origin_path, format_hint=NotebookFormat.IPYNB
+            )
+            unpack_definition(
+                target_definition, target_path, format_hint=NotebookFormat.IPYNB
+            )
+        except DefinitionError as exc:
+            return CompareResult(
+                ok=False,
+                identical=False,
+                header=header,
+                error=f"failed to unpack remote definition: {exc}",
+            )
+        return _diff_ipynb(
+            header,
+            left_path=target_path,
+            right_path=origin_path,
+            left_label=f"target:{target.label()}",
+            right_label=f"origin:{origin.label()}",
+            ignore_outputs=ignore_outputs,
         )
 
 
@@ -135,8 +228,10 @@ def run_compare_batch(
 def _diff_ipynb(
     header: str,
     *,
-    remote_path: Path,
-    local_path: Path,
+    left_path: Path,
+    right_path: Path,
+    left_label: str,
+    right_label: str,
     ignore_outputs: bool,
 ) -> CompareResult:
     set_notebook_diff_targets(
@@ -147,18 +242,18 @@ def _diff_ipynb(
         identifier=False,
         details=False,
     )
-    nb_remote = _load_notebook_for_diff(remote_path)
-    nb_local = _load_notebook_for_diff(local_path)
-    diff = diff_notebooks(nb_remote, nb_local)
+    nb_left = _load_notebook_for_diff(left_path)
+    nb_right = _load_notebook_for_diff(right_path)
+    diff = diff_notebooks(nb_left, nb_right)
     if not diff:
         return CompareResult(ok=True, identical=True, header=header, diff_text="")
 
     buffer = StringIO()
     config = PrettyPrintConfig(out=buffer)
     pretty_print_notebook_diff(
-        f"remote:{remote_path.name}",
-        f"local:{local_path}",
-        nb_remote,
+        left_label,
+        right_label,
+        nb_left,
         diff,
         config,
     )

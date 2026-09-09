@@ -37,18 +37,19 @@ fabric-tools path uninstall
 |------|---------|---------|
 | `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated) |
 | `--file` | `-f` | Local `.ipynb` or `*.Notebook` folder (repeatable or comma-separated) |
+| `--origin` | `-o` | Fabric `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
 | `--dry-run` | `-d` | Validate only (either side may be omitted); with `-m`, writes the manifest on success |
-| `--name` | `-n` | Display name for create uploads |
-| `--cells` | `-c` | Overwrite only listed 1-based cells (single `.ipynb`) |
+| `--name` | `-n` | Display name for create deploys |
+| `--cells` | `-c` | Overwrite only listed 1-based cells (single local `.ipynb` only) |
 | `--interactive` | `-i` | Guided wizard to build a request |
 
 ## Example commands
 
 ```powershell
 # Dry-run: local file only
-fabric-tools notebook upload -d -f .\etl.ipynb
+fabric-tools notebook deploy -d -f .\etl.ipynb
 
 # Dry-run: remote target only
 fabric-tools notebook download -d -t <workspaceId>:<notebookId>
@@ -56,23 +57,29 @@ fabric-tools notebook download -d -t <workspaceId>:<notebookId>
 # Download (format inferred from destination path)
 fabric-tools notebook download -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
 
-# Overwrite remote
-fabric-tools notebook upload -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
+# Deploy overwrite from local file
+fabric-tools notebook deploy -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
 
-# Overwrite only specific cells (1-based; single .ipynb)
-fabric-tools notebook upload -s -t <workspaceId>:<notebookId> -f .\etl.ipynb -c 1,3,5
+# Deploy overwrite only specific cells (1-based; single .ipynb)
+fabric-tools notebook deploy -s -t <workspaceId>:<notebookId> -f .\etl.ipynb -c 1,3,5
 
-# Create remote
-fabric-tools notebook upload -s -t <workspaceId> -f .\etl.ipynb -n "ETL"
+# Deploy create from local file
+fabric-tools notebook deploy -s -t <workspaceId> -f .\etl.ipynb -n "ETL"
+
+# Deploy from Fabric origin (e.g. dev) to test and prod
+fabric-tools notebook deploy -s -o <devWs>:<notebookId> -t <testWs>:<notebookId>,<prodWs>:<notebookId>
 
 # Compare remote vs local
 fabric-tools notebook compare -t <workspaceId>:<notebookId> -f .\etl.ipynb
 
-# Dry-run validate and write test.ftdep (no remote changes)
-fabric-tools notebook upload -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
+# Compare two Fabric notebooks
+fabric-tools notebook compare -o <devWs>:<notebookId> -t <testWs>:<notebookId>
 
-# Upload and write test.ftdep (create uploads store the new artifact GUID)
-fabric-tools notebook upload -s -t <workspaceId> -f .\etl.ipynb -n "ETL" -m test
+# Dry-run validate and write test.ftdep (no remote changes)
+fabric-tools notebook deploy -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
+
+# Deploy and write test.ftdep (create deploys store the new artifact GUID)
+fabric-tools notebook deploy -s -t <workspaceId> -f .\etl.ipynb -n "ETL" -m test
 
 # Later compare using only the manifest
 fabric-tools notebook compare -m test
@@ -87,9 +94,7 @@ fabric-tools inspect
 ## Authentication
 
 Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
-broker (Web Account Manager — the same signed-in work account Teams/Office use), then
-falls back to browser or device-code auth. Tokens and an auth record are cached under
-`%LOCALAPPDATA%\fabric-tools` so later commands can stay silent until the session expires.
+broker, then falls back to browser or device-code auth.
 
 For automation, set a service principal:
 
