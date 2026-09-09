@@ -40,7 +40,7 @@ def compare_notebook(
     client: FabricClient,
     item: WorkItem,
     *,
-    ignore_outputs: bool = True,
+    ignore_outputs: bool = False,
 ) -> CompareResult:
     """Fetch remote definition to a temp path and diff against the local file."""
     if item.target is None or item.target.item_id is None:
@@ -123,7 +123,7 @@ def run_compare_batch(
     client: FabricClient,
     items: list[WorkItem],
     *,
-    ignore_outputs: bool = True,
+    ignore_outputs: bool = False,
 ) -> list[CompareResult]:
     return [
         compare_notebook(client, item, ignore_outputs=ignore_outputs) for item in items

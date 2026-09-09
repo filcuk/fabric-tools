@@ -106,13 +106,13 @@ def run_interactive_wizard() -> None:
                 break
 
     silent = False
-    ignore_outputs = True
+    ignore_outputs = False
     if not dry_run and mode is not CommandMode.COMPARE:
         silent = _confirm("Silent mode (skip confirmation prompts)?", default=False)
     if mode is CommandMode.COMPARE and not dry_run:
         ignore_outputs = _confirm(
             "Ignore notebook cell outputs in .ipynb diffs?",
-            default=True,
+            default=False,
         )
 
     resolved_names: list[str | None] | None = None

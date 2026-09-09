@@ -271,14 +271,14 @@ def notebook_download(
         None,
         "--target",
         "-t",
-        help="(required unless --manifest or --dry-run files-only) workspace:artifact GUID. "
+        help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated. One workspace only.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required unless --manifest or --dry-run targets-only) Local .ipynb or *.Notebook folder. "
+        help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
         "Repeatable or comma-separated. One file may broadcast to all targets.",
     ),
     manifest: Optional[str] = typer.Option(
@@ -317,14 +317,14 @@ def notebook_upload(
         None,
         "--target",
         "-t",
-        help="(required unless --manifest or --dry-run files-only) workspace GUID (create) or "
+        help="(required without -m or -d) workspace GUID (create) or "
         "workspace:artifact (overwrite). Repeatable or comma-separated.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required unless --manifest or --dry-run targets-only) Local .ipynb or *.Notebook folder. "
+        help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
         "Repeatable or comma-separated. One file may broadcast to all targets.",
     ),
     name: Optional[list[str]] = typer.Option(
@@ -378,14 +378,14 @@ def notebook_compare(
         None,
         "--target",
         "-t",
-        help="(required unless --manifest or --dry-run files-only) workspace:artifact GUID. "
+        help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated. One workspace only. Must 1:1 match --file.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required unless --manifest or --dry-run targets-only) Local .ipynb or *.Notebook folder. "
+        help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
         "Must 1:1 match --target (no broadcast).",
     ),
     manifest: Optional[str] = typer.Option(
@@ -400,10 +400,11 @@ def notebook_compare(
         "-d",
         help="(optional) Validate targets and/or files only; do not compare.",
     ),
-    ignore_outputs: bool = typer.Option(
+    include_outputs: bool = typer.Option(
         True,
-        "--ignore-outputs/--include-outputs",
-        help="(optional) For .ipynb diffs, ignore cell outputs (default: ignore).",
+        "--include-outputs",
+        "-i",
+        help="(optional) For .ipynb diffs, include cell outputs.",
     ),
 ) -> None:
     """Compare remote notebook to local file (nbdime for .ipynb)."""
@@ -413,7 +414,7 @@ def notebook_compare(
         file_values=file,
         silent=True,
         dry_run=dry_run,
-        ignore_outputs=ignore_outputs,
+        ignore_outputs=not include_outputs,
         manifest=manifest,
     )
 
@@ -427,7 +428,7 @@ def run_notebook_command(
     dry_run: bool,
     names: list[str | None] | list[str] | None = None,
     cells: list[str] | None = None,
-    ignore_outputs: bool = True,
+    ignore_outputs: bool = False,
     manifest: str | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
