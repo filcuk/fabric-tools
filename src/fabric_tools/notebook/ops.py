@@ -19,6 +19,7 @@ from fabric_tools.notebook.definition import (
     detect_format,
     format_for_api,
     ipynb_from_definition,
+    merge_remote_dependencies,
     pack_definition,
     pack_ipynb_dict,
     read_ipynb,
@@ -124,7 +125,20 @@ def upload_notebook(
         )
 
     assert target.item_id is not None
+    preserved_keys: list[str] = []
     try:
+        if detect_format(path) is NotebookFormat.IPYNB:
+            local_nb = read_ipynb(path)
+            remote_definition = get_notebook_definition(
+                client,
+                target.workspace_id,
+                target.item_id,
+                format=NotebookFormat.IPYNB,
+            )
+            remote_nb = ipynb_from_definition(remote_definition)
+            merged_nb, preserved_keys = merge_remote_dependencies(local_nb, remote_nb)
+            if preserved_keys:
+                definition = pack_ipynb_dict(merged_nb)
         update_notebook_definition(
             client,
             target.workspace_id,
@@ -132,16 +146,19 @@ def upload_notebook(
             definition=definition,
             update_metadata=definition_has_platform(definition),
         )
-    except FabricApiError as exc:
+    except (FabricApiError, DefinitionError) as exc:
         return OpResult(
             False,
             f"overwrite failed {target.label()} from {path}: {exc}",
             target.workspace_id,
             target.item_id,
         )
+    suffix = ""
+    if preserved_keys:
+        suffix = f" (preserved remote {', '.join(preserved_keys)})"
     return OpResult(
         True,
-        f"updated {target.label()} from {path}",
+        f"updated {target.label()} from {path}{suffix}",
         target.workspace_id,
         target.item_id,
     )

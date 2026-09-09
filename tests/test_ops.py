@@ -13,9 +13,17 @@ from fabric_tools.parsing import Target, WorkItem
 
 
 class FakeClient:
-    def __init__(self, *, remote_cells: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        remote_cells: list[dict[str, Any]] | None = None,
+        remote_metadata: dict[str, Any] | None = None,
+    ) -> None:
         self.calls: list[tuple[str, str, dict[str, Any] | None, Any]] = []
         self.remote_cells = remote_cells if remote_cells is not None else []
+        self.remote_metadata = (
+            remote_metadata if remote_metadata is not None else {"remote": True}
+        )
         self.create_response = {
             "id": "99999999-9999-9999-9999-999999999999",
             "type": "Notebook",
@@ -41,7 +49,7 @@ class FakeClient:
                         "nbformat": 4,
                         "nbformat_minor": 5,
                         "cells": self.remote_cells,
-                        "metadata": {"remote": True},
+                        "metadata": self.remote_metadata,
                     }
                 ).encode("utf-8")
             ).decode("ascii")
@@ -113,7 +121,75 @@ def test_upload_overwrite(tmp_path: Path) -> None:
     )
     result = upload_notebook(client, item)  # type: ignore[arg-type]
     assert result.ok
+    assert any(call[1].endswith("/getDefinition") for call in client.calls)
     assert any(call[1].endswith("/updateDefinition") for call in client.calls)
+
+
+def test_upload_overwrite_preserves_remote_lakehouse(tmp_path: Path) -> None:
+    remote_meta = {
+        "dependencies": {
+            "lakehouse": {
+                "default_lakehouse": "lh-id",
+                "default_lakehouse_name": "LH",
+                "default_lakehouse_workspace_id": "ws-id",
+            }
+        }
+    }
+    client = FakeClient(remote_metadata=remote_meta)
+    src = tmp_path / "demo.ipynb"
+    src.write_text(
+        json.dumps(
+            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
+        ),
+        encoding="utf-8",
+    )
+    item = WorkItem(
+        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        src,
+    )
+    result = upload_notebook(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert "preserved remote lakehouse" in result.message
+    assert client.last_update_definition is not None
+    parts = client.last_update_definition["definition"]["parts"]
+    payload = base64.b64decode(parts[0]["payload"])
+    uploaded = json.loads(payload.decode("utf-8"))
+    assert (
+        uploaded["metadata"]["dependencies"]["lakehouse"]["default_lakehouse"]
+        == "lh-id"
+    )
+
+
+def test_upload_overwrite_keeps_explicit_local_lakehouse(tmp_path: Path) -> None:
+    client = FakeClient(
+        remote_metadata={
+            "dependencies": {"lakehouse": {"default_lakehouse": "remote-lh"}}
+        }
+    )
+    src = tmp_path / "demo.ipynb"
+    src.write_text(
+        json.dumps(
+            {
+                "nbformat": 4,
+                "nbformat_minor": 5,
+                "cells": [],
+                "metadata": {"dependencies": {"lakehouse": {}}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    item = WorkItem(
+        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        src,
+    )
+    result = upload_notebook(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert "preserved remote" not in result.message
+    assert client.last_update_definition is not None
+    parts = client.last_update_definition["definition"]["parts"]
+    payload = base64.b64decode(parts[0]["payload"])
+    uploaded = json.loads(payload.decode("utf-8"))
+    assert uploaded["metadata"]["dependencies"]["lakehouse"] == {}
 
 
 def test_upload_selective_cells(tmp_path: Path) -> None:

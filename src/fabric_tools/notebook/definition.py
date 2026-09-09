@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from copy import deepcopy
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ FABRIC_GIT_CONTENT_NAMES = (
 IPYNB_PART_PATH = "artifact.content.ipynb"
 PLATFORM_PART_PATH = ".platform"
 PAYLOAD_TYPE = "InlineBase64"
+# Fabric stores default lakehouse / environment under metadata.dependencies.
+PRESERVE_DEPENDENCY_KEYS = ("lakehouse", "environment")
 
 
 class NotebookFormat(str, Enum):
@@ -118,6 +121,50 @@ def pack_ipynb_dict(notebook: dict[str, Any]) -> dict[str, Any]:
 def read_ipynb(path: Path | str) -> dict[str, Any]:
     """Load and validate a local ``.ipynb`` file."""
     return _read_ipynb(Path(path))
+
+
+def merge_remote_dependencies(
+    local: dict[str, Any],
+    remote: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Copy remote Fabric dependency metadata into *local* when omitted.
+
+    Under ``metadata.dependencies``, for each of ``lakehouse`` and
+    ``environment``: if the local notebook lacks that key, copy the remote
+    value. Explicit local values (including empty ``{}``) are left unchanged so
+    intentional clears are possible.
+
+    Returns ``(merged_notebook, preserved_keys)`` where *preserved_keys* lists
+    dependency keys that were filled from remote.
+    """
+    merged = deepcopy(local)
+    remote_meta = remote.get("metadata")
+    if not isinstance(remote_meta, dict):
+        return merged, []
+    remote_deps = remote_meta.get("dependencies")
+    if not isinstance(remote_deps, dict) or not remote_deps:
+        return merged, []
+
+    local_meta = merged.get("metadata")
+    if not isinstance(local_meta, dict):
+        local_meta = {}
+        merged["metadata"] = local_meta
+
+    local_deps = local_meta.get("dependencies")
+    if not isinstance(local_deps, dict):
+        local_deps = {}
+        local_meta["dependencies"] = local_deps
+
+    preserved: list[str] = []
+    for key in PRESERVE_DEPENDENCY_KEYS:
+        if key in local_deps:
+            continue
+        remote_val = remote_deps.get(key)
+        if remote_val is None:
+            continue
+        local_deps[key] = deepcopy(remote_val)
+        preserved.append(key)
+    return merged, preserved
 
 
 def ipynb_from_definition(definition: dict[str, Any]) -> dict[str, Any]:

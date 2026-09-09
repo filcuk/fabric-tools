@@ -42,6 +42,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 - Formats: `.ipynb` or Fabric Git `.Notebook` folder
 - Flags: `--silent`, `--dry-run`; upload overwrite may use `--cells` / `-c` (1-based indices, single `.ipynb` only)
 - Auth: interactive default; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`
+- Full `.ipynb` overwrite: fetch remote definition and merge omitted `metadata.dependencies` (`lakehouse`, `environment`) from remote before `updateDefinition`
 
 ## Commands agents should know
 
