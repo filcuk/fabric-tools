@@ -80,7 +80,11 @@ fabric-tools inspect -m test
 
 ## Authentication
 
-Interactive Azure sign-in by default.
+Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
+broker (Web Account Manager — the same signed-in work account Teams/Office use), then
+falls back to browser or device-code auth. Tokens and an auth record are cached under
+`%LOCALAPPDATA%\fabric-tools` so later commands can stay silent until the session expires.
+
 For automation, set a service principal:
 
 ```powershell

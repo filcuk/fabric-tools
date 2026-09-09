@@ -15,7 +15,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers
   - `path_setup.py` — Windows user PATH install/uninstall (`fabric-tools path …`)
-  - `auth.py` — Azure / Fabric token acquisition (SP env + interactive/device code)
+  - `auth.py` — Azure / Fabric token acquisition (SP env, WAM broker, browser/device code; persistent cache)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
   - `parsing.py` — `--target` / `--file` parsing and mode validation
   - `validate.py` — `--dry-run` remote/local checks
@@ -29,7 +29,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 ## Conventions
 
 - Python 3.11+, `src/` layout, Hatchling build
-- CLI framework: Typer; HTTP: httpx; auth: azure-identity
+- CLI framework: Typer; HTTP: httpx; auth: azure-identity (+ azure-identity-broker on Windows WAM)
 - Prefer small, focused modules over large catch-all files
 - Do not commit secrets, `.env`, or built `dist/` / `build/` artifacts
 - Plan execution: complete one plan step, stop for user review/commit, wait for `continue`

@@ -81,12 +81,49 @@ def validate_local_notebook(path: Path | str) -> NotebookFormat:
     return fmt
 
 
+def normalize_ipynb(notebook: dict[str, Any]) -> dict[str, Any]:
+    """Apply nbformat normalisation (e.g. add missing cell ``id`` fields).
+
+    Cell ids are added up front with nbformat's corpus id generator so later
+    validation does not emit ``MissingIDFieldWarning``.
+    """
+    if not isinstance(notebook, dict) or "cells" not in notebook:
+        raise DefinitionError("Invalid notebook object: missing cells")
+    cells = notebook.get("cells")
+    if not isinstance(cells, list):
+        raise DefinitionError("Invalid notebook object: cells must be a list")
+
+    # Import lazily: only ipynb paths need nbformat.
+    from copy import deepcopy
+
+    from nbformat.corpus.words import generate_corpus_id
+    from nbformat.validator import normalize
+
+    normalized_in = deepcopy(notebook)
+    try:
+        major = int(normalized_in.get("nbformat") or 4)
+        minor = int(normalized_in.get("nbformat_minor") or 0)
+    except (TypeError, ValueError):
+        major, minor = 4, 0
+
+    # nbformat 4.5+ requires unique cell ids; add them before validate/normalize.
+    if (major, minor) >= (4, 5):
+        for cell in normalized_in["cells"]:
+            if isinstance(cell, dict) and "id" not in cell:
+                cell["id"] = generate_corpus_id()
+
+    _changes, normalized = normalize(normalized_in)
+    if not isinstance(normalized, dict) or "cells" not in normalized:
+        raise DefinitionError("Invalid notebook after normalisation")
+    return normalized
+
+
 def pack_definition(path: Path | str) -> dict[str, Any]:
     """Build a Fabric notebook definition object from a local path."""
     p = Path(path)
     fmt = validate_local_notebook(p)
     if fmt is NotebookFormat.IPYNB:
-        return pack_ipynb_bytes(p.read_bytes())
+        return pack_ipynb_dict(_read_ipynb(p))
 
     content_path = _find_fabric_git_content(p)
     assert content_path is not None
@@ -112,9 +149,8 @@ def pack_ipynb_bytes(raw: bytes) -> dict[str, Any]:
 
 def pack_ipynb_dict(notebook: dict[str, Any]) -> dict[str, Any]:
     """Build an ipynb-format Fabric definition from a notebook object."""
-    if "cells" not in notebook:
-        raise DefinitionError("Invalid notebook object: missing cells")
-    raw = json.dumps(notebook, ensure_ascii=False).encode("utf-8")
+    normalized = normalize_ipynb(notebook)
+    raw = json.dumps(normalized, ensure_ascii=False).encode("utf-8")
     return pack_ipynb_bytes(raw)
 
 
@@ -180,7 +216,7 @@ def ipynb_from_definition(definition: dict[str, Any]) -> dict[str, Any]:
         raise DefinitionError(f"Invalid remote .ipynb content: {exc}") from exc
     if not isinstance(data, dict) or "cells" not in data:
         raise DefinitionError("Invalid remote .ipynb content: missing cells")
-    return data
+    return normalize_ipynb(data)
 
 
 def unpack_definition(
@@ -286,7 +322,10 @@ def _read_ipynb(path: Path) -> dict[str, Any]:
         raise DefinitionError(f"Invalid .ipynb file '{path}': {exc}") from exc
     if not isinstance(data, dict) or "cells" not in data:
         raise DefinitionError(f"Invalid .ipynb file '{path}': missing cells")
-    return data
+    try:
+        return normalize_ipynb(data)
+    except DefinitionError as exc:
+        raise DefinitionError(f"Invalid .ipynb file '{path}': {exc}") from exc
 
 
 def _select_ipynb_bytes(parts: list[tuple[str, bytes]]) -> bytes:

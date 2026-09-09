@@ -13,7 +13,9 @@ from fabric_tools.notebook.definition import (
     definition_has_platform,
     display_name_from_path,
     merge_remote_dependencies,
+    normalize_ipynb,
     pack_definition,
+    read_ipynb,
     unpack_definition,
     validate_local_notebook,
 )
@@ -128,3 +130,48 @@ def test_merge_remote_dependencies_noop_without_remote() -> None:
     merged, preserved = merge_remote_dependencies(local, {"nbformat": 4, "cells": [], "metadata": {}})
     assert preserved == []
     assert merged == local
+
+
+def test_normalize_ipynb_adds_missing_cell_ids() -> None:
+    notebook = {
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {},
+        "cells": [
+            {
+                "cell_type": "code",
+                "source": ["print(1)\n"],
+                "metadata": {},
+                "outputs": [],
+                "execution_count": None,
+            }
+        ],
+    }
+    assert "id" not in notebook["cells"][0]
+    normalized = normalize_ipynb(notebook)
+    assert "id" in normalized["cells"][0]
+    assert isinstance(normalized["cells"][0]["id"], str)
+    assert normalized["cells"][0]["id"]
+
+
+def test_read_ipynb_normalizes_cell_ids(tmp_path: Path) -> None:
+    path = tmp_path / "noid.ipynb"
+    path.write_text(
+        json.dumps(
+            {
+                "nbformat": 4,
+                "nbformat_minor": 5,
+                "metadata": {},
+                "cells": [
+                    {
+                        "cell_type": "markdown",
+                        "source": ["# hi\n"],
+                        "metadata": {},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = read_ipynb(path)
+    assert loaded["cells"][0]["id"]

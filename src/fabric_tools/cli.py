@@ -737,6 +737,15 @@ def _resolve_upload_names(
 def run() -> None:
     """Console / exe entrypoint with a stable Usage name (not ``*.exe``)."""
     import sys
+    import warnings
+
+    # MSAL emits this library-policy hint on interactive auth; not actionable for users.
+    warnings.filterwarnings(
+        "ignore",
+        message=r"response_mode='form_post' is recommended for better security\..*",
+        category=UserWarning,
+        module=r"msal\.oauth2cli\.oauth2",
+    )
 
     # Unquoted ``-t a, b, c`` is shell-split; rejoin before Typer/Click parses.
     sys.argv = [sys.argv[0], *rejoin_spaced_csv_argv(sys.argv[1:])]

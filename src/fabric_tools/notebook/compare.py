@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import json
 import tempfile
 from dataclasses import dataclass, field
 from io import StringIO
@@ -19,6 +20,7 @@ from fabric_tools.notebook.definition import (
     PLATFORM_PART_PATH,
     DefinitionError,
     NotebookFormat,
+    read_ipynb,
     unpack_definition,
     validate_local_notebook,
 )
@@ -169,7 +171,9 @@ def _diff_ipynb(
 
 
 def _load_notebook_for_diff(path: Path) -> nbformat.NotebookNode:
-    notebook = nbformat.read(path, as_version=4)
+    # read_ipynb normalises (adds missing cell ids); reads() builds a proper
+    # NotebookNode (e.g. joins source lines) without MissingIDFieldWarning.
+    notebook = nbformat.reads(json.dumps(read_ipynb(path)), as_version=4)
     # Drop cell ids: Fabric vs local exports often differ only by generated ids.
     for cell in notebook.get("cells", []):
         if isinstance(cell, dict) or hasattr(cell, "pop"):
