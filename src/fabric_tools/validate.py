@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from fabric_tools.client import FabricApiError, FabricClient
 from fabric_tools.notebook.cells import (
@@ -40,9 +41,14 @@ def run_dry_run(
     results: list[CheckResult] = []
 
     if has_files:
+        seen_files: set[Path] = set()
         for item in items:
             if item.file is None:
                 continue
+            file_key = item.file.resolve()
+            if file_key in seen_files:
+                continue
+            seen_files.add(file_key)
             try:
                 fmt = validate_local_notebook(item.file)
                 results.append(
