@@ -15,6 +15,7 @@ Open a new terminal and get started with the following:
 ```powershell
 fabric-tools --help
 fabric-tools notebook --help
+fabric-tools dataflow-gen1 --help
 fabric-tools --interactive
 ```
 
@@ -30,19 +31,24 @@ fabric-tools path uninstall
 - Notebooks
   - `.ipynb` — Jupyter notebook
   - `*.Notebook\` — Fabric Git folder with `notebook-content.*` and `.platform`
+  - download, deploy (create/overwrite), compare, delete (soft delete)
+- Dataflow Gen1 (Power BI)
+  - `model.json` — CDM dataflow definition
+  - download, deploy (**create only**), compare, delete
+  - Connections/credentials are not in the JSON; configure them in the service after create
 
 ## Flags
 
 | Flag | Alias | Purpose |
 |------|---------|---------|
 | `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated) |
-| `--file` | `-f` | Local `.ipynb` or `*.Notebook` folder (repeatable or comma-separated) |
-| `--origin` | `-o` | Fabric `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`) |
+| `--file` | `-f` | Local notebook path/folder or Gen1 `model.json` (repeatable or comma-separated) |
+| `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
 | `--dry-run` | `-d` | Validate only (either side may be omitted); with `-m`, writes the manifest on success |
 | `--name` | `-n` | Display name for create deploys |
-| `--cells` | `-c` | Overwrite only listed 1-based cells (single local `.ipynb` only) |
+| `--cells` | `-c` | Notebook overwrite only: listed 1-based cells (single local `.ipynb` only) |
 | `--interactive` | `-i` | Guided wizard to build a request |
 
 ## Example commands
@@ -75,6 +81,15 @@ fabric-tools notebook compare -t <workspaceId>:<notebookId> -f .\etl.ipynb
 # Compare two Fabric notebooks
 fabric-tools notebook compare -o <devWs>:<notebookId> -t <testWs>:<notebookId>
 
+# Soft-delete notebooks
+fabric-tools notebook delete -s -t <workspaceId>:<notebookId>
+
+# Dataflow Gen1: download / create / compare / delete
+fabric-tools dataflow-gen1 download -s -t <workspaceId>:<dataflowId> -f .\model.json
+fabric-tools dataflow-gen1 deploy -s -t <workspaceId> -f .\model.json -n "Sales"
+fabric-tools dataflow-gen1 compare -t <workspaceId>:<dataflowId> -f .\model.json
+fabric-tools dataflow-gen1 delete -s -t <workspaceId>:<dataflowId>
+
 # Dry-run validate and write test.ftdep (no remote changes)
 fabric-tools notebook deploy -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
 
@@ -96,6 +111,9 @@ fabric-tools inspect
 Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
 broker, then falls back to browser or device-code auth.
 
+Notebooks use the Fabric API token. Dataflow Gen1 uses a Power BI API token
+(same sign-in / service principal; different audience).
+
 For automation, set a service principal:
 
 ```powershell
@@ -110,7 +128,7 @@ $env:AZURE_CLIENT_SECRET="..."
 |------|---------|
 | `0` | Success (compare: all pairs identical) |
 | `1` | Validation error, user abort, or compare found differences |
-| `2` | Fabric API / operation failure |
+| `2` | Fabric / Power BI API or operation failure |
 
 ## Development
 
