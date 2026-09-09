@@ -39,7 +39,7 @@ fabric-tools path uninstall
 | `--file` | `-f` | Local `.ipynb` or `*.Notebook` folder (repeatable or comma-separated) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
-| `--dry-run` | `-d` | Validate only (either side may be omitted) |
+| `--dry-run` | `-d` | Validate only (either side may be omitted); with `-m`, writes the manifest on success |
 | `--name` | `-n` | Display name for create uploads |
 | `--cells` | `-c` | Overwrite only listed 1-based cells (single `.ipynb`) |
 | `--interactive` | `-i` | Guided wizard to build a request |
@@ -67,6 +67,9 @@ fabric-tools notebook upload -s -t <workspaceId> -f .\etl.ipynb -n "ETL"
 
 # Compare remote vs local
 fabric-tools notebook compare -t <workspaceId>:<notebookId> -f .\etl.ipynb
+
+# Dry-run validate and write test.ftdep (no remote changes)
+fabric-tools notebook upload -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
 
 # Upload and write test.ftdep (create uploads store the new artifact GUID)
 fabric-tools notebook upload -s -t <workspaceId> -f .\etl.ipynb -n "ETL" -m test

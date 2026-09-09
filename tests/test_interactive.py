@@ -60,7 +60,7 @@ def test_interactive_dispatches_compare(monkeypatch: pytest.MonkeyPatch) -> None
     assert captured["kwargs"]["on_success"] is not None
 
 
-def test_interactive_dry_run_skips_manifest_callback(
+def test_interactive_dry_run_offers_manifest_callback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     selects = iter(["notebook", "download", "dry_both"])
@@ -95,7 +95,7 @@ def test_interactive_dry_run_skips_manifest_callback(
     with pytest.raises(typer.Exit):
         run_interactive_wizard()
     assert captured["kwargs"]["dry_run"] is True
-    assert captured["kwargs"]["on_success"] is None
+    assert captured["kwargs"]["on_success"] is not None
 
 
 def test_prompt_save_manifest_writes_file(

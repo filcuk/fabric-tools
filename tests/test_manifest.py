@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from fabric_tools.cli import app, _resolve_notebook_inputs, _write_manifest_after_success
+from fabric_tools.client import FabricApiError
 from fabric_tools.manifest import (
     ManifestError,
     format_inspect,
@@ -156,6 +157,98 @@ def test_write_manifest_after_success_writes(
     )
     data = json.loads((tmp_path / "out.ftdep").read_text(encoding="utf-8"))
     assert data["entries"][0]["itemId"] == ITEM2
+
+
+def test_dry_run_writes_manifest_on_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text(
+        json.dumps(
+            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
+        ),
+        encoding="utf-8",
+    )
+
+    class OkClient:
+        def get_workspace(self, workspace_id: str) -> dict:
+            return {"id": workspace_id, "displayName": "Dev"}
+
+        def get_item(self, workspace_id: str, item_id: str) -> dict:
+            return {
+                "id": item_id,
+                "workspaceId": workspace_id,
+                "displayName": "NB",
+                "type": "Notebook",
+            }
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("fabric_tools.cli.FabricClient", OkClient)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "notebook",
+            "upload",
+            "-d",
+            "-t",
+            f"{WS}:{ITEM}",
+            "-f",
+            str(nb),
+            "-m",
+            "setup",
+        ],
+    )
+    assert result.exit_code == 0
+    assert (tmp_path / "setup.ftdep").exists()
+    assert "Wrote manifest:" in result.stdout
+    data = json.loads((tmp_path / "setup.ftdep").read_text(encoding="utf-8"))
+    assert data["entries"][0]["workspaceId"] == WS
+    assert data["entries"][0]["itemId"] == ITEM
+
+
+def test_dry_run_skips_manifest_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text(
+        json.dumps(
+            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
+        ),
+        encoding="utf-8",
+    )
+
+    class BadClient:
+        def get_workspace(self, workspace_id: str) -> dict:
+            raise FabricApiError("missing", status_code=404, error_code="WorkspaceNotFound")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("fabric_tools.cli.FabricClient", BadClient)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "notebook",
+            "upload",
+            "-d",
+            "-t",
+            f"{WS}:{ITEM}",
+            "-f",
+            str(nb),
+            "-m",
+            "setup",
+        ],
+    )
+    assert result.exit_code != 0
+    assert not (tmp_path / "setup.ftdep").exists()
 
 
 def test_inspect_cli(tmp_path: Path) -> None:

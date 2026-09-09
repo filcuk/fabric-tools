@@ -46,7 +46,7 @@ from fabric_tools.validate import run_dry_run
 
 _MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
-    "Alone: load targets/files. With a successful run: write/update the manifest."
+    "Alone: load targets/files. With a successful run or dry-run: write/update the manifest."
 )
 
 _BANNER = r"""
@@ -440,9 +440,9 @@ def run_notebook_command(
 ) -> None:
     """Shared entry used by CLI commands and the interactive wizard.
 
-    *on_success* is called after a completed successful operation (all op/compare
-    results ok), before the process exit code is raised — used by interactive
-    mode to offer saving a deployment manifest.
+    *on_success* is called after a completed successful operation or dry-run (all
+    checks/ops/compare results ok), before the process exit code is raised — used
+    by interactive mode to offer saving a deployment manifest.
     """
     try:
         cell_indices = parse_cell_indices(cells)
@@ -485,6 +485,26 @@ def run_notebook_command(
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
+        if not failed and has_targets and has_files:
+            try:
+                display_names = (
+                    _resolve_upload_names(items, resolved_names)
+                    if mode is CommandMode.UPLOAD
+                    else None
+                )
+            except ParseError as exc:
+                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=EXIT_USER) from exc
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+            )
         raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
 
     try:
@@ -653,7 +673,7 @@ def _write_manifest_after_success(
     op_results: list[OpResult] | None = None,
     compare_results: list[CompareResult] | None = None,
 ) -> None:
-    """Rewrite ``.ftdep`` when ``-m`` is set and the operation succeeded."""
+    """Rewrite ``.ftdep`` when ``-m`` is set and the operation or dry-run succeeded."""
     if not manifest:
         return
     if op_results is not None and not all(result.ok for result in op_results):

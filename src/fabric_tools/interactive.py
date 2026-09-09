@@ -138,7 +138,7 @@ def run_interactive_wizard() -> None:
         typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=EXIT_USER)
 
-    offer_manifest = not dry_run and bool(targets) and bool(files)
+    offer_manifest = bool(targets) and bool(files)
 
     run_notebook_command(
         mode,
@@ -159,7 +159,7 @@ def prompt_save_manifest(
     op_results: list[OpResult] | None = None,
     compare_results: list[CompareResult] | None = None,
 ) -> None:
-    """Ask whether to write a ``.ftdep`` after a successful interactive run."""
+    """Ask whether to write a ``.ftdep`` after a successful interactive run or dry-run."""
     if op_results is not None and not all(result.ok for result in op_results):
         return
     if compare_results is not None and not all(result.ok for result in compare_results):
