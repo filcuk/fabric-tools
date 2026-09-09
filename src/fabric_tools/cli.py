@@ -406,7 +406,7 @@ def notebook_compare(
         help="(optional) For .ipynb diffs, ignore cell outputs (default: ignore).",
     ),
 ) -> None:
-    """Compare remote notebook(s) to local files (nbdime for .ipynb)."""
+    """Compare remote notebook to local file (nbdime for .ipynb)."""
     run_notebook_command(
         CommandMode.COMPARE,
         target_values=target,
