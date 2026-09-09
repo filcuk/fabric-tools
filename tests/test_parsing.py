@@ -12,6 +12,7 @@ from fabric_tools.parsing import (
     build_work_items,
     parse_file_values,
     parse_target_values,
+    rejoin_spaced_csv_argv,
 )
 
 WS = "11111111-1111-1111-1111-111111111111"
@@ -25,6 +26,58 @@ def test_parse_targets_comma_and_create() -> None:
     assert len(targets) == 3
     assert targets[0].item_id == A
     assert targets[2].is_create
+
+
+def test_parse_targets_allows_spaces_after_commas() -> None:
+    targets = parse_target_values([f"{WS}:{A}, {WS}:{B}"])
+    assert len(targets) == 2
+    assert targets[0].item_id == A
+    assert targets[1].item_id == B
+
+
+def test_rejoin_spaced_csv_argv_for_targets() -> None:
+    argv = [
+        "notebook",
+        "compare",
+        "-t",
+        f"{WS}:{A},",
+        f"{WS}:{B},",
+        f"{WS}:{A}",
+        "-f",
+        "notebook.ipynb",
+        "-m",
+        "power2-dlm",
+    ]
+    joined = rejoin_spaced_csv_argv(argv)
+    assert joined == [
+        "notebook",
+        "compare",
+        "-t",
+        f"{WS}:{A}, {WS}:{B}, {WS}:{A}",
+        "-f",
+        "notebook.ipynb",
+        "-m",
+        "power2-dlm",
+    ]
+    targets = parse_target_values([joined[3]])
+    assert len(targets) == 3
+
+
+def test_rejoin_spaced_csv_argv_leaves_non_csv_alone() -> None:
+    argv = ["notebook", "download", "-t", f"{WS}:{A}", "-f", "a.ipynb"]
+    assert rejoin_spaced_csv_argv(argv) == argv
+
+
+def test_rejoin_spaced_csv_argv_for_cells() -> None:
+    argv = ["notebook", "upload", "-c", "1,", "3,", "5", "-t", WS]
+    assert rejoin_spaced_csv_argv(argv) == [
+        "notebook",
+        "upload",
+        "-c",
+        "1, 3, 5",
+        "-t",
+        WS,
+    ]
 
 
 def test_download_broadcast_one_file() -> None:

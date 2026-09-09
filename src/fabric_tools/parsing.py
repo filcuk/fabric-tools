@@ -7,6 +7,18 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+# Options that accept comma-separated lists (spaces after commas are common).
+_CSV_OPTION_FLAGS = frozenset(
+    {
+        "-t",
+        "--target",
+        "-f",
+        "--file",
+        "-c",
+        "--cells",
+    }
+)
+
 
 class CommandMode(str, Enum):
     DOWNLOAD = "download"
@@ -16,6 +28,44 @@ class CommandMode(str, Enum):
 
 class ParseError(ValueError):
     """Invalid CLI targets/files combination."""
+
+
+def rejoin_spaced_csv_argv(argv: list[str]) -> list[str]:
+    """Rejoin shell-split ``--target a, b, c`` style CSV option values.
+
+    Unquoted commas followed by spaces become separate argv tokens; Click then
+    treats the trailing pieces as unexpected positional arguments. Merge those
+    pieces back into one option value when the previous token ends with ``,``.
+    """
+    if not argv:
+        return []
+
+    result: list[str] = []
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        result.append(token)
+
+        if "=" in token and token.startswith("-"):
+            # Already ``--opt=value`` (one token); leave as-is.
+            i += 1
+            continue
+
+        if token in _CSV_OPTION_FLAGS and i + 1 < len(argv):
+            i += 1
+            chunks = [argv[i]]
+            while i + 1 < len(argv) and _is_csv_value_continuation(argv[i], argv[i + 1]):
+                i += 1
+                chunks.append(argv[i])
+            result.append(" ".join(chunks))
+        i += 1
+    return result
+
+
+def _is_csv_value_continuation(prev: str, nxt: str) -> bool:
+    if not nxt or nxt.startswith("-"):
+        return False
+    return prev.rstrip().endswith(",")
 
 
 @dataclass(frozen=True)

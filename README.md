@@ -35,8 +35,8 @@ fabric-tools path uninstall
 
 | Flag | Alias | Purpose |
 |------|---------|---------|
-| `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` |
-| `--file` | `-f` | Local `.ipynb` or `*.Notebook` folder |
+| `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated) |
+| `--file` | `-f` | Local `.ipynb` or `*.Notebook` folder (repeatable or comma-separated) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
 | `--dry-run` | `-d` | Validate only (either side may be omitted) |

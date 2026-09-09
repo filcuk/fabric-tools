@@ -40,6 +40,7 @@ from fabric_tools.parsing import (
     build_work_items,
     parse_file_values,
     parse_target_values,
+    rejoin_spaced_csv_argv,
 )
 from fabric_tools.validate import run_dry_run
 
@@ -272,14 +273,15 @@ def notebook_download(
         "--target",
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated. One workspace only.",
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
         help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
-        "Repeatable or comma-separated. One file may broadcast to all targets.",
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One file may broadcast to all targets.",
     ),
     manifest: Optional[str] = typer.Option(
         None,
@@ -318,14 +320,16 @@ def notebook_upload(
         "--target",
         "-t",
         help="(required without -m or -d) workspace GUID (create) or "
-        "workspace:artifact (overwrite). Repeatable or comma-separated.",
+        "workspace:artifact (overwrite). Repeatable or comma-separated "
+        "(spaces after commas OK).",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
         help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
-        "Repeatable or comma-separated. One file may broadcast to all targets.",
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One file may broadcast to all targets.",
     ),
     name: Optional[list[str]] = typer.Option(
         None,
@@ -338,7 +342,7 @@ def notebook_upload(
         "--cells",
         "-c",
         help="(optional, overwrite .ipynb only) 1-based cell indices to replace "
-        "(e.g. 1,3,5). Single notebook only; whole cells including outputs.",
+        "(e.g. 1,3,5 or 1, 3, 5). Single notebook only; whole cells including outputs.",
     ),
     manifest: Optional[str] = typer.Option(
         None,
@@ -379,13 +383,15 @@ def notebook_compare(
         "--target",
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated. One workspace only. Must 1:1 match --file.",
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One workspace only. Must 1:1 match --file.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
         help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
         "Must 1:1 match --target (no broadcast).",
     ),
     manifest: Optional[str] = typer.Option(
@@ -730,4 +736,8 @@ def _resolve_upload_names(
 
 def run() -> None:
     """Console / exe entrypoint with a stable Usage name (not ``*.exe``)."""
+    import sys
+
+    # Unquoted ``-t a, b, c`` is shell-split; rejoin before Typer/Click parses.
+    sys.argv = [sys.argv[0], *rejoin_spaced_csv_argv(sys.argv[1:])]
     app(prog_name="fabric-tools")
