@@ -73,18 +73,22 @@ class _BannerGroup(TyperGroup):
             self.help = saved_help
 
 
+_HELP_CONTEXT = {"help_option_names": ["--help", "-h"]}
+
 app = typer.Typer(
     name="fabric-tools",
     help="CLI for working with Microsoft Fabric artifacts.",
     no_args_is_help=False,
     invoke_without_command=True,
     cls=_BannerGroup,
+    context_settings=_HELP_CONTEXT,
 )
 
 notebook_app = typer.Typer(
     name="notebook",
     help="Download, upload, and compare Fabric notebooks.",
     no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
 )
 app.add_typer(notebook_app, name="notebook")
 
@@ -92,6 +96,7 @@ path_app = typer.Typer(
     name="path",
     help="Register fabric-tools on your user PATH so you can run it as 'fabric-tools'.",
     no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
 )
 app.add_typer(path_app, name="path")
 
