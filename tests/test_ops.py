@@ -128,6 +128,31 @@ def test_deploy_create(tmp_path: Path) -> None:
     assert any(call[1].endswith("/items") for call in client.calls)
 
 
+def test_delete_notebook() -> None:
+    from fabric_tools.notebook.ops import delete_notebook
+
+    client = FakeClient()
+
+    def request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: Any = None,
+        wait: bool = True,
+    ) -> Any:
+        client.calls.append((method, path, params, json))
+        if method == "DELETE" and "/notebooks/" in path:
+            return None
+        raise AssertionError(f"Unexpected call {method} {path}")
+
+    client.request = request  # type: ignore[method-assign]
+    item = WorkItem(Target(WS, TARGET_ITEM), None)
+    result = delete_notebook(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert client.calls[0][0] == "DELETE"
+
+
 def test_deploy_overwrite(tmp_path: Path) -> None:
     client = FakeClient()
     src = tmp_path / "demo.ipynb"

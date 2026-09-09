@@ -353,6 +353,32 @@ def update_notebook_definition(
     )
 
 
+def delete_notebook(client: FabricClient, item: WorkItem) -> OpResult:
+    """Soft-delete one remote notebook."""
+    if item.target is None or item.target.item_id is None:
+        return OpResult(False, "delete requires workspace:artifact target")
+
+    target = item.target
+    try:
+        client.request(
+            "DELETE",
+            f"/workspaces/{target.workspace_id}/notebooks/{target.item_id}",
+        )
+    except FabricApiError as exc:
+        return OpResult(
+            False,
+            f"delete failed {target.label()}: {exc}",
+            target.workspace_id,
+            target.item_id,
+        )
+    return OpResult(
+        True,
+        f"deleted {target.label()}",
+        target.workspace_id,
+        target.item_id,
+    )
+
+
 def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
     results: list[OpResult] = []
     for item in items:
@@ -399,6 +425,18 @@ def run_deploy_batch(
                 origin_definition_cache=origin_cache,
             )
         )
+    return results
+
+
+def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+    results: list[OpResult] = []
+    for item in items:
+        target = item.target
+        if target is not None:
+            update_status(f"Deleting {target.label()}...")
+        else:
+            update_status("Deleting notebook...")
+        results.append(delete_notebook(client, item))
     return results
 
 
