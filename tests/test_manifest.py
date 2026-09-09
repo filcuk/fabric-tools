@@ -11,7 +11,10 @@ from typer.testing import CliRunner
 from fabric_tools.cli import app, _resolve_notebook_inputs, _write_manifest_after_success
 from fabric_tools.client import FabricApiError
 from fabric_tools.manifest import (
+    KIND_DATAFLOW_GEN1,
+    KIND_NOTEBOOK,
     ManifestError,
+    delete_targets_from_manifest,
     format_inspect,
     format_inspect_line,
     item_id_overrides_from_results,
@@ -88,6 +91,55 @@ def test_wrong_kind_rejected(tmp_path: Path) -> None:
     loaded = load_manifest(path)
     with pytest.raises(ManifestError, match="expected 'notebook'"):
         work_items_from_manifest(loaded)
+
+
+def test_dataflow_gen1_kind_round_trip(tmp_path: Path) -> None:
+    model = tmp_path / "model.json"
+    model.write_text("{}", encoding="utf-8")
+    items = [WorkItem(Target(WS, ITEM), model)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_DATAFLOW_GEN1,
+        display_names=["Sales"],
+    )
+    path = save_manifest(tmp_path / "df", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_DATAFLOW_GEN1
+    work_items, names = work_items_from_manifest(
+        loaded, expected_kind=KIND_DATAFLOW_GEN1
+    )
+    assert names == ["Sales"]
+    assert work_items[0].file == model.resolve()
+
+
+def test_delete_targets_from_manifest(tmp_path: Path) -> None:
+    model = tmp_path / "model.json"
+    model.write_text("{}", encoding="utf-8")
+    items = [
+        WorkItem(Target(WS, ITEM), model),
+        WorkItem(Target(WS, ITEM2), model),
+    ]
+    built = manifest_from_work_items(items, kind=KIND_DATAFLOW_GEN1)
+    path = save_manifest(tmp_path / "df-del", built)
+    loaded = load_manifest(path)
+    delete_items = delete_targets_from_manifest(
+        loaded, expected_kind=KIND_DATAFLOW_GEN1
+    )
+    assert len(delete_items) == 2
+    assert delete_items[0].file is None
+    assert delete_items[0].target is not None
+    assert delete_items[0].target.item_id == ITEM
+
+
+def test_delete_targets_from_manifest_requires_item_id(tmp_path: Path) -> None:
+    model = tmp_path / "model.json"
+    model.write_text("{}", encoding="utf-8")
+    items = [WorkItem(Target(WS, None), model)]
+    built = manifest_from_work_items(items, kind=KIND_NOTEBOOK)
+    path = save_manifest(tmp_path / "create-only", built)
+    loaded = load_manifest(path)
+    with pytest.raises(ManifestError, match="itemId"):
+        delete_targets_from_manifest(loaded, expected_kind=KIND_NOTEBOOK)
 
 
 def test_format_inspect_includes_kind() -> None:

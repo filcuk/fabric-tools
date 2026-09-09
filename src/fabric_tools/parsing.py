@@ -1,4 +1,4 @@
-"""CLI argument parsing for notebook targets, files, and origins."""
+"""CLI argument parsing for targets, files, and origins."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
 
 # Options that accept comma-separated lists (spaces after commas are common).
 _CSV_OPTION_FLAGS = frozenset(
@@ -26,6 +27,7 @@ class CommandMode(str, Enum):
     DOWNLOAD = "download"
     DEPLOY = "deploy"
     COMPARE = "compare"
+    DELETE = "delete"
 
 
 class ParseError(ValueError):
@@ -132,14 +134,33 @@ def build_work_items(
     *,
     origins: list[Target] | None = None,
     dry_run: bool,
+    deploy_create_only: bool = False,
 ) -> list[WorkItem]:
-    """Validate mode rules and return paired work items."""
+    """Validate mode rules and return paired work items.
+
+    When ``deploy_create_only`` is True, deploy targets must be workspace-only
+    (no artifact id). Used by Dataflow Gen1 (no overwrite).
+    """
     origin_list = list(origins) if origins else []
     if dry_run:
-        return _build_dry_run_items(mode, targets, files, origin_list)
+        return _build_dry_run_items(
+            mode,
+            targets,
+            files,
+            origin_list,
+            deploy_create_only=deploy_create_only,
+        )
 
     if not targets:
-        raise ParseError("--target is required unless --dry-run is used with --file/--origin only")
+        raise ParseError(
+            "--target is required unless --dry-run is used with --file/--origin only"
+        )
+
+    if mode is CommandMode.DELETE:
+        if files or origin_list:
+            raise ParseError("delete does not support --file or --origin")
+        _require_items(targets, mode)
+        return [WorkItem(t, None) for t in targets]
 
     _require_exclusive_source(files, origin_list, allow_neither=False)
 
@@ -158,13 +179,15 @@ def build_work_items(
             if len(files) != len(targets):
                 raise ParseError(
                     "compare requires a 1:1 match between --target and --file "
-                    f"(got {len(targets)} target(s) and {len(files)} file(s); broadcast is not allowed)"
+                    f"(got {len(targets)} target(s) and {len(files)} file(s); "
+                    "broadcast is not allowed)"
                 )
             return [WorkItem(t, f) for t, f in zip(targets, files, strict=True)]
         if len(origin_list) != len(targets):
             raise ParseError(
                 "compare requires a 1:1 match between --target and --origin "
-                f"(got {len(targets)} target(s) and {len(origin_list)} origin(s); broadcast is not allowed)"
+                f"(got {len(targets)} target(s) and {len(origin_list)} origin(s); "
+                "broadcast is not allowed)"
             )
         return [
             WorkItem(t, None, origin=o)
@@ -172,7 +195,10 @@ def build_work_items(
         ]
 
     # DEPLOY
-    _require_homogeneous_deploy(targets)
+    if deploy_create_only:
+        _require_create_only_deploy(targets)
+    else:
+        _require_homogeneous_deploy(targets)
     if files:
         paired_files = _pair_sources(targets, files, allow_broadcast=True, kind="file")
         return [WorkItem(t, f) for t, f in zip(targets, paired_files, strict=True)]
@@ -190,7 +216,17 @@ def _build_dry_run_items(
     targets: list[Target],
     files: list[Path],
     origins: list[Target],
+    *,
+    deploy_create_only: bool = False,
 ) -> list[WorkItem]:
+    if mode is CommandMode.DELETE:
+        if files or origins:
+            raise ParseError("delete does not support --file or --origin")
+        if not targets:
+            raise ParseError("--dry-run delete requires at least one --target")
+        _require_items(targets, mode)
+        return [WorkItem(t, None) for t in targets]
+
     if not targets and not files and not origins:
         raise ParseError("--dry-run requires at least one --target, --file, or --origin")
 
@@ -198,7 +234,12 @@ def _build_dry_run_items(
 
     if targets and (files or origins):
         return build_work_items(
-            mode, targets, files, origins=origins, dry_run=False
+            mode,
+            targets,
+            files,
+            origins=origins,
+            dry_run=False,
+            deploy_create_only=deploy_create_only,
         )
 
     if targets:
@@ -209,7 +250,10 @@ def _build_dry_run_items(
             _require_items(targets, mode)
             _require_single_workspace(targets, mode)
         elif mode is CommandMode.DEPLOY:
-            _require_homogeneous_deploy(targets)
+            if deploy_create_only:
+                _require_create_only_deploy(targets)
+            else:
+                _require_homogeneous_deploy(targets)
         return [WorkItem(t, None) for t in targets]
 
     if files:
@@ -277,6 +321,15 @@ def _require_homogeneous_deploy(targets: list[Target]) -> None:
         )
 
 
+def _require_create_only_deploy(targets: list[Target]) -> None:
+    updates = [t.label() for t in targets if not t.is_create]
+    if updates:
+        raise ParseError(
+            "dataflow-gen1 deploy supports create only (workspace targets); "
+            f"got artifact target(s): {', '.join(updates)}"
+        )
+
+
 def _parse_one_target(value: str) -> Target:
     text = value.strip()
     if not text:
@@ -301,7 +354,8 @@ def _parse_one_origin(value: str) -> Target:
         raise ParseError("empty --origin value")
     if ":" not in text:
         raise ParseError(
-            f"--origin requires workspace:artifact; got '{text}' (workspace only is not allowed)"
+            f"--origin requires workspace:artifact; got '{text}' "
+            "(workspace only is not allowed)"
         )
     workspace_raw, item_raw = text.split(":", 1)
     workspace_id = _parse_guid(workspace_raw.strip(), what="workspace id")

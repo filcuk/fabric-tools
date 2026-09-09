@@ -14,6 +14,7 @@ SCHEMA_VERSION_V2 = 2
 SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION_V1, SCHEMA_VERSION_V2})
 MANIFEST_SUFFIX = ".ftdep"
 KIND_NOTEBOOK = "notebook"
+KIND_DATAFLOW_GEN1 = "dataflow-gen1"
 
 
 class ManifestError(ValueError):
@@ -134,7 +135,7 @@ def work_items_from_manifest(
     *,
     expected_kind: str = KIND_NOTEBOOK,
 ) -> tuple[list[WorkItem], list[str | None]]:
-    """Convert notebook manifest entries to work items and optional display names.
+    """Convert manifest entries to work items and optional display names.
 
     Raises ``ManifestError`` if ``manifest.kind`` does not match *expected_kind*.
     """
@@ -159,6 +160,40 @@ def work_items_from_manifest(
         items.append(WorkItem(target=target, file=entry.file, origin=origin))
         names.append(entry.display_name)
     return items, names
+
+
+def delete_targets_from_manifest(
+    manifest: DeploymentManifest,
+    *,
+    expected_kind: str,
+) -> list[WorkItem]:
+    """Load delete work items from a manifest (each entry must have ``itemId``).
+
+    File/origin fields on entries are ignored. Does not rewrite the manifest.
+    """
+    if manifest.kind != expected_kind:
+        raise ManifestError(
+            f"manifest kind is '{manifest.kind}', expected '{expected_kind}' "
+            "for this command"
+        )
+    items: list[WorkItem] = []
+    missing: list[str] = []
+    for index, entry in enumerate(manifest.entries, start=1):
+        if entry.item_id is None:
+            missing.append(f"entries[{index - 1}] workspaceId={entry.workspace_id}")
+            continue
+        items.append(
+            WorkItem(
+                Target(workspace_id=entry.workspace_id, item_id=entry.item_id),
+                None,
+            )
+        )
+    if missing:
+        raise ManifestError(
+            "delete via --manifest requires itemId on every entry; missing on: "
+            + ", ".join(missing)
+        )
+    return items
 
 
 def manifest_from_work_items(

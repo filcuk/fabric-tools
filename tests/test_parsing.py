@@ -176,3 +176,59 @@ def test_rejects_file_and_origin_together() -> None:
         build_work_items(
             CommandMode.DEPLOY, targets, files, origins=origins, dry_run=False
         )
+
+
+def test_delete_targets_only() -> None:
+    targets = parse_target_values([f"{WS}:{A},{WS2}:{B}"])
+    items = build_work_items(CommandMode.DELETE, targets, [], dry_run=False)
+    assert len(items) == 2
+    assert items[0].file is None
+    assert items[0].target is not None
+    assert items[0].target.item_id == A
+
+
+def test_delete_rejects_file() -> None:
+    targets = parse_target_values([f"{WS}:{A}"])
+    files = parse_file_values(["a.ipynb"])
+    with pytest.raises(ParseError, match="does not support --file"):
+        build_work_items(CommandMode.DELETE, targets, files, dry_run=False)
+
+
+def test_delete_requires_artifact_id() -> None:
+    targets = parse_target_values([WS])
+    with pytest.raises(ParseError, match="workspace:artifact"):
+        build_work_items(CommandMode.DELETE, targets, [], dry_run=False)
+
+
+def test_delete_dry_run_targets() -> None:
+    targets = parse_target_values([f"{WS}:{A}"])
+    items = build_work_items(CommandMode.DELETE, targets, [], dry_run=True)
+    assert len(items) == 1
+    assert items[0].target is not None
+
+
+def test_deploy_create_only_rejects_artifact_targets() -> None:
+    targets = parse_target_values([f"{WS}:{A}"])
+    files = parse_file_values(["model.json"])
+    with pytest.raises(ParseError, match="create only"):
+        build_work_items(
+            CommandMode.DEPLOY,
+            targets,
+            files,
+            dry_run=False,
+            deploy_create_only=True,
+        )
+
+
+def test_deploy_create_only_allows_workspace_targets() -> None:
+    targets = parse_target_values([WS, WS2])
+    files = parse_file_values(["model.json"])
+    items = build_work_items(
+        CommandMode.DEPLOY,
+        targets,
+        files,
+        dry_run=False,
+        deploy_create_only=True,
+    )
+    assert len(items) == 2
+    assert all(item.target is not None and item.target.is_create for item in items)

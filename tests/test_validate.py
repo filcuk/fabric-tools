@@ -129,3 +129,84 @@ def test_dry_run_origin_ok() -> None:
     assert all(r.ok for r in results)
     assert any("origin notebook" in r.message for r in results)
     assert any("target notebook" in r.message for r in results)
+
+
+def test_dry_run_delete_notebook() -> None:
+    item = WorkItem(
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
+        None,
+    )
+    results = run_dry_run(
+        CommandMode.DELETE,
+        [item],
+        client=FakeClient(),  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=False,
+    )
+    assert all(r.ok for r in results)
+    assert any("delete" in r.message for r in results)
+
+
+def test_dry_run_dataflow_gen1_local_and_remote(tmp_path: Path) -> None:
+    from fabric_tools.powerbi_client import PowerBiApiError
+    from fabric_tools.validate import run_dry_run_dataflow_gen1
+
+    model = tmp_path / "model.json"
+    model.write_text(
+        json.dumps({"name": "Sales", "entities": []}),
+        encoding="utf-8",
+    )
+    ws = "11111111-1111-1111-1111-111111111111"
+    df = "22222222-2222-2222-2222-222222222222"
+
+    class FakePowerBi:
+        def get_group(self, group_id: str) -> dict[str, Any]:
+            return {"id": group_id, "name": "Dev"}
+
+        def get_dataflow(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
+            if dataflow_id != df:
+                raise PowerBiApiError("missing", status_code=404)
+            return {"objectId": dataflow_id, "name": "Sales"}
+
+    items = [WorkItem(Target(ws, df), model)]
+    results = run_dry_run_dataflow_gen1(
+        CommandMode.DOWNLOAD,
+        items,
+        client=FakePowerBi(),  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=True,
+    )
+    assert all(r.ok for r in results)
+    assert any("model.json" in r.message for r in results)
+    assert any("dataflow-gen1" in r.message for r in results)
+
+
+def test_dry_run_dataflow_gen1_missing_remote() -> None:
+    from fabric_tools.powerbi_client import PowerBiApiError
+    from fabric_tools.validate import run_dry_run_dataflow_gen1
+
+    class FakePowerBi:
+        def get_group(self, group_id: str) -> dict[str, Any]:
+            return {"id": group_id, "name": "Dev"}
+
+        def get_dataflow(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
+            raise PowerBiApiError("missing", status_code=404, error_code="DataflowNotFound")
+
+    item = WorkItem(
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
+        None,
+    )
+    results = run_dry_run_dataflow_gen1(
+        CommandMode.DELETE,
+        [item],
+        client=FakePowerBi(),  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=False,
+    )
+    assert any(not r.ok and "DataflowNotFound" in r.message for r in results)
