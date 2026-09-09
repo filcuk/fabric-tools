@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 import typer
+from typer.core import TyperGroup
 
 from fabric_tools import __version__
 from fabric_tools.client import FabricClient
@@ -47,11 +48,37 @@ _MANIFEST_HELP = (
     "Alone: load targets/files. With a successful run: write/update the manifest."
 )
 
+_BANNER = r"""
+ _____     _       _         _____         _     
+|   __|___| |_ ___|_|___ ___|_   _|___ ___| |___ 
+|   __| .'| . |  _| |  _|___| | | | . | . | |_ -|
+|__|  |__,|___|_| |_|___|     |_| |___|___|_|___|
+"""
+
+
+class _BannerGroup(TyperGroup):
+    """Root help: banner, then subtitle, then Usage / options."""
+
+    def format_help(self, ctx, formatter) -> None:
+        typer.echo(_BANNER)
+        subtitle = (self.help or "").strip()
+        if subtitle:
+            typer.echo(subtitle)
+            typer.echo()
+        saved_help = self.help
+        self.help = None
+        try:
+            super().format_help(ctx, formatter)
+        finally:
+            self.help = saved_help
+
+
 app = typer.Typer(
     name="fabric-tools",
     help="CLI for working with Microsoft Fabric artifacts.",
     no_args_is_help=False,
     invoke_without_command=True,
+    cls=_BannerGroup,
 )
 
 notebook_app = typer.Typer(
@@ -693,3 +720,8 @@ def _resolve_upload_names(
         else:
             resolved.append("Notebook")
     return resolved
+
+
+def run() -> None:
+    """Console / exe entrypoint with a stable Usage name (not ``*.exe``)."""
+    app(prog_name="fabric-tools")

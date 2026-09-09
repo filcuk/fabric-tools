@@ -31,7 +31,7 @@ build = [
 ]
 
 [project.scripts]
-fabric-tools = "fabric_tools.cli:app"
+fabric-tools = "fabric_tools.cli:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fabric_tools"]
