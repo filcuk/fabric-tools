@@ -33,10 +33,10 @@ If Scripts is on your PATH after install, `fabric-tools` works the same way.
 
 Examples match the user docs in [README.md](README.md); swap `.\fabric-tools.exe` for `py -3 -m fabric_tools` (or `fabric-tools`) while developing.
 
-To register the current Python-based CLI on your user PATH (creates a `.cmd` shim under `%LOCALAPPDATA%\fabric-tools\bin`):
+To register the current Python-based CLI for your user account (creates a `.cmd` shim under `%LOCALAPPDATA%\fabric-tools\app`):
 
 ```bash
-py -3 -m fabric_tools path install
+py -3 -m fabric_tools setup install
 ```
 
 ## Tests
@@ -50,23 +50,26 @@ Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP)
 
 ## Build Windows executable
 
-Produces a standalone one-file console app at `dist/fabric-tools.exe`:
+Produces a single portable `dist/fabric-tools.exe` (one-file). `setup install` unpacks it to a fast onedir tree under `%LOCALAPPDATA%\fabric-tools\app`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 ```
 
-Or manually:
+The script builds onedir staging first, then a onefile release that embeds the thin onedir bootloader. Or manually:
 
 ```bash
 py -3 -m pip install -e ".[build]"
 py -3 -m PyInstaller --noconfirm --clean packaging/fabric-tools.spec
+set FABRIC_TOOLS_ONEDIR_BOOTLOADER=%CD%\dist\fabric-tools\fabric-tools.exe
+py -3 -m PyInstaller --noconfirm --clean packaging/fabric-tools-onefile.spec
 .\dist\fabric-tools.exe --help
 ```
 
 Notes:
 
-- Spec file: [`packaging/fabric-tools.spec`](packaging/fabric-tools.spec) (kept in git via `!packaging/*.spec`)
+- Spec files: [`packaging/fabric-tools.spec`](packaging/fabric-tools.spec) (onedir staging), [`packaging/fabric-tools-onefile.spec`](packaging/fabric-tools-onefile.spec) (release); shared inputs in [`packaging/analysis_inputs.py`](packaging/analysis_inputs.py)
+- Ship the single `dist/fabric-tools.exe`. Portable runs unpack to temp each launch (slower); `setup install` copies to an onedir install for fast PATH use
 - Do not commit `dist/` or `build/`
 - Unsigned binaries may trigger SmartScreen warnings
 - Auth from the exe uses Windows WAM (when available), browser/device-code, or `AZURE_*` service principal env vars; tokens persist under `%LOCALAPPDATA%\fabric-tools`

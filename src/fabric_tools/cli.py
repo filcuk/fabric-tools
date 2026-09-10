@@ -2,24 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import typer
 from typer.core import TyperGroup
 
 from fabric_tools import __version__
-from fabric_tools.client import FabricClient
-from fabric_tools.confirm import (
-    ConfirmationAborted,
-    confirm_delete_actions,
-    confirm_delete_dataflow_gen1,
-    confirm_deploy_actions,
-    confirm_deploy_create_dataflow_gen1,
-    confirm_download_overwrites,
-    confirm_download_overwrites_dataflow_gen1,
-    resolve_dataflow_gen1_download_files,
-    resolve_notebook_download_files,
-)
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW_GEN1,
@@ -36,19 +24,6 @@ from fabric_tools.manifest import (
     save_manifest,
     work_items_from_manifest,
 )
-from fabric_tools.notebook.compare import CompareResult, run_compare_batch
-from fabric_tools.notebook.cells import (
-    CellSelectionError,
-    parse_cell_indices,
-    validate_cells_usage,
-)
-from fabric_tools.notebook.definition import display_name_from_path
-from fabric_tools.notebook.ops import (
-    OpResult,
-    run_delete_batch,
-    run_deploy_batch,
-    run_download_batch,
-)
 from fabric_tools.parsing import (
     CommandMode,
     ParseError,
@@ -59,10 +34,10 @@ from fabric_tools.parsing import (
     parse_target_values,
     rejoin_spaced_csv_argv,
 )
-from fabric_tools.powerbi_client import PowerBiClient
-from fabric_tools.status import busy
-from fabric_tools.update_check import UpdateCheckError, check_for_update
-from fabric_tools.validate import run_dry_run, run_dry_run_dataflow_gen1
+
+if TYPE_CHECKING:
+    from fabric_tools.notebook.compare import CompareResult
+    from fabric_tools.notebook.ops import OpResult
 
 _MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
@@ -121,13 +96,13 @@ dataflow_gen1_app = typer.Typer(
 )
 app.add_typer(dataflow_gen1_app, name="dataflow-gen1")
 
-path_app = typer.Typer(
-    name="path",
-    help="Register fabric-tools on your user PATH so you can run it as 'fabric-tools'.",
+setup_app = typer.Typer(
+    name="setup",
+    help="Install fabric-tools so you can run it as 'fabric-tools' from any terminal.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
-app.add_typer(path_app, name="path")
+app.add_typer(setup_app, name="setup")
 
 
 @app.command("update")
@@ -140,6 +115,9 @@ def update_cmd(
     ),
 ) -> None:
     """Check for updates from GitHub Releases."""
+    from fabric_tools.status import busy
+    from fabric_tools.update_check import UpdateCheckError, check_for_update
+
     if not check:
         typer.secho(
             "Specify --check / -c to check for a newer release.",
@@ -288,9 +266,9 @@ def main(
             typer.echo(ctx.get_help())
         raise typer.Exit()
 
-@path_app.command("install")
-def path_install() -> None:
-    """Install fabric-tools into a stable folder and add it to your user PATH."""
+@setup_app.command("install")
+def setup_install() -> None:
+    """Install fabric-tools into a stable folder and register it for your user account."""
     from fabric_tools.path_setup import PathSetupError, install_to_user_path
 
     try:
@@ -300,26 +278,30 @@ def path_install() -> None:
         raise typer.Exit(code=EXIT_USER) from exc
 
     typer.secho(f"Installed launcher: {result['launcher']}", fg=typer.colors.GREEN)
-    typer.echo(f"Bin directory: {result['bin_dir']}")
+    typer.echo(f"Install directory: {result['install_dir']}")
+    if result.get("layout") == "onefile":
+        typer.echo("Unpacked one-file build into a fast onedir install (exe + _internal).")
     if result["path_added"]:
-        typer.secho("Added bin directory to your user PATH.", fg=typer.colors.GREEN)
+        typer.secho("Registered install directory on your user PATH.", fg=typer.colors.GREEN)
     elif result["already_on_path"]:
-        typer.echo("Bin directory was already on your user PATH.")
+        typer.echo("Install directory was already on your user PATH.")
+    if result.get("legacy_cleaned"):
+        typer.echo("Removed previous install under fabric-tools\\bin.")
     typer.echo(
-        "Open a new terminal, then run: fabric-tools --help"
+        "Open a new terminal (restart your IDE if needed), then run: fabric-tools --help"
     )
     raise typer.Exit(code=EXIT_OK)
 
 
-@path_app.command("uninstall")
-def path_uninstall(
+@setup_app.command("uninstall")
+def setup_uninstall(
     keep_files: bool = typer.Option(
         False,
         "--keep-files",
-        help="(optional) Leave installed files in place; only remove PATH entry.",
+        help="(optional) Leave installed files in place; only remove PATH registration.",
     ),
 ) -> None:
-    """Remove fabric-tools PATH registration (and installed files by default)."""
+    """Remove fabric-tools registration (and installed files by default)."""
     from fabric_tools.path_setup import PathSetupError, uninstall_from_user_path
 
     try:
@@ -329,18 +311,18 @@ def path_uninstall(
         raise typer.Exit(code=EXIT_USER) from exc
 
     if result["removed_from_path"]:
-        typer.secho("Removed bin directory from your user PATH.", fg=typer.colors.GREEN)
+        typer.secho("Removed install directory from your user PATH.", fg=typer.colors.GREEN)
     else:
-        typer.echo("Bin directory was not present on your user PATH.")
+        typer.echo("Install directory was not present on your user PATH.")
     if result["deleted_files"]:
         typer.echo(f"Deleted: {result['deleted_files']}")
     typer.echo("Open a new terminal for PATH changes to take effect.")
     raise typer.Exit(code=EXIT_OK)
 
 
-@path_app.command("status")
-def path_status_cmd() -> None:
-    """Show whether fabric-tools is registered on PATH."""
+@setup_app.command("status")
+def setup_status_cmd() -> None:
+    """Show whether fabric-tools is installed and registered."""
     from fabric_tools.path_setup import PathSetupError, path_status
 
     try:
@@ -349,10 +331,11 @@ def path_status_cmd() -> None:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    typer.echo(f"Bin directory: {status['bin_dir']}")
-    typer.echo(f"Exe present:   {status['exe_present']}")
-    typer.echo(f"Cmd present:   {status['cmd_present']}")
-    typer.echo(f"On user PATH:  {status['bin_dir_on_user_path']}")
+    typer.echo(f"Install directory: {status['install_dir']}")
+    typer.echo(f"Exe present:       {status['exe_present']}")
+    typer.echo(f"Cmd present:       {status['cmd_present']}")
+    typer.echo(f"_internal present: {status['internal_present']}")
+    typer.echo(f"On user PATH:      {status['bin_dir_on_user_path']}")
     typer.echo(f"Running frozen exe: {status['frozen']}")
     which = status["which_fabric_tools"]
     typer.echo(f"shutil.which('fabric-tools'): {which or '(not found in this process PATH)'}")
@@ -803,6 +786,27 @@ def run_notebook_command(
     checks/ops/compare results ok), before the process exit code is raised — used
     by interactive mode to offer saving a deployment manifest.
     """
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_actions,
+        confirm_deploy_actions,
+        confirm_download_overwrites,
+    )
+    from fabric_tools.notebook.cells import (
+        CellSelectionError,
+        parse_cell_indices,
+        validate_cells_usage,
+    )
+    from fabric_tools.notebook.compare import run_compare_batch
+    from fabric_tools.notebook.ops import (
+        run_delete_batch,
+        run_deploy_batch,
+        run_download_batch,
+    )
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run
+
     try:
         cell_indices = parse_cell_indices(cells)
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -1007,6 +1011,12 @@ def run_dataflow_gen1_command(
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for dataflow-gen1 CLI commands and the interactive wizard."""
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_dataflow_gen1,
+        confirm_deploy_create_dataflow_gen1,
+        confirm_download_overwrites_dataflow_gen1,
+    )
     from fabric_tools.dataflow_gen1.compare import run_compare_batch as run_df_compare
     from fabric_tools.dataflow_gen1.definition import (
         DefinitionError as DataflowDefinitionError,
@@ -1020,6 +1030,9 @@ def run_dataflow_gen1_command(
     from fabric_tools.dataflow_gen1.ops import (
         run_download_batch as run_df_download,
     )
+    from fabric_tools.powerbi_client import PowerBiClient
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run_dataflow_gen1
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -1488,6 +1501,8 @@ def _resolve_deploy_names(
     items: list,
     names: list[str | None] | list[str] | None,
 ) -> list[str]:
+    from fabric_tools.notebook.definition import display_name_from_path
+
     if names and len(names) not in {1, len(items)}:
         raise ParseError(
             f"--name count must be 1 or match target count ({len(items)}); got {len(names)}"

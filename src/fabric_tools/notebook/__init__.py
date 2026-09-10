@@ -1,36 +1,7 @@
 """Notebook sync operations."""
 
-from fabric_tools.notebook.compare import CompareResult, compare_notebook, run_compare_batch
-from fabric_tools.notebook.cells import (
-    CellSelectionError,
-    merge_notebook_cells,
-    parse_cell_indices,
-)
-from fabric_tools.notebook.definition import (
-    DefinitionError,
-    NotebookFormat,
-    definition_has_platform,
-    detect_format,
-    display_name_from_path,
-    format_for_api,
-    merge_remote_dependencies,
-    pack_definition,
-    strip_preserved_dependencies,
-    unpack_definition,
-    validate_local_notebook,
-)
-from fabric_tools.notebook.ops import (
-    OpResult,
-    create_notebook,
-    delete_notebook,
-    deploy_notebook,
-    download_notebook,
-    get_notebook_definition,
-    run_delete_batch,
-    run_deploy_batch,
-    run_download_batch,
-    update_notebook_definition,
-)
+# Submodules are imported by callers (e.g. ``fabric_tools.notebook.ops``) so that
+# ``import fabric_tools.notebook`` does not pull nbdime/nbformat eagerly.
 
 __all__ = [
     "CellSelectionError",
