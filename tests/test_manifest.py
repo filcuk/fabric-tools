@@ -262,7 +262,7 @@ def test_dry_run_writes_manifest_on_success(
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr("fabric_tools.cli.FabricClient", OkClient)
+    monkeypatch.setattr("fabric_tools.client.FabricClient", OkClient)
     runner = CliRunner()
     result = runner.invoke(
         app,
@@ -309,7 +309,7 @@ def test_dry_run_skips_manifest_on_failure(
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr("fabric_tools.cli.FabricClient", BadClient)
+    monkeypatch.setattr("fabric_tools.client.FabricClient", BadClient)
     runner = CliRunner()
     result = runner.invoke(
         app,

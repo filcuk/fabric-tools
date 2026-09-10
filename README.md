@@ -7,7 +7,7 @@ CLI for working with Microsoft Fabric artifacts.
 Register the tool:
 
 ```powershell
-.\fabric-tools.exe path install
+.\fabric-tools.exe setup install
 ```
 
 Open a new terminal and get started with the following:
@@ -23,8 +23,8 @@ fabric-tools update --check
 Check or remove registration:
 
 ```powershell
-fabric-tools path status
-fabric-tools path uninstall
+fabric-tools setup status
+fabric-tools setup uninstall
 ```
 
 ## Support

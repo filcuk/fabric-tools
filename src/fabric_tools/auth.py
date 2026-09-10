@@ -5,16 +5,11 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from azure.core.credentials import AccessToken, TokenCredential
-from azure.identity import (
-    AuthenticationRecord,
-    ChainedTokenCredential,
-    DeviceCodeCredential,
-    EnvironmentCredential,
-    InteractiveBrowserCredential,
-    TokenCachePersistenceOptions,
-)
+if TYPE_CHECKING:
+    from azure.core.credentials import AccessToken, TokenCredential
+    from azure.identity import AuthenticationRecord, TokenCachePersistenceOptions
 
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
 POWER_BI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
@@ -44,6 +39,8 @@ def auth_record_path() -> Path:
 
 def load_authentication_record() -> AuthenticationRecord | None:
     """Load a previously saved authentication record, or ``None`` if missing/invalid."""
+    from azure.identity import AuthenticationRecord
+
     path = auth_record_path()
     try:
         data = path.read_text(encoding="utf-8")
@@ -63,11 +60,13 @@ def save_authentication_record(record: AuthenticationRecord) -> None:
 
 
 def _cache_persistence_options() -> TokenCachePersistenceOptions:
+    from azure.identity import TokenCachePersistenceOptions
+
     return TokenCachePersistenceOptions(name=_CACHE_NAME)
 
 
-def _user_credential_kwargs() -> dict:
-    kwargs: dict = {
+def _user_credential_kwargs() -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
         "additionally_allowed_tenants": ["*"],
         "cache_persistence_options": _cache_persistence_options(),
     }
@@ -103,6 +102,7 @@ class _PersistingAuthRecordCredential:
         if close is not None:
             close()
 
+
 def _broker_credential() -> TokenCredential | None:
     """Windows WAM (and other OS brokers) when ``azure-identity-broker`` is available."""
     try:
@@ -132,6 +132,13 @@ def create_credential() -> TokenCredential:
     On Windows, Web Account Manager (WAM) is tried first so the signed-in work
     account (same broker Teams/Office use) can be reused.
     """
+    from azure.identity import (
+        ChainedTokenCredential,
+        DeviceCodeCredential,
+        EnvironmentCredential,
+        InteractiveBrowserCredential,
+    )
+
     credentials: list[TokenCredential] = [EnvironmentCredential()]
 
     broker = _broker_credential()

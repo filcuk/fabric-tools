@@ -14,7 +14,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
   - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow-gen1` groups, `inspect`, `update`
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow-gen1`)
-  - `path_setup.py` — Windows user PATH install/uninstall (`fabric-tools path …`)
+  - `path_setup.py` — Windows user install/uninstall (`fabric-tools setup …`; onedir tree under `%LOCALAPPDATA%\fabric-tools\app`)
   - `update_check.py` — GitHub Releases latest-version check (`fabric-tools update --check`)
   - `auth.py` — Azure token acquisition (Fabric + Power BI scopes; SP env, WAM broker, browser/device code; persistent cache)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
@@ -27,7 +27,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
   - `notebook/` — definition pack/unpack (`definition.py`); selective cell merge (`cells.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`, nbdime)
   - `dataflow_gen1/` — `model.json` helpers (`definition.py`); download/create/delete (`ops.py`); compare (`compare.py`)
 - `tests/` — unit tests
-- `packaging/fabric-tools.spec` — PyInstaller one-file Windows build
+- `packaging/fabric-tools.spec` — PyInstaller one-dir Windows build (flattened to `dist/fabric-tools.exe` + `dist/_internal/`)
 - `scripts/build_exe.ps1` — build helper for `dist/fabric-tools.exe`
 
 ## Conventions
