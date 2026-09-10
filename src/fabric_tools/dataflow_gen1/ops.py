@@ -83,7 +83,8 @@ def deploy_dataflow(
         return OpResult(
             False,
             "dataflow-gen1 deploy supports create only "
-            f"(got artifact target {target.label()}; use delete + create, or Gen2 later)",
+            f"(got artifact target {target.label()}; use delete + create, "
+            "or fabric-tools dataflow for Gen2 overwrite)",
             target.workspace_id,
             target.item_id,
         )

@@ -78,7 +78,11 @@ def test_rejects_unsupported_path(tmp_path: Path) -> None:
 
 
 def test_merge_remote_dependencies_fills_omitted_keys() -> None:
-    local = {"nbformat": 4, "cells": [], "metadata": {"kernelspec": {"name": "python3"}}}
+    local = {
+        "nbformat": 4,
+        "cells": [],
+        "metadata": {"kernelspec": {"name": "python3"}},
+    }
     remote = {
         "nbformat": 4,
         "cells": [],
@@ -97,8 +101,12 @@ def test_merge_remote_dependencies_fills_omitted_keys() -> None:
     merged, preserved = merge_remote_dependencies(local, remote)
     assert preserved == ["lakehouse", "environment"]
     assert merged["metadata"]["kernelspec"]["name"] == "python3"
-    assert merged["metadata"]["dependencies"]["lakehouse"]["default_lakehouse"] == "lh-id"
-    assert merged["metadata"]["dependencies"]["environment"]["environmentId"] == "env-id"
+    assert (
+        merged["metadata"]["dependencies"]["lakehouse"]["default_lakehouse"] == "lh-id"
+    )
+    assert (
+        merged["metadata"]["dependencies"]["environment"]["environmentId"] == "env-id"
+    )
     # Local input unchanged.
     assert "dependencies" not in local["metadata"]
 
@@ -107,7 +115,9 @@ def test_merge_remote_dependencies_keeps_explicit_local() -> None:
     local = {
         "nbformat": 4,
         "cells": [],
-        "metadata": {"dependencies": {"lakehouse": {}, "environment": {"environmentId": "local"}}},
+        "metadata": {
+            "dependencies": {"lakehouse": {}, "environment": {"environmentId": "local"}}
+        },
     }
     remote = {
         "nbformat": 4,
@@ -127,7 +137,9 @@ def test_merge_remote_dependencies_keeps_explicit_local() -> None:
 
 def test_merge_remote_dependencies_noop_without_remote() -> None:
     local = {"nbformat": 4, "cells": [], "metadata": {}}
-    merged, preserved = merge_remote_dependencies(local, {"nbformat": 4, "cells": [], "metadata": {}})
+    merged, preserved = merge_remote_dependencies(
+        local, {"nbformat": 4, "cells": [], "metadata": {}}
+    )
     assert preserved == []
     assert merged == local
 

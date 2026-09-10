@@ -17,7 +17,7 @@ py -3 -m pip install -e ".[dev]"
 
 Optional extras:
 
-- `.[dev]` — pytest and test helpers
+- `.[dev]` — pytest, Ruff, and test helpers
 - `.[build]` — PyInstaller for Windows executable builds
 
 ## Run from Python
@@ -26,6 +26,8 @@ Optional extras:
 py -3 -m fabric_tools --version
 py -3 -m fabric_tools --help
 py -3 -m fabric_tools notebook --help
+py -3 -m fabric_tools pipeline --help
+py -3 -m fabric_tools udf --help
 py -3 -m fabric_tools --interactive
 ```
 
@@ -37,6 +39,23 @@ To register the current Python-based CLI for your user account (creates a `.cmd`
 
 ```bash
 py -3 -m fabric_tools setup install
+```
+
+## Lint and format
+
+Uses [Ruff](https://docs.astral.sh/ruff/) (configured in `pyproject.toml`):
+
+```bash
+py -3 -m pip install -e ".[dev]"
+py -3 -m ruff check .
+py -3 -m ruff format --check .
+```
+
+To apply fixes and reformat:
+
+```bash
+py -3 -m ruff check --fix .
+py -3 -m ruff format .
 ```
 
 ## Tests

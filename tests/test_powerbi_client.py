@@ -99,7 +99,9 @@ def test_create_dataflow_from_model_polls_until_succeeded() -> None:
             assert request.url.params["datasetDisplayName"] == "model.json"
             assert request.url.params["nameConflict"] == "Abort"
             assert "multipart/form-data" in request.headers["Content-Type"]
-            return httpx.Response(202, json={"id": "imp-1", "importState": "Publishing"})
+            return httpx.Response(
+                202, json={"id": "imp-1", "importState": "Publishing"}
+            )
         if request.method == "GET" and request.url.path.endswith("/imports/imp-1"):
             if calls["n"] < 3:
                 return httpx.Response(
@@ -114,7 +116,9 @@ def test_create_dataflow_from_model_polls_until_succeeded() -> None:
                     "dataflows": [{"objectId": "df-new", "name": "Sales"}],
                 },
             )
-        return httpx.Response(404, json={"error": {"message": f"unexpected {request.url}"}})
+        return httpx.Response(
+            404, json={"error": {"message": f"unexpected {request.url}"}}
+        )
 
     with _client(httpx.MockTransport(handler)) as client:
         result = client.create_dataflow_from_model("ws-1", model_bytes)
@@ -162,7 +166,9 @@ def test_http_error_raises() -> None:
     assert exc_info.value.error_code == "PowerBIEntityNotFound"
 
 
-def test_wait_for_import_updates_activity_status(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_wait_for_import_updates_activity_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     messages: list[str] = []
     monkeypatch.setattr(
         "fabric_tools.powerbi_client.update_status",
@@ -185,8 +191,6 @@ def test_wait_for_import_updates_activity_status(monkeypatch: pytest.MonkeyPatch
 
 def test_dataflow_id_from_import_fallbacks() -> None:
     assert dataflow_id_from_import({"dataflows": [{"id": "a"}]}) == "a"
-    assert (
-        dataflow_id_from_import({"dataflows": [{"targetDataflowId": "b"}]}) == "b"
-    )
+    assert dataflow_id_from_import({"dataflows": [{"targetDataflowId": "b"}]}) == "b"
     assert dataflow_id_from_import({"dataflows": []}) is None
     assert dataflow_id_from_import({}) is None

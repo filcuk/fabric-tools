@@ -5,7 +5,11 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from fabric_tools.notebook.definition import DefinitionError, NotebookFormat, detect_format
+from fabric_tools.notebook.definition import (
+    DefinitionError,
+    NotebookFormat,
+    detect_format,
+)
 from fabric_tools.parsing import CommandMode, ParseError, WorkItem
 
 
@@ -65,7 +69,9 @@ def validate_cells_usage(
         )
     item = items[0]
     if item.origin is not None:
-        raise ParseError("--cells requires a local --file (.ipynb); not valid with --origin")
+        raise ParseError(
+            "--cells requires a local --file (.ipynb); not valid with --origin"
+        )
     if item.file is None:
         raise ParseError("--cells requires a local --file (.ipynb)")
     try:
