@@ -279,6 +279,8 @@ def setup_install() -> None:
 
     typer.secho(f"Installed launcher: {result['launcher']}", fg=typer.colors.GREEN)
     typer.echo(f"Install directory: {result['install_dir']}")
+    if result.get("layout") == "onefile":
+        typer.echo("Unpacked one-file build into a fast onedir install (exe + _internal).")
     if result["path_added"]:
         typer.secho("Registered install directory on your user PATH.", fg=typer.colors.GREEN)
     elif result["already_on_path"]:
@@ -286,7 +288,7 @@ def setup_install() -> None:
     if result.get("legacy_cleaned"):
         typer.echo("Removed previous install under fabric-tools\\bin.")
     typer.echo(
-        "Open a new terminal, then run: fabric-tools --help"
+        "Open a new terminal (restart your IDE if needed), then run: fabric-tools --help"
     )
     raise typer.Exit(code=EXIT_OK)
 

@@ -50,26 +50,26 @@ Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP)
 
 ## Build Windows executable
 
-Produces a standalone one-dir console app flattened under `dist/` (`fabric-tools.exe` + `_internal/`):
+Produces a single portable `dist/fabric-tools.exe` (one-file). `setup install` unpacks it to a fast onedir tree under `%LOCALAPPDATA%\fabric-tools\app`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 ```
 
-Or manually:
+The script builds onedir staging first, then a onefile release that embeds the thin onedir bootloader. Or manually:
 
 ```bash
 py -3 -m pip install -e ".[build]"
 py -3 -m PyInstaller --noconfirm --clean packaging/fabric-tools.spec
-# PyInstaller leaves dist/fabric-tools/; prefer scripts/build_exe.ps1 which flattens to dist/
+set FABRIC_TOOLS_ONEDIR_BOOTLOADER=%CD%\dist\fabric-tools\fabric-tools.exe
+py -3 -m PyInstaller --noconfirm --clean packaging/fabric-tools-onefile.spec
 .\dist\fabric-tools.exe --help
 ```
 
 Notes:
 
-- Spec file: [`packaging/fabric-tools.spec`](packaging/fabric-tools.spec) (kept in git via `!packaging/*.spec`)
-- Ship `fabric-tools.exe` together with `_internal/` (zip for releases); one-dir avoids slow per-launch unpack
+- Spec files: [`packaging/fabric-tools.spec`](packaging/fabric-tools.spec) (onedir staging), [`packaging/fabric-tools-onefile.spec`](packaging/fabric-tools-onefile.spec) (release); shared inputs in [`packaging/analysis_inputs.py`](packaging/analysis_inputs.py)
+- Ship the single `dist/fabric-tools.exe`. Portable runs unpack to temp each launch (slower); `setup install` copies to an onedir install for fast PATH use
 - Do not commit `dist/` or `build/`
 - Unsigned binaries may trigger SmartScreen warnings
 - Auth from the exe uses Windows WAM (when available), browser/device-code, or `AZURE_*` service principal env vars; tokens persist under `%LOCALAPPDATA%\fabric-tools`
-- `setup install` copies the onedir tree to `%LOCALAPPDATA%\fabric-tools\app` and registers that folder on PATH
