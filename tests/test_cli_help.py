@@ -10,6 +10,7 @@ from fabric_tools.cli import app
 def test_root_help_lists_dataflow_gen1() -> None:
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
+    assert "dataflow" in result.stdout
     assert "dataflow-gen1" in result.stdout
     assert "notebook" in result.stdout
     assert "setup" in result.stdout
@@ -38,6 +39,14 @@ def test_setup_update_help_lists_check() -> None:
     assert result.exit_code == 0
     assert "--check" in result.stdout
     assert "-c" in result.stdout
+
+
+def test_dataflow_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["dataflow", "--help"])
+    assert result.exit_code == 0
+    for name in ("download", "deploy", "compare", "delete"):
+        assert name in result.stdout
+    assert "Gen2" in result.stdout or "Dataflow" in result.stdout
 
 
 def test_dataflow_gen1_help_lists_commands() -> None:

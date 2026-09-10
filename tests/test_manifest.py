@@ -15,6 +15,7 @@ from fabric_tools.cli import (
 )
 from fabric_tools.client import FabricApiError
 from fabric_tools.manifest import (
+    KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
     ManifestError,
@@ -114,6 +115,23 @@ def test_dataflow_gen1_kind_round_trip(tmp_path: Path) -> None:
     )
     assert names == ["Sales"]
     assert work_items[0].file == model.resolve()
+
+
+def test_dataflow_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Sales.Dataflow"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_DATAFLOW,
+        display_names=["Sales"],
+    )
+    path = save_manifest(tmp_path / "df2", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_DATAFLOW
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_DATAFLOW)
+    assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
 
 
 def test_delete_targets_from_manifest(tmp_path: Path) -> None:
