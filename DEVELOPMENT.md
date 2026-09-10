@@ -26,6 +26,7 @@ Optional extras:
 py -3 -m fabric_tools --version
 py -3 -m fabric_tools --help
 py -3 -m fabric_tools notebook --help
+py -3 -m fabric_tools pipeline --help
 py -3 -m fabric_tools udf --help
 py -3 -m fabric_tools --interactive
 ```
