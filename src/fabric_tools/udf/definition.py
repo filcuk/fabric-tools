@@ -204,6 +204,57 @@ def merge_remote_connections(
     return merged, True
 
 
+def part_payloads(definition: dict[str, Any]) -> dict[str, bytes]:
+    """Map normalized part paths to decoded payloads from a definition object."""
+    parts = definition.get("parts")
+    if not isinstance(parts, list) or not parts:
+        raise DefinitionError("Definition has no parts")
+    payloads: dict[str, bytes] = {}
+    for part in parts:
+        path, payload = _decode_part(part)
+        payloads[_normalize_part_path(path)] = payload
+    return payloads
+
+
+def folder_payloads(path: Path | str) -> dict[str, bytes]:
+    """Map relative part paths to bytes from a local UDF folder (via pack)."""
+    definition = pack_definition(path)
+    return part_payloads(definition)
+
+
+def definition_to_diff_text(definition: dict[str, Any]) -> str:
+    """Stable multi-file text used for unified diffs of a Fabric UDF definition."""
+    return payloads_to_diff_text(part_payloads(definition))
+
+
+def folder_to_diff_text(path: Path | str) -> str:
+    """Stable multi-file text used for unified diffs of a local UDF folder."""
+    return payloads_to_diff_text(folder_payloads(path))
+
+
+def payloads_to_diff_text(payloads: dict[str, bytes]) -> str:
+    """Render part payloads as a deterministic multi-section text blob."""
+    chunks: list[str] = []
+    for name in sorted(payloads):
+        chunks.append(f"=== {name} ===\n")
+        chunks.append(_normalize_part_text(name, payloads[name]))
+    return "".join(chunks)
+
+
+def _normalize_part_text(name: str, payload: bytes) -> str:
+    lower = name.lower()
+    if lower.endswith(".whl"):
+        return f"<binary {len(payload)} bytes>\n"
+    text = payload.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    if lower.endswith(".json") or Path(lower).name == PLATFORM_PART_PATH:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return text if text.endswith("\n") else text + "\n"
+        return json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    return text if text.endswith("\n") else text + "\n"
+
+
 def _resolve_local_file(folder: Path, candidates: tuple[str, ...]) -> Path | None:
     for relative in candidates:
         # Try both forward-slash and native separators.

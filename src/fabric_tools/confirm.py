@@ -471,6 +471,148 @@ def confirm_delete_dataflow(
     confirm_or_abort("\n".join(lines), silent=False)
 
 
+def udf_display_name(client: FabricClient, target: Target) -> str:
+    """Return Fabric item display name for a UDF target (fallback: id)."""
+    if target.item_id is None:
+        return "UserDataFunction"
+    try:
+        data = client.get_item(target.workspace_id, target.item_id)
+    except FabricApiError:
+        return target.item_id
+    name = data.get("displayName") or data.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return target.item_id
+
+
+def resolve_udf_download_files(
+    client: FabricClient,
+    items: list[WorkItem],
+) -> list[WorkItem]:
+    """Fill missing download destinations from remote names (``*.UserDataFunction``)."""
+    if not items or all(item.file is not None for item in items):
+        return items
+    if any(item.file is not None for item in items):
+        raise ValueError("download work items must all omit --file or all provide it")
+
+    with busy("Resolving download paths..."):
+        names = [
+            udf_display_name(client, item.target)
+            if item.target is not None
+            else "UserDataFunction"
+            for item in items
+        ]
+        paths = default_download_paths(names, extension=".UserDataFunction")
+    return [
+        WorkItem(item.target, path, origin=item.origin)
+        for item, path in zip(items, paths, strict=True)
+    ]
+
+
+def confirm_download_overwrites_udf(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm before overwriting existing local User Data Function folders."""
+    if silent:
+        return
+    existing = [
+        item
+        for item in items
+        if item.target is not None and item.file is not None and _path_exists(item.file)
+    ]
+    if not existing:
+        return
+
+    lines = ["About to overwrite local path(s):"]
+    with busy("Resolving targets..."):
+        for item in existing:
+            assert item.target is not None and item.file is not None
+            remote = resolve_item_name(client, item.target)
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
+def confirm_deploy_actions_udf(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+    display_names: list[str] | None = None,
+) -> None:
+    """Confirm create or remote overwrite before User Data Function deploy."""
+    from fabric_tools.udf.definition import display_name_from_path as udf_name_from_path
+
+    if silent or not items:
+        return
+
+    first = items[0].target
+    if first is None:
+        return
+
+    if first.is_create:
+        lines = ["About to create User Data Function(s):"]
+        with busy("Resolving targets..."):
+            for index, item in enumerate(items):
+                assert item.target is not None
+                workspace = resolve_workspace_name(client, item.target.workspace_id)
+                name: str | None = None
+                if (
+                    display_names
+                    and index < len(display_names)
+                    and display_names[index]
+                ):
+                    name = display_names[index]
+                if not name:
+                    if item.file is not None:
+                        name = udf_name_from_path(item.file)
+                    elif item.origin is not None:
+                        name = resolve_item_name(client, item.origin)
+                    else:
+                        name = "(unnamed)"
+                source = _source_phrase_fabric(client, item)
+                lines.append(f"  - '{name}' in {workspace}{source}")
+        lines.append("Are you sure?")
+        confirm_or_abort("\n".join(lines), silent=False)
+        return
+
+    lines = ["About to overwrite remote User Data Function(s):"]
+    with busy("Resolving targets..."):
+        for item in items:
+            assert item.target is not None
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            remote = resolve_item_name(client, item.target)
+            source = _source_phrase_fabric(client, item, prefix=" with")
+            lines.append(f"  - {remote} in {workspace}{source}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
+def confirm_delete_udf(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm soft-delete of remote User Data Function items."""
+    if silent or not items:
+        return
+
+    lines = ["About to delete remote User Data Function(s):"]
+    with busy("Resolving targets..."):
+        for item in items:
+            assert item.target is not None
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            remote = resolve_item_name(client, item.target)
+            lines.append(f"  - {remote} in {workspace}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
 def _source_phrase_fabric(
     client: FabricClient,
     item: WorkItem,

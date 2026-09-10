@@ -13,6 +13,7 @@ def test_root_help_lists_dataflow_gen1() -> None:
     assert "dataflow" in result.stdout
     assert "dataflow-gen1" in result.stdout
     assert "notebook" in result.stdout
+    assert "udf" in result.stdout
     assert "setup" in result.stdout
     assert "Commands" in result.stdout
 
@@ -68,6 +69,32 @@ def test_dataflow_gen1_help_lists_commands() -> None:
     assert result.exit_code == 0
     for name in ("download", "deploy", "compare", "delete"):
         assert name in result.stdout
+
+
+def test_udf_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["udf", "--help"])
+    assert result.exit_code == 0
+    for name in ("download", "deploy", "compare", "delete"):
+        assert name in result.stdout
+    assert "User Data Function" in result.stdout
+
+
+def test_udf_rejects_service_principal(monkeypatch) -> None:
+    monkeypatch.setenv("AZURE_TENANT_ID", "t")
+    monkeypatch.setenv("AZURE_CLIENT_ID", "c")
+    monkeypatch.setenv("AZURE_CLIENT_SECRET", "s")
+    result = CliRunner().invoke(
+        app,
+        [
+            "udf",
+            "download",
+            "-d",
+            "-t",
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "service principal" in (result.stderr or result.stdout).lower()
 
 
 def test_notebook_delete_help() -> None:

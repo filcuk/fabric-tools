@@ -267,3 +267,39 @@ def test_dry_run_dataflow_wrong_type() -> None:
         has_files=False,
     )
     assert any(not r.ok and "Notebook" in r.message for r in results)
+
+
+def test_dry_run_udf_local_and_remote(tmp_path: Path) -> None:
+    from fabric_tools.validate import run_dry_run_udf
+
+    folder = tmp_path / "Demo.UserDataFunction"
+    folder.mkdir()
+    (folder / "definition.json").write_text(
+        json.dumps(
+            {
+                "runtime": "PYTHON",
+                "connectedDataSources": [],
+                "functions": [],
+                "libraries": {"public": [], "private": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (folder / "function_app.py").write_text("print(1)\n", encoding="utf-8")
+    resources = folder / "resources"
+    resources.mkdir()
+    (resources / "functions.json").write_text("{}", encoding="utf-8")
+
+    ws = "11111111-1111-1111-1111-111111111111"
+    udf_id = "22222222-2222-2222-2222-222222222222"
+    client = FakeClient(item_type="UserDataFunction")
+    results = run_dry_run_udf(
+        CommandMode.DOWNLOAD,
+        [WorkItem(Target(ws, udf_id), folder)],
+        client=client,  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=True,
+    )
+    assert all(r.ok for r in results)
+    assert any("UserDataFunction folder" in r.message for r in results)
+    assert any("udf" in r.message for r in results)

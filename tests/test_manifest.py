@@ -18,6 +18,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_UDF,
     ManifestError,
     delete_targets_from_manifest,
     format_inspect,
@@ -131,6 +132,23 @@ def test_dataflow_kind_round_trip(tmp_path: Path) -> None:
     assert loaded.kind == KIND_DATAFLOW
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_DATAFLOW)
     assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_udf_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Demo.UserDataFunction"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_UDF,
+        display_names=["Demo"],
+    )
+    path = save_manifest(tmp_path / "udf", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_UDF
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_UDF)
+    assert names == ["Demo"]
     assert work_items[0].file == folder.resolve()
 
 

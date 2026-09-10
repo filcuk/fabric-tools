@@ -14,6 +14,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_UDF,
     ManifestError,
     delete_targets_from_manifest,
     format_inspect,
@@ -154,6 +155,14 @@ dataflow_gen1_app = typer.Typer(
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(dataflow_gen1_app, name="dataflow-gen1")
+
+udf_app = typer.Typer(
+    name="udf",
+    help="Download, deploy, compare, and delete Fabric User Data Functions.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(udf_app, name="udf")
 
 setup_app = typer.Typer(
     name="setup",
@@ -1110,6 +1119,210 @@ def dataflow_gen1_delete(
     )
 
 
+@udf_app.command("download")
+def udf_download(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(optional) Local *.UserDataFunction folder. "
+        "Defaults to remote display name with .UserDataFunction in the current folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One folder may broadcast to all targets.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or files only; do not download.",
+    ),
+) -> None:
+    """Download User Data Function definition(s) from Fabric to local folders."""
+    run_udf_command(
+        CommandMode.DOWNLOAD,
+        target_values=target,
+        file_values=file,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@udf_app.command("deploy")
+def udf_deploy(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated "
+        "(spaces after commas OK).",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.UserDataFunction folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One folder may broadcast to all targets. Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact source. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+    ),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="(optional, create only) Display name. Defaults to folder stem "
+        "or origin display name.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
+    ),
+) -> None:
+    """Deploy User Data Function item(s) from local folders or a Fabric origin."""
+    run_udf_command(
+        CommandMode.DEPLOY,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=silent,
+        dry_run=dry_run,
+        names=name,
+        manifest=manifest,
+    )
+
+
+@udf_app.command("compare")
+def udf_compare(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "With --file: one workspace only. Must 1:1 match --file or --origin.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.UserDataFunction folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact to compare against "
+        "--target. Must 1:1 match --target (no broadcast). "
+        "Mutually exclusive with --file.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not compare.",
+    ),
+) -> None:
+    """Compare target User Data Function to a local folder or Fabric origin."""
+    run_udf_command(
+        CommandMode.COMPARE,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=True,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@udf_app.command("delete")
+def udf_delete(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help="(optional) Load workspace:artifact targets from a .ftdep "
+        "(entries must have itemId). Not rewritten after delete.",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Soft-delete User Data Function item(s) in Fabric."""
+    run_udf_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
 def run_notebook_command(
     mode: CommandMode,
     *,
@@ -1790,6 +2003,236 @@ def run_dataflow_gen1_command(
         client.close()
 
 
+def run_udf_command(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    origin_values: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
+    manifest: str | None = None,
+    on_success: Callable[..., None] | None = None,
+) -> None:
+    """Shared entry for User Data Function CLI commands and the interactive wizard."""
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_udf,
+        confirm_deploy_actions_udf,
+        confirm_download_overwrites_udf,
+        resolve_udf_download_files,
+    )
+    from fabric_tools.status import busy
+    from fabric_tools.udf.compare import run_compare_batch as run_udf_compare
+    from fabric_tools.udf.ops import (
+        UdfAuthError,
+        check_udf_user_auth,
+    )
+    from fabric_tools.udf.ops import (
+        run_delete_batch as run_udf_delete,
+    )
+    from fabric_tools.udf.ops import (
+        run_deploy_batch as run_udf_deploy,
+    )
+    from fabric_tools.udf.ops import (
+        run_download_batch as run_udf_download,
+    )
+    from fabric_tools.validate import run_dry_run_udf
+
+    try:
+        check_udf_user_auth()
+    except UdfAuthError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    try:
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_udf_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
+        )
+    except (ParseError, ManifestError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    if dry_run:
+        client: FabricClient | None = None
+        try:
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    client.ensure_authenticated()
+            with busy("Checking..."):
+                results = run_dry_run_udf(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                )
+        except Exception as exc:  # noqa: BLE001
+            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=EXIT_API) from exc
+        finally:
+            if client is not None:
+                client.close()
+
+        failed = False
+        for result in results:
+            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            typer.secho(result.message, fg=color)
+            if not result.ok:
+                failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_udf_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except ParseError as exc:
+                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=EXIT_USER) from exc
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_UDF,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+            )
+        raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
+
+    try:
+        display_names = (
+            _resolve_udf_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
+            else None
+        )
+    except ParseError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    with busy("Authenticating..."):
+        client = FabricClient()
+        client.ensure_authenticated()
+    try:
+        if mode is CommandMode.DOWNLOAD:
+            items = resolve_udf_download_files(client, items)
+            confirm_download_overwrites_udf(client, items, silent=silent)
+            with busy("Downloading..."):
+                op_results = run_udf_download(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_UDF,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_actions_udf(
+                client,
+                items,
+                silent=silent,
+                display_names=display_names,
+            )
+            with busy("Deploying..."):
+                op_results = run_udf_deploy(
+                    client,
+                    items,
+                    display_names=display_names,
+                )
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            for result in op_results:
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}",
+                        fg=typer.colors.CYAN,
+                    )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_UDF,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.COMPARE:
+            with busy("Comparing..."):
+                compare_results = run_udf_compare(client, items)
+            _print_compare_results(compare_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+                kind=KIND_UDF,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+            )
+            _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DELETE:
+            confirm_delete_udf(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_udf_delete(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        else:
+            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=EXIT_USER)
+    except ConfirmationAborted as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+    finally:
+        client.close()
+
+
 def _resolve_dataflow_inputs(
     mode: CommandMode,
     *,
@@ -1999,6 +2442,107 @@ def _resolve_dataflow_gen1_deploy_names(
             resolved.append(chosen)
         elif item.file is not None:
             resolved.append(display_name_from_model(load_model(item.file)))
+        else:
+            resolved.append("")
+    return resolved
+
+
+def _resolve_udf_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve UDF targets/files/origins from CLI and/or a deployment manifest."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
+    manifest_names: list[str | None] | None = None
+
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(loaded, expected_kind=KIND_UDF)
+            return items, None, True, False, False
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False
+
+    if cli_targets or cli_files or cli_origins:
+        targets = cli_targets
+        files = cli_files
+        origins = cli_origins
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_UDF
+        )
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
+            )
+    else:
+        targets = []
+        files = []
+        origins = []
+
+    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files), bool(origins)
+
+
+def _resolve_udf_deploy_names(
+    items: list[WorkItem],
+    names: list[str | None] | list[str] | None,
+) -> list[str]:
+    from fabric_tools.udf.definition import display_name_from_path
+
+    if names and len(names) not in {1, len(items)}:
+        raise ParseError(
+            f"--name count must be 1 or match target count ({len(items)}); "
+            f"got {len(names)}"
+        )
+    resolved: list[str] = []
+    for index, item in enumerate(items):
+        chosen: str | None = None
+        if names:
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
+        elif item.file is not None:
+            resolved.append(display_name_from_path(item.file))
         else:
             resolved.append("")
     return resolved
