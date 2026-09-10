@@ -269,6 +269,43 @@ def test_dry_run_dataflow_wrong_type() -> None:
     assert any(not r.ok and "Notebook" in r.message for r in results)
 
 
+def test_dry_run_pipeline_local_and_remote(tmp_path: Path) -> None:
+    from fabric_tools.validate import run_dry_run_pipeline
+
+    folder = tmp_path / "ETL.DataPipeline"
+    folder.mkdir()
+    (folder / "pipeline-content.json").write_text(
+        json.dumps(
+            {
+                "properties": {
+                    "activities": [
+                        {
+                            "name": "Wait_1",
+                            "type": "Wait",
+                            "dependsOn": [],
+                            "typeProperties": {"waitTimeInSeconds": 10},
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    ws = "11111111-1111-1111-1111-111111111111"
+    pl = "22222222-2222-2222-2222-222222222222"
+    client = FakeClient(item_type="DataPipeline")
+    results = run_dry_run_pipeline(
+        CommandMode.DOWNLOAD,
+        [WorkItem(Target(ws, pl), folder)],
+        client=client,  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=True,
+    )
+    assert all(r.ok for r in results)
+    assert any("DataPipeline folder" in r.message for r in results)
+    assert any("pipeline" in r.message for r in results)
+
+
 def test_dry_run_udf_local_and_remote(tmp_path: Path) -> None:
     from fabric_tools.validate import run_dry_run_udf
 

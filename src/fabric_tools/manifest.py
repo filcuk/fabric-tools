@@ -17,6 +17,7 @@ MANIFEST_SUFFIX = ".ftdep"
 KIND_NOTEBOOK = "notebook"
 KIND_DATAFLOW = "dataflow"
 KIND_DATAFLOW_GEN1 = "dataflow-gen1"
+KIND_PIPELINE = "pipeline"
 KIND_UDF = "udf"
 
 

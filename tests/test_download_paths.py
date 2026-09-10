@@ -9,6 +9,7 @@ from fabric_tools.confirm import (
     resolve_dataflow_download_files,
     resolve_dataflow_gen1_download_files,
     resolve_notebook_download_files,
+    resolve_pipeline_download_files,
 )
 from fabric_tools.parsing import Target, WorkItem
 
@@ -78,3 +79,22 @@ def test_resolve_dataflow_download_files_defaults() -> None:
         items,
     )
     assert resolved[0].file == Path("My Flow.Dataflow")
+
+
+class FakePipelineFabricClient:
+    def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
+        return {
+            "id": item_id,
+            "workspaceId": workspace_id,
+            "displayName": "My Pipe",
+            "type": "DataPipeline",
+        }
+
+
+def test_resolve_pipeline_download_files_defaults() -> None:
+    items = [WorkItem(Target(WS, A), None)]
+    resolved = resolve_pipeline_download_files(
+        FakePipelineFabricClient(),  # type: ignore[arg-type]
+        items,
+    )
+    assert resolved[0].file == Path("My Pipe.DataPipeline")

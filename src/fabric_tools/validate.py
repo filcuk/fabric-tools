@@ -1,4 +1,4 @@
-"""Dry-run validation for notebook, dataflow, dataflow-gen1, and udf CLI commands."""
+"""Dry-run validation for notebook, dataflow, dataflow-gen1, pipeline, and udf CLI commands."""
 
 from __future__ import annotations
 
@@ -28,6 +28,10 @@ from fabric_tools.notebook.definition import (
 )
 from fabric_tools.notebook.ops import get_notebook_definition
 from fabric_tools.parsing import CommandMode, Target, WorkItem
+from fabric_tools.pipeline.definition import (
+    DefinitionError as PipelineDefinitionError,
+)
+from fabric_tools.pipeline.definition import validate_local_pipeline
 from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
 from fabric_tools.udf.definition import (
     DefinitionError as UdfDefinitionError,
@@ -298,6 +302,91 @@ def run_dry_run_dataflow_gen1(
     return results
 
 
+def run_dry_run_pipeline(
+    mode: CommandMode,
+    items: list[WorkItem],
+    *,
+    client: FabricClient | None,
+    has_targets: bool,
+    has_files: bool,
+    has_origins: bool = False,
+) -> list[CheckResult]:
+    """Validate pipeline local folders and/or Fabric remotes without mutating."""
+    results: list[CheckResult] = []
+
+    if has_files:
+        seen_files: set[Path] = set()
+        for item in items:
+            if item.file is None:
+                continue
+            file_key = item.file.resolve()
+            if file_key in seen_files:
+                continue
+            seen_files.add(file_key)
+            try:
+                validate_local_pipeline(item.file)
+                results.append(
+                    CheckResult(True, f"local ok: {item.file} (DataPipeline folder)")
+                )
+            except PipelineDefinitionError as exc:
+                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+
+    needs_remote = has_targets or has_origins
+    if needs_remote:
+        if client is None:
+            results.append(CheckResult(False, "remote fail: Fabric client is required"))
+            return results
+        seen_workspaces: set[str] = set()
+        seen_items: set[str] = set()
+
+        if has_origins:
+            for item in items:
+                origin = item.origin
+                if origin is None or origin.item_id is None:
+                    continue
+                if origin.workspace_id not in seen_workspaces:
+                    seen_workspaces.add(origin.workspace_id)
+                    results.append(_check_workspace(client, origin.workspace_id))
+                key = origin.label()
+                if key not in seen_items:
+                    seen_items.add(key)
+                    results.append(
+                        _check_item(
+                            client,
+                            origin,
+                            mode=mode,
+                            role="origin",
+                            expected_type="DataPipeline",
+                            kind_label="pipeline",
+                        )
+                    )
+
+        if has_targets:
+            for item in items:
+                target = item.target
+                if target is None:
+                    continue
+                if target.workspace_id not in seen_workspaces:
+                    seen_workspaces.add(target.workspace_id)
+                    results.append(_check_workspace(client, target.workspace_id))
+                if target.item_id is not None:
+                    key = target.label()
+                    if key not in seen_items:
+                        seen_items.add(key)
+                        results.append(
+                            _check_item(
+                                client,
+                                target,
+                                mode=mode,
+                                role="target",
+                                expected_type="DataPipeline",
+                                kind_label="pipeline",
+                            )
+                        )
+
+    return results
+
+
 def run_dry_run_udf(
     mode: CommandMode,
     items: list[WorkItem],
@@ -322,7 +411,9 @@ def run_dry_run_udf(
             try:
                 validate_local_udf(item.file)
                 results.append(
-                    CheckResult(True, f"local ok: {item.file} (UserDataFunction folder)")
+                    CheckResult(
+                        True, f"local ok: {item.file} (UserDataFunction folder)"
+                    )
                 )
             except UdfDefinitionError as exc:
                 results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))

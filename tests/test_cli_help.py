@@ -13,6 +13,7 @@ def test_root_help_lists_dataflow_gen1() -> None:
     assert "dataflow" in result.stdout
     assert "dataflow-gen1" in result.stdout
     assert "notebook" in result.stdout
+    assert "pipeline" in result.stdout
     assert "udf" in result.stdout
     assert "setup" in result.stdout
     assert "Commands" in result.stdout
@@ -77,6 +78,14 @@ def test_udf_help_lists_commands() -> None:
     for name in ("download", "deploy", "compare", "delete"):
         assert name in result.stdout
     assert "User Data Function" in result.stdout
+
+
+def test_pipeline_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["pipeline", "--help"])
+    assert result.exit_code == 0
+    for name in ("download", "deploy", "compare", "delete"):
+        assert name in result.stdout
+    assert "DataPipeline" in result.stdout
 
 
 def test_udf_rejects_service_principal(monkeypatch) -> None:
