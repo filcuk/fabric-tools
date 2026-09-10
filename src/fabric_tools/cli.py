@@ -53,6 +53,39 @@ _BANNER = r"""
 """
 
 
+def _install_description_before_usage() -> None:
+    """Reorder Typer rich help: description, then Usage, then options/commands."""
+    from rich.align import Align
+    from rich.padding import Padding
+    from typer import rich_utils
+
+    original = rich_utils.rich_format_help
+
+    def rich_format_help(*, obj, ctx, markup_mode):
+        help_text = obj.help
+        if help_text:
+            console = rich_utils._get_rich_console()
+            console.print(
+                Padding(
+                    Align(
+                        rich_utils._get_help_text(obj=obj, markup_mode=markup_mode),
+                        pad=False,
+                    ),
+                    (1, 1, 0, 1),
+                )
+            )
+            obj.help = None
+        try:
+            original(obj=obj, ctx=ctx, markup_mode=markup_mode)
+        finally:
+            obj.help = help_text
+
+    rich_utils.rich_format_help = rich_format_help  # type: ignore[assignment]
+
+
+_install_description_before_usage()
+
+
 class _BannerGroup(TyperGroup):
     """Root help: banner, then subtitle, then Usage / options."""
 

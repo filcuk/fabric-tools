@@ -23,6 +23,16 @@ def test_setup_help_lists_update() -> None:
     assert "install" in result.stdout
 
 
+def test_help_puts_description_before_usage() -> None:
+    result = CliRunner().invoke(app, ["setup", "update", "--help"])
+    assert result.exit_code == 0
+    description = "Check for a newer release"
+    usage = "Usage:"
+    assert description in result.stdout
+    assert usage in result.stdout
+    assert result.stdout.index(description) < result.stdout.index(usage)
+
+
 def test_setup_update_help_lists_check() -> None:
     result = CliRunner().invoke(app, ["setup", "update", "--help"])
     assert result.exit_code == 0
