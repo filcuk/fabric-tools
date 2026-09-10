@@ -119,13 +119,13 @@ dataflow_gen1_app = typer.Typer(
 )
 app.add_typer(dataflow_gen1_app, name="dataflow-gen1")
 
-path_app = typer.Typer(
-    name="path",
-    help="Register fabric-tools on your user PATH so you can run it as 'fabric-tools'.",
+setup_app = typer.Typer(
+    name="setup",
+    help="Install fabric-tools so you can run it as 'fabric-tools' from any terminal.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
-app.add_typer(path_app, name="path")
+app.add_typer(setup_app, name="setup")
 
 
 @app.command("update")
@@ -286,9 +286,9 @@ def main(
             typer.echo(ctx.get_help())
         raise typer.Exit()
 
-@path_app.command("install")
-def path_install() -> None:
-    """Install fabric-tools into a stable folder and add it to your user PATH."""
+@setup_app.command("install")
+def setup_install() -> None:
+    """Install fabric-tools into a stable folder and register it for your user account."""
     from fabric_tools.path_setup import PathSetupError, install_to_user_path
 
     try:
@@ -298,26 +298,28 @@ def path_install() -> None:
         raise typer.Exit(code=EXIT_USER) from exc
 
     typer.secho(f"Installed launcher: {result['launcher']}", fg=typer.colors.GREEN)
-    typer.echo(f"Bin directory: {result['bin_dir']}")
+    typer.echo(f"Install directory: {result['install_dir']}")
     if result["path_added"]:
-        typer.secho("Added bin directory to your user PATH.", fg=typer.colors.GREEN)
+        typer.secho("Registered install directory on your user PATH.", fg=typer.colors.GREEN)
     elif result["already_on_path"]:
-        typer.echo("Bin directory was already on your user PATH.")
+        typer.echo("Install directory was already on your user PATH.")
+    if result.get("legacy_cleaned"):
+        typer.echo("Removed previous install under fabric-tools\\bin.")
     typer.echo(
         "Open a new terminal, then run: fabric-tools --help"
     )
     raise typer.Exit(code=EXIT_OK)
 
 
-@path_app.command("uninstall")
-def path_uninstall(
+@setup_app.command("uninstall")
+def setup_uninstall(
     keep_files: bool = typer.Option(
         False,
         "--keep-files",
-        help="(optional) Leave installed files in place; only remove PATH entry.",
+        help="(optional) Leave installed files in place; only remove PATH registration.",
     ),
 ) -> None:
-    """Remove fabric-tools PATH registration (and installed files by default)."""
+    """Remove fabric-tools registration (and installed files by default)."""
     from fabric_tools.path_setup import PathSetupError, uninstall_from_user_path
 
     try:
@@ -327,18 +329,18 @@ def path_uninstall(
         raise typer.Exit(code=EXIT_USER) from exc
 
     if result["removed_from_path"]:
-        typer.secho("Removed bin directory from your user PATH.", fg=typer.colors.GREEN)
+        typer.secho("Removed install directory from your user PATH.", fg=typer.colors.GREEN)
     else:
-        typer.echo("Bin directory was not present on your user PATH.")
+        typer.echo("Install directory was not present on your user PATH.")
     if result["deleted_files"]:
         typer.echo(f"Deleted: {result['deleted_files']}")
     typer.echo("Open a new terminal for PATH changes to take effect.")
     raise typer.Exit(code=EXIT_OK)
 
 
-@path_app.command("status")
-def path_status_cmd() -> None:
-    """Show whether fabric-tools is registered on PATH."""
+@setup_app.command("status")
+def setup_status_cmd() -> None:
+    """Show whether fabric-tools is installed and registered."""
     from fabric_tools.path_setup import PathSetupError, path_status
 
     try:
@@ -347,10 +349,11 @@ def path_status_cmd() -> None:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    typer.echo(f"Bin directory: {status['bin_dir']}")
-    typer.echo(f"Exe present:   {status['exe_present']}")
-    typer.echo(f"Cmd present:   {status['cmd_present']}")
-    typer.echo(f"On user PATH:  {status['bin_dir_on_user_path']}")
+    typer.echo(f"Install directory: {status['install_dir']}")
+    typer.echo(f"Exe present:       {status['exe_present']}")
+    typer.echo(f"Cmd present:       {status['cmd_present']}")
+    typer.echo(f"_internal present: {status['internal_present']}")
+    typer.echo(f"On user PATH:      {status['bin_dir_on_user_path']}")
     typer.echo(f"Running frozen exe: {status['frozen']}")
     which = status["which_fabric_tools"]
     typer.echo(f"shutil.which('fabric-tools'): {which or '(not found in this process PATH)'}")
