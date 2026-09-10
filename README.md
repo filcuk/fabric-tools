@@ -15,6 +15,7 @@ Open a new terminal (restart your IDE if the command is not found) and get start
 ```powershell
 fabric-tools --help
 fabric-tools notebook --help
+fabric-tools dataflow --help
 fabric-tools dataflow-gen1 --help
 fabric-tools --interactive
 fabric-tools setup update --check
@@ -37,6 +38,10 @@ Commands may print a one-line update notice on stderr at most once per local day
   - `.ipynb` — Jupyter notebook
   - `*.Notebook\` — Fabric Git folder with `notebook-content.*` and `.platform`
   - download, deploy (create/overwrite), compare, delete (soft delete)
+- Dataflow Gen2 (Fabric)
+  - `*.Dataflow\` — Git-style folder with `queryMetadata.json`, `mashup.pq` (optional `.platform`, `*.mdf`)
+  - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Connection IDs in the definition are environment-specific; Publish may still be needed in the service after sync
 - Dataflow Gen1 (Power BI)
   - `model.json` — CDM dataflow definition
   - download, deploy (**create only**), compare, delete
@@ -47,7 +52,7 @@ Commands may print a one-line update notice on stderr at most once per local day
 | Flag | Alias | Purpose |
 |------|---------|---------|
 | `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated). Overwrite CSV: one workspace per `-t` (bare artifact ids inherit that workspace). Create CSV may list multiple workspaces. |
-| `--file` | `-f` | Local notebook path/folder or Gen1 `model.json` (repeatable or comma-separated). Optional on download: defaults to remote name + `.ipynb` / `.json` in the current folder. |
+| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, or Gen1 `model.json` (repeatable or comma-separated). Optional on download: defaults to remote name + `.ipynb` / `.Dataflow` / `.json` in the current folder. |
 | `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as `--target`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
@@ -96,6 +101,14 @@ fabric-tools notebook compare -o <devWs>:<notebookId> -t <testWs>:<notebookId>
 # Soft-delete notebooks
 fabric-tools notebook delete -s -t <workspaceId>:<notebookId>
 
+# Dataflow Gen2: download / create / overwrite / compare / delete
+fabric-tools dataflow download -s -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
+fabric-tools dataflow download -s -t <workspaceId>:<dataflowId>
+fabric-tools dataflow deploy -s -t <workspaceId> -f .\Sales.Dataflow -n "Sales"
+fabric-tools dataflow deploy -s -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
+fabric-tools dataflow compare -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
+fabric-tools dataflow delete -s -t <workspaceId>:<dataflowId>
+
 # Dataflow Gen1: download / create / compare / delete
 fabric-tools dataflow-gen1 download -s -t <workspaceId>:<dataflowId> -f .\model.json
 fabric-tools dataflow-gen1 download -s -t <workspaceId>:<dataflowId>
@@ -132,7 +145,7 @@ fabric-tools setup update -s
 Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
 broker, then falls back to browser or device-code auth.
 
-Notebooks use the Fabric API token. Dataflow Gen1 uses a Power BI API token
+Notebooks and Dataflow Gen2 use the Fabric API token. Dataflow Gen1 uses a Power BI API token
 (same sign-in / service principal; different audience).
 
 For automation, set a service principal:
