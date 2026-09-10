@@ -17,15 +17,19 @@ fabric-tools --help
 fabric-tools notebook --help
 fabric-tools dataflow-gen1 --help
 fabric-tools --interactive
-fabric-tools update --check
+fabric-tools setup update --check
 ```
 
-Check or remove registration:
+Install, update, check status, or remove registration:
 
 ```powershell
+fabric-tools setup install
+fabric-tools setup update
 fabric-tools setup status
 fabric-tools setup uninstall
 ```
+
+Commands may print a one-line update notice on stderr at most once per local day when a newer GitHub release exists. Disable with `$env:FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`.
 
 ## Support
 
@@ -115,8 +119,12 @@ fabric-tools inspect -m test
 fabric-tools inspect
 
 # Check GitHub Releases for a newer fabric-tools version
-fabric-tools update --check
-fabric-tools update -c
+fabric-tools setup update --check
+fabric-tools setup update -c
+
+# Download and install the newer Windows .exe release (frozen builds only)
+fabric-tools setup update
+fabric-tools setup update -s
 ```
 
 ## Authentication
@@ -139,7 +147,7 @@ $env:AZURE_CLIENT_SECRET="..."
 
 | Code | Meaning |
 |------|---------|
-| `0` | Success (compare: all pairs identical; `update --check`: up to date) |
+| `0` | Success (compare: all pairs identical; `setup update --check`: up to date) |
 | `1` | Validation error, user abort, compare found differences, or newer release available |
 | `2` | Fabric / Power BI API or operation failure (also: update check network/API failure) |
 

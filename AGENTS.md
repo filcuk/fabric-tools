@@ -11,11 +11,11 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow-gen1` groups, `inspect`, `update`
+  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow-gen1` groups, `inspect`, `setup`
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow-gen1`)
-  - `path_setup.py` — Windows user install/uninstall (`fabric-tools setup …`; onefile unpacks to onedir under `%LOCALAPPDATA%\fabric-tools\app`)
-  - `update_check.py` — GitHub Releases latest-version check (`fabric-tools update --check`)
+  - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; onefile unpacks to onedir under `%LOCALAPPDATA%\fabric-tools\app`; `setup update` downloads release exe and deferred-installs)
+  - `update_check.py` — GitHub Releases check (`setup update --check`); once-per-day background notice; release asset download
   - `auth.py` — Azure token acquisition (Fabric + Power BI scopes; SP env, WAM broker, browser/device code; persistent cache)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
   - `powerbi_client.py` — Power BI REST client (Gen1 dataflow get/delete/import + poll)
@@ -51,6 +51,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Schema v1 = file sources; v2 adds origin fields. Top-level `inspect` lists `.ftdep` in cwd; `inspect -m` shows one. Interactive may offer save after execute or dry-run.
 - Flags: `--silent`, `--dry-run`
 - Auth: interactive default; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`
+- Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only.
 
 ### Notebooks
 
@@ -78,6 +79,7 @@ py -3 -m pip install -e ".[dev]"
 py -3 -m fabric_tools --version
 py -3 -m fabric_tools notebook --help
 py -3 -m fabric_tools dataflow-gen1 --help
+py -3 -m fabric_tools setup --help
 py -3 -m ruff check .
 py -3 -m ruff format --check .
 py -3 -m pytest

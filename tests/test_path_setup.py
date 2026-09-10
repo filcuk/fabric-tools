@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from fabric_tools.path_setup import (
+    APPLY_UPDATE_HELPER_NAME,
     EXE_NAME,
     INTERNAL_DIR_NAME,
     ONEDIR_BOOTLOADER_DIR,
@@ -16,7 +17,10 @@ from fabric_tools.path_setup import (
     _join_path,
     _normalize_dir,
     _split_path,
+    _write_deferred_install_helper,
+    perform_setup_update,
 )
+from fabric_tools.update_check import UpdateCheckResult
 
 
 def test_split_join_path() -> None:
@@ -108,3 +112,121 @@ def test_install_from_onefile_requires_bootloader(tmp_path: Path) -> None:
     (meipass / "payload.dll").write_bytes(b"dll")
     with pytest.raises(PathSetupError, match="embedded onedir bootloader"):
         _install_from_onefile_meipass(meipass, tmp_path / "app")
+
+
+def test_write_deferred_install_helper(tmp_path: Path) -> None:
+    helper = tmp_path / APPLY_UPDATE_HELPER_NAME
+    _write_deferred_install_helper(helper)
+    text = helper.read_text(encoding="utf-8")
+    assert "tasklist" in text
+    assert "setup install" in text
+
+
+def test_perform_setup_update_requires_frozen(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fabric_tools.path_setup.os.name", "nt")
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: False)
+    with pytest.raises(PathSetupError, match="Windows .exe"):
+        perform_setup_update(silent=True)
+
+
+def test_perform_setup_update_up_to_date(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("fabric_tools.path_setup.os.name", "nt")
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr(
+        "fabric_tools.update_check.check_for_update",
+        lambda: UpdateCheckResult(
+            current="0.2.0",
+            latest="0.2.0",
+            update_available=False,
+            release_url=None,
+            tag_name="v0.2.0",
+        ),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.update_check.save_update_cache",
+        lambda *args, **kwargs: None,
+    )
+    result = perform_setup_update(silent=True)
+    assert result["up_to_date"] is True
+    assert result["current"] == "0.2.0"
+
+
+def test_perform_setup_update_missing_asset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fabric_tools.path_setup.os.name", "nt")
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr(
+        "fabric_tools.update_check.check_for_update",
+        lambda: UpdateCheckResult(
+            current="0.2.0",
+            latest="0.3.0",
+            update_available=True,
+            release_url="https://example/release",
+            tag_name="v0.3.0",
+            asset_url=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.update_check.save_update_cache",
+        lambda *args, **kwargs: None,
+    )
+    with pytest.raises(PathSetupError, match="no fabric-tools.exe"):
+        perform_setup_update(silent=True)
+
+
+def test_perform_setup_update_downloads_and_schedules(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("fabric_tools.path_setup.os.name", "nt")
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.install_root",
+        lambda: tmp_path / "fabric-tools",
+    )
+    monkeypatch.setattr(
+        "fabric_tools.update_check.check_for_update",
+        lambda: UpdateCheckResult(
+            current="0.2.0",
+            latest="0.3.0",
+            update_available=True,
+            release_url="https://example/release",
+            tag_name="v0.3.0",
+            asset_url="https://example/fabric-tools.exe",
+        ),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.update_check.save_update_cache",
+        lambda *args, **kwargs: None,
+    )
+
+    def fake_download(url: str, destination: Path, **kwargs: object) -> Path:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"exe")
+        return destination
+
+    monkeypatch.setattr(
+        "fabric_tools.update_check.download_release_asset",
+        fake_download,
+    )
+    spawned: list[tuple[Path, int, Path]] = []
+
+    def fake_spawn(helper: Path, pid: int, exe: Path) -> None:
+        spawned.append((helper, pid, exe))
+
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._spawn_deferred_install",
+        fake_spawn,
+    )
+
+    result = perform_setup_update(silent=True)
+    assert result["scheduled"] is True
+    assert result["up_to_date"] is False
+    exe_path = Path(str(result["exe_path"]))
+    assert exe_path.is_file()
+    assert exe_path.read_bytes() == b"exe"
+    assert len(spawned) == 1
+    helper, _pid, exe = spawned[0]
+    assert helper.name == APPLY_UPDATE_HELPER_NAME
+    assert helper.is_file()
+    assert exe == exe_path
