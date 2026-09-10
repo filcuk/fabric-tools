@@ -119,7 +119,9 @@ def fetch_latest_release(
         "X-GitHub-Api-Version": "2022-11-28",
     }
     owns_client = client is None
-    http = client or httpx.Client(timeout=timeout, headers=headers, follow_redirects=True)
+    http = client or httpx.Client(
+        timeout=timeout, headers=headers, follow_redirects=True
+    )
     try:
         response = http.get(RELEASES_URL, params={"per_page": 30})
         if response.status_code == 404:

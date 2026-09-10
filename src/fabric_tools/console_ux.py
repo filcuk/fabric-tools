@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 
@@ -41,7 +42,9 @@ def _process_image_name(pid: int) -> str | None:
 
         kernel32 = ctypes.windll.kernel32
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+        handle = kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid)
+        )
         if not handle:
             return None
         try:
@@ -193,7 +196,5 @@ def pause_if_double_clicked(message: str | None = None) -> None:
     try:
         os.system("pause")
     except Exception:
-        try:
+        with contextlib.suppress(EOFError):
             input()
-        except EOFError:
-            pass

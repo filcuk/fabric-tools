@@ -70,9 +70,7 @@ def test_interactive_dry_run_offers_manifest_callback(
             "./a.ipynb",
         ]
     )
-    confirms = iter(
-        [False, True, True]
-    )  # add another?, specify paths?, proceed?
+    confirms = iter([False, True, True])  # add another?, specify paths?, proceed?
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -105,7 +103,6 @@ def test_prompt_save_manifest_writes_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Any,
 ) -> None:
-    from pathlib import Path
 
     from fabric_tools.interactive import prompt_save_manifest
     from fabric_tools.parsing import Target, WorkItem

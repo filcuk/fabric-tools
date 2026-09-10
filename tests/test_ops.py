@@ -72,9 +72,9 @@ class FakeClient:
                     "cells": self.remote_cells,
                     "metadata": self.remote_metadata,
                 }
-            payload = base64.b64encode(
-                json_module_dumps(nb).encode("utf-8")
-            ).decode("ascii")
+            payload = base64.b64encode(json_module_dumps(nb).encode("utf-8")).decode(
+                "ascii"
+            )
             return {
                 "definition": {
                     "format": "ipynb",
@@ -103,7 +103,10 @@ def test_download_writes_ipynb(tmp_path: Path) -> None:
     client = FakeClient()
     dest = tmp_path / "out.ipynb"
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         dest,
     )
     result = download_notebook(client, item)  # type: ignore[arg-type]
@@ -116,9 +119,7 @@ def test_deploy_create(tmp_path: Path) -> None:
     client = FakeClient()
     src = tmp_path / "demo.ipynb"
     src.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
     item = WorkItem(Target("11111111-1111-1111-1111-111111111111"), src)
@@ -157,13 +158,14 @@ def test_deploy_overwrite(tmp_path: Path) -> None:
     client = FakeClient()
     src = tmp_path / "demo.ipynb"
     src.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         src,
     )
     result = deploy_notebook(client, item)  # type: ignore[arg-type]
@@ -185,13 +187,14 @@ def test_deploy_overwrite_preserves_remote_lakehouse(tmp_path: Path) -> None:
     client = FakeClient(remote_metadata=remote_meta)
     src = tmp_path / "demo.ipynb"
     src.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         src,
     )
     result = deploy_notebook(client, item)  # type: ignore[arg-type]
@@ -226,7 +229,10 @@ def test_deploy_overwrite_keeps_explicit_local_lakehouse(tmp_path: Path) -> None
         encoding="utf-8",
     )
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         src,
     )
     result = deploy_notebook(client, item)  # type: ignore[arg-type]
@@ -264,7 +270,10 @@ def test_deploy_selective_cells(tmp_path: Path) -> None:
     }
     src.write_text(json.dumps(local), encoding="utf-8")
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         src,
     )
     result = deploy_notebook(client, item, cell_indices=[1, 3])  # type: ignore[arg-type]
@@ -277,7 +286,9 @@ def test_deploy_selective_cells(tmp_path: Path) -> None:
     merged = json.loads(payload.decode("utf-8"))
     assert merged["metadata"] == {"remote": True}
     assert merged["cells"][0]["source"] == ["l1\n"]
-    assert merged["cells"][0]["outputs"] == [{"output_type": "stream", "text": ["hi\n"]}]
+    assert merged["cells"][0]["outputs"] == [
+        {"output_type": "stream", "text": ["hi\n"]}
+    ]
     assert merged["cells"][1]["source"] == ["r2\n"]
     assert merged["cells"][2]["source"] == ["l3\n"]
 
@@ -296,15 +307,28 @@ def test_deploy_selective_cells_missing_remote(tmp_path: Path) -> None:
                 "nbformat_minor": 5,
                 "metadata": {},
                 "cells": [
-                    {"cell_type": "code", "metadata": {}, "source": ["l1\n"], "outputs": []},
-                    {"cell_type": "code", "metadata": {}, "source": ["l2\n"], "outputs": []},
+                    {
+                        "cell_type": "code",
+                        "metadata": {},
+                        "source": ["l1\n"],
+                        "outputs": [],
+                    },
+                    {
+                        "cell_type": "code",
+                        "metadata": {},
+                        "source": ["l2\n"],
+                        "outputs": [],
+                    },
                 ],
             }
         ),
         encoding="utf-8",
     )
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         src,
     )
     result = deploy_notebook(client, item, cell_indices=[1, 2])  # type: ignore[arg-type]
@@ -360,7 +384,10 @@ def test_deploy_from_origin_preserves_target_lakehouse() -> None:
         uploaded["metadata"]["dependencies"]["lakehouse"]["default_lakehouse"]
         == "test-lh"
     )
-    assert uploaded["metadata"]["dependencies"]["environment"]["environmentId"] == "test-env"
+    assert (
+        uploaded["metadata"]["dependencies"]["environment"]["environmentId"]
+        == "test-env"
+    )
 
 
 def test_deploy_create_from_origin_uses_display_name() -> None:
@@ -392,9 +419,7 @@ def test_compare_origin_to_target_identical() -> None:
         ],
         "metadata": {},
     }
-    client = FakeClient(
-        definitions_by_item={ORIGIN_ITEM: shared, TARGET_ITEM: shared}
-    )
+    client = FakeClient(definitions_by_item={ORIGIN_ITEM: shared, TARGET_ITEM: shared})
     item = WorkItem(
         Target(WS2, TARGET_ITEM),
         None,

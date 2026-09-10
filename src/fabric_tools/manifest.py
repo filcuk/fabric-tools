@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from fabric_tools.parsing import Target, WorkItem
 
@@ -84,7 +85,9 @@ def load_manifest(path: str | Path) -> DeploymentManifest:
 
     entries_raw = raw.get("entries")
     if not isinstance(entries_raw, list) or not entries_raw:
-        raise ManifestError(f"manifest must contain a non-empty entries array: {resolved}")
+        raise ManifestError(
+            f"manifest must contain a non-empty entries array: {resolved}"
+        )
 
     base = resolved.parent
     entries: list[ManifestEntry] = []
@@ -288,7 +291,11 @@ def list_manifest_paths(directory: str | Path | None = None) -> list[Path]:
     if not root.is_dir():
         raise ManifestError(f"directory not found: {root}")
     return sorted(
-        (p for p in root.iterdir() if p.is_file() and p.suffix.lower() == MANIFEST_SUFFIX),
+        (
+            p
+            for p in root.iterdir()
+            if p.is_file() and p.suffix.lower() == MANIFEST_SUFFIX
+        ),
         key=lambda p: p.name.lower(),
     )
 
@@ -345,7 +352,9 @@ def _parse_entry(
     elif isinstance(item_raw, str):
         item_id = item_raw.strip() or None
     else:
-        raise ManifestError(f"entries[{index}].itemId must be a string or null in {path}")
+        raise ManifestError(
+            f"entries[{index}].itemId must be a string or null in {path}"
+        )
 
     file_raw = raw.get("file")
     origin_ws_raw = raw.get("originWorkspaceId")

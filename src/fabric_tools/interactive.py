@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
-import typer
 import questionary
+import typer
 from questionary import Choice
 
 from fabric_tools.exit_codes import EXIT_USER

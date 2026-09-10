@@ -25,7 +25,9 @@ def test_auth_record_roundtrip(tmp_path: Path, monkeypatch) -> None:
     assert loaded is not None
     assert loaded.username == "user@example.com"
     assert loaded.tenant_id == record.tenant_id
-    assert auth.auth_record_path() == tmp_path / "fabric-tools" / "msal-auth-record.json"
+    assert (
+        auth.auth_record_path() == tmp_path / "fabric-tools" / "msal-auth-record.json"
+    )
 
 
 def test_load_authentication_record_missing(tmp_path: Path, monkeypatch) -> None:

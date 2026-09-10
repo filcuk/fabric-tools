@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-
 # Options that accept comma-separated lists (spaces after commas are common).
 _CSV_OPTION_FLAGS = frozenset(
     {
@@ -58,7 +57,9 @@ def rejoin_spaced_csv_argv(argv: list[str]) -> list[str]:
         if token in _CSV_OPTION_FLAGS and i + 1 < len(argv):
             i += 1
             chunks = [argv[i]]
-            while i + 1 < len(argv) and _is_csv_value_continuation(argv[i], argv[i + 1]):
+            while i + 1 < len(argv) and _is_csv_value_continuation(
+                argv[i], argv[i + 1]
+            ):
                 i += 1
                 chunks.append(argv[i])
             result.append(" ".join(chunks))
@@ -105,7 +106,9 @@ def parse_target_values(values: list[str] | None) -> list[Target]:
         return []
     targets: list[Target] = []
     for raw in values:
-        targets.extend(_expand_scoped_targets(raw, allow_create=True, option="--target"))
+        targets.extend(
+            _expand_scoped_targets(raw, allow_create=True, option="--target")
+        )
     return targets
 
 
@@ -175,7 +178,9 @@ def build_work_items(
 
     if mode is CommandMode.DOWNLOAD:
         if origin_list:
-            raise ParseError("download does not support --origin (use --file destination)")
+            raise ParseError(
+                "download does not support --origin (use --file destination)"
+            )
         _require_items(targets, mode)
         _require_single_workspace(targets, mode)
         if not files:
@@ -240,7 +245,9 @@ def _build_dry_run_items(
         return [WorkItem(t, None) for t in targets]
 
     if not targets and not files and not origins:
-        raise ParseError("--dry-run requires at least one --target, --file, or --origin")
+        raise ParseError(
+            "--dry-run requires at least one --target, --file, or --origin"
+        )
 
     _require_exclusive_source(files, origins, allow_neither=True)
 
@@ -255,10 +262,7 @@ def _build_dry_run_items(
         )
 
     if targets:
-        if mode is CommandMode.DOWNLOAD:
-            _require_items(targets, mode)
-            _require_single_workspace(targets, mode)
-        elif mode is CommandMode.COMPARE:
+        if mode is CommandMode.DOWNLOAD or mode is CommandMode.COMPARE:
             _require_items(targets, mode)
             _require_single_workspace(targets, mode)
         elif mode is CommandMode.DEPLOY:
@@ -374,7 +378,9 @@ def _expand_scoped_targets(
             current_ws = workspace_id
             continue
 
-        bare_id = _parse_guid(piece, what="workspace id" if current_ws is None else "artifact id")
+        bare_id = _parse_guid(
+            piece, what="workspace id" if current_ws is None else "artifact id"
+        )
         if current_ws is not None:
             targets.append(Target(workspace_id=current_ws, item_id=bare_id))
             continue

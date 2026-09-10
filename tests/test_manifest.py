@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from fabric_tools.cli import app, _resolve_notebook_inputs, _write_manifest_after_success
+from fabric_tools.cli import (
+    _resolve_notebook_inputs,
+    _write_manifest_after_success,
+    app,
+)
 from fabric_tools.client import FabricApiError
 from fabric_tools.manifest import (
     KIND_DATAFLOW_GEN1,
@@ -238,9 +242,7 @@ def test_dry_run_writes_manifest_on_success(
     monkeypatch.chdir(tmp_path)
     nb = tmp_path / "etl.ipynb"
     nb.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
 
@@ -293,9 +295,7 @@ def test_dry_run_skips_manifest_on_failure(
     monkeypatch.chdir(tmp_path)
     nb = tmp_path / "etl.ipynb"
     nb.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
 
@@ -304,7 +304,9 @@ def test_dry_run_skips_manifest_on_failure(
             return None
 
         def get_workspace(self, workspace_id: str) -> dict:
-            raise FabricApiError("missing", status_code=404, error_code="WorkspaceNotFound")
+            raise FabricApiError(
+                "missing", status_code=404, error_code="WorkspaceNotFound"
+            )
 
         def close(self) -> None:
             return None
@@ -370,7 +372,9 @@ def test_inspect_list_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert "broken.ftdep  error:" in result.stderr
 
 
-def test_inspect_list_cwd_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_inspect_list_cwd_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     result = runner.invoke(app, ["inspect"])

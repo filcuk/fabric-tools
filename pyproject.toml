@@ -66,6 +66,7 @@ ignore = [
     "B008", # Typer Option/Argument defaults are intentional
     "UP042", # str+Enum is preferred over StrEnum for CLI values here
     "W291", # trailing whitespace (ASCII banner + formatter covers the rest)
+    "SIM117", # nested with (e.g. client + pytest.raises) is often clearer
 ]
 
 [tool.ruff.lint.per-file-ignores]

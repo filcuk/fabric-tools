@@ -28,7 +28,9 @@ class FakePowerBiClient:
             raise PowerBiApiError("missing", status_code=404)
         return {"objectId": dataflow_id, "name": model["name"]}
 
-    def get_dataflow_definition(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
+    def get_dataflow_definition(
+        self, group_id: str, dataflow_id: str
+    ) -> dict[str, Any]:
         if dataflow_id not in self.models:
             raise PowerBiApiError("missing", status_code=404)
         return json.loads(json.dumps(self.models[dataflow_id]))

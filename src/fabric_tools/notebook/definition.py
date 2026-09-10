@@ -253,7 +253,10 @@ def unpack_definition(
     fmt = format_hint
     if fmt is None:
         raw_format = definition.get("format")
-        if isinstance(raw_format, str) and raw_format.lower() == NotebookFormat.IPYNB.value:
+        if (
+            isinstance(raw_format, str)
+            and raw_format.lower() == NotebookFormat.IPYNB.value
+        ):
             fmt = NotebookFormat.IPYNB
         elif isinstance(raw_format, str) and raw_format.lower() in {
             NotebookFormat.FABRIC_GIT.value.lower(),
@@ -283,7 +286,10 @@ def definition_has_platform(definition: dict[str, Any]) -> bool:
     """True when the definition includes a `.platform` part."""
     parts = definition.get("parts") or []
     for part in parts:
-        if isinstance(part, dict) and Path(str(part.get("path", ""))).name == PLATFORM_PART_PATH:
+        if (
+            isinstance(part, dict)
+            and Path(str(part.get("path", ""))).name == PLATFORM_PART_PATH
+        ):
             return True
     return False
 

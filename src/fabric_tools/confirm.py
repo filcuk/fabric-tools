@@ -221,7 +221,11 @@ def confirm_deploy_actions(
                 assert item.target is not None
                 workspace = resolve_workspace_name(client, item.target.workspace_id)
                 name: str | None = None
-                if display_names and index < len(display_names) and display_names[index]:
+                if (
+                    display_names
+                    and index < len(display_names)
+                    and display_names[index]
+                ):
                     name = display_names[index]
                 if not name:
                     if item.file is not None:

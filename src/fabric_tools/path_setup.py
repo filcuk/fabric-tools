@@ -7,7 +7,6 @@ import shutil
 import sys
 from pathlib import Path
 
-
 INSTALL_DIR_NAME = "fabric-tools"
 APP_DIR_NAME = "app"
 LEGACY_BIN_DIR_NAME = "bin"
@@ -28,7 +27,9 @@ def is_frozen() -> bool:
 def install_root() -> Path:
     local_app_data = os.environ.get("LOCALAPPDATA")
     if not local_app_data:
-        raise PathSetupError("LOCALAPPDATA is not set; cannot choose install directory.")
+        raise PathSetupError(
+            "LOCALAPPDATA is not set; cannot choose install directory."
+        )
     return Path(local_app_data) / INSTALL_DIR_NAME
 
 
@@ -73,7 +74,9 @@ def install_to_user_path(*, install_dir: Path | None = None) -> dict[str, str | 
     copy the existing ``exe`` + ``_internal`` tree.
     """
     if os.name != "nt":
-        raise PathSetupError("Setup registration is currently supported on Windows only.")
+        raise PathSetupError(
+            "Setup registration is currently supported on Windows only."
+        )
 
     target_dir = install_dir or default_install_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -89,8 +92,7 @@ def install_to_user_path(*, install_dir: Path | None = None) -> dict[str, str | 
     else:
         destination = installed_cmd_path(target_dir)
         destination.write_text(
-            "@echo off\r\n"
-            f'"{sys.executable}" -m fabric_tools %*\r\n',
+            f'@echo off\r\n"{sys.executable}" -m fabric_tools %*\r\n',
             encoding="utf-8",
         )
         _remove_frozen_tree(target_dir)
@@ -119,7 +121,9 @@ def uninstall_from_user_path(
 ) -> dict[str, str | bool]:
     """Remove the install directory from user PATH and optionally delete installed files."""
     if os.name != "nt":
-        raise PathSetupError("Setup registration is currently supported on Windows only.")
+        raise PathSetupError(
+            "Setup registration is currently supported on Windows only."
+        )
 
     target_dir = install_dir or default_install_dir()
     removed_from_path = remove_user_path_entry(str(target_dir))
@@ -307,7 +311,9 @@ def _try_remove_empty_install_root() -> None:
 
 def _user_path_contains(directory: str) -> bool:
     normalized = _normalize_dir(directory)
-    return any(_normalize_dir(part) == normalized for part in _split_path(_read_user_path()))
+    return any(
+        _normalize_dir(part) == normalized for part in _split_path(_read_user_path())
+    )
 
 
 def _read_user_path() -> str:
@@ -376,4 +382,6 @@ def _join_path(parts: list[str]) -> str:
 
 
 def _normalize_dir(value: str) -> str:
-    return os.path.normcase(os.path.normpath(os.path.expandvars(value.strip().rstrip("\\/"))))
+    return os.path.normcase(
+        os.path.normpath(os.path.expandvars(value.strip().rstrip("\\/")))
+    )

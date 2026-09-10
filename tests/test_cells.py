@@ -50,7 +50,9 @@ def test_merge_replaces_whole_cells() -> None:
     local["cells"][0]["outputs"] = [{"output_type": "stream", "text": ["out\n"]}]
     merged = merge_notebook_cells(remote, local, [1, 3])
     assert merged["cells"][0]["source"] == ["l1"]
-    assert merged["cells"][0]["outputs"] == [{"output_type": "stream", "text": ["out\n"]}]
+    assert merged["cells"][0]["outputs"] == [
+        {"output_type": "stream", "text": ["out\n"]}
+    ]
     assert merged["cells"][1]["source"] == ["r2"]
     assert merged["cells"][2]["source"] == ["l3"]
 
@@ -62,7 +64,9 @@ def test_merge_fails_when_index_missing() -> None:
 
 def test_validate_cells_usage_rejects_multi(tmp_path: Path) -> None:
     nb = tmp_path / "a.ipynb"
-    nb.write_text('{"nbformat":4,"nbformat_minor":5,"cells":[],"metadata":{}}', encoding="utf-8")
+    nb.write_text(
+        '{"nbformat":4,"nbformat_minor":5,"cells":[],"metadata":{}}', encoding="utf-8"
+    )
     items = [
         WorkItem(Target(WS, A), nb),
         WorkItem(Target(WS, A), nb),
@@ -73,7 +77,9 @@ def test_validate_cells_usage_rejects_multi(tmp_path: Path) -> None:
 
 def test_validate_cells_usage_rejects_create(tmp_path: Path) -> None:
     nb = tmp_path / "a.ipynb"
-    nb.write_text('{"nbformat":4,"nbformat_minor":5,"cells":[],"metadata":{}}', encoding="utf-8")
+    nb.write_text(
+        '{"nbformat":4,"nbformat_minor":5,"cells":[],"metadata":{}}', encoding="utf-8"
+    )
     items = [WorkItem(Target(WS), nb)]
     with pytest.raises(ParseError, match="overwrite"):
         validate_cells_usage(CommandMode.DEPLOY, items, [1], dry_run=False)

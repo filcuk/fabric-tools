@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import typer
 from typer.core import TyperGroup
@@ -150,7 +151,7 @@ def update_cmd(
 
 @app.command("inspect")
 def inspect_manifest(
-    manifest: Optional[str] = typer.Option(
+    manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
@@ -266,6 +267,7 @@ def main(
             typer.echo(ctx.get_help())
         raise typer.Exit()
 
+
 @setup_app.command("install")
 def setup_install() -> None:
     """Install fabric-tools into a stable folder and register it for your user account."""
@@ -280,9 +282,13 @@ def setup_install() -> None:
     typer.secho(f"Installed launcher: {result['launcher']}", fg=typer.colors.GREEN)
     typer.echo(f"Install directory: {result['install_dir']}")
     if result.get("layout") == "onefile":
-        typer.echo("Unpacked one-file build into a fast onedir install (exe + _internal).")
+        typer.echo(
+            "Unpacked one-file build into a fast onedir install (exe + _internal)."
+        )
     if result["path_added"]:
-        typer.secho("Registered install directory on your user PATH.", fg=typer.colors.GREEN)
+        typer.secho(
+            "Registered install directory on your user PATH.", fg=typer.colors.GREEN
+        )
     elif result["already_on_path"]:
         typer.echo("Install directory was already on your user PATH.")
     if result.get("legacy_cleaned"):
@@ -311,7 +317,9 @@ def setup_uninstall(
         raise typer.Exit(code=EXIT_USER) from exc
 
     if result["removed_from_path"]:
-        typer.secho("Removed install directory from your user PATH.", fg=typer.colors.GREEN)
+        typer.secho(
+            "Removed install directory from your user PATH.", fg=typer.colors.GREEN
+        )
     else:
         typer.echo("Install directory was not present on your user PATH.")
     if result["deleted_files"]:
@@ -338,20 +346,22 @@ def setup_status_cmd() -> None:
     typer.echo(f"On user PATH:      {status['bin_dir_on_user_path']}")
     typer.echo(f"Running frozen exe: {status['frozen']}")
     which = status["which_fabric_tools"]
-    typer.echo(f"shutil.which('fabric-tools'): {which or '(not found in this process PATH)'}")
+    typer.echo(
+        f"shutil.which('fabric-tools'): {which or '(not found in this process PATH)'}"
+    )
     raise typer.Exit(code=EXIT_OK)
 
 
 @notebook_app.command("download")
 def notebook_download(
-    target: Optional[list[str]] = typer.Option(
+    target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
     ),
-    file: Optional[list[str]] = typer.Option(
+    file: list[str] | None = typer.Option(
         None,
         "--file",
         "-f",
@@ -360,7 +370,7 @@ def notebook_download(
         "Repeatable or comma-separated (spaces after commas OK). "
         "One file may broadcast to all targets.",
     ),
-    manifest: Optional[str] = typer.Option(
+    manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
@@ -392,7 +402,7 @@ def notebook_download(
 
 @notebook_app.command("deploy")
 def notebook_deploy(
-    target: Optional[list[str]] = typer.Option(
+    target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
@@ -400,7 +410,7 @@ def notebook_deploy(
         "workspace:artifact (overwrite). Repeatable or comma-separated "
         "(spaces after commas OK).",
     ),
-    file: Optional[list[str]] = typer.Option(
+    file: list[str] | None = typer.Option(
         None,
         "--file",
         "-f",
@@ -408,7 +418,7 @@ def notebook_deploy(
         "Repeatable or comma-separated (spaces after commas OK). "
         "One file may broadcast to all targets. Mutually exclusive with --origin.",
     ),
-    origin: Optional[list[str]] = typer.Option(
+    origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
@@ -416,14 +426,14 @@ def notebook_deploy(
         "Repeatable or comma-separated (spaces after commas OK). "
         "One origin may broadcast to all targets. Mutually exclusive with --file.",
     ),
-    name: Optional[list[str]] = typer.Option(
+    name: list[str] | None = typer.Option(
         None,
         "--name",
         "-n",
         help="(optional, create only) Display name. Defaults to file/folder stem "
         "or origin display name.",
     ),
-    cells: Optional[list[str]] = typer.Option(
+    cells: list[str] | None = typer.Option(
         None,
         "--cells",
         "-c",
@@ -431,7 +441,7 @@ def notebook_deploy(
         "(e.g. 1,3,5 or 1, 3, 5). Single notebook only; whole cells including outputs. "
         "Not valid with --origin.",
     ),
-    manifest: Optional[str] = typer.Option(
+    manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
@@ -466,7 +476,7 @@ def notebook_deploy(
 
 @notebook_app.command("compare")
 def notebook_compare(
-    target: Optional[list[str]] = typer.Option(
+    target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
@@ -474,7 +484,7 @@ def notebook_compare(
         "Repeatable or comma-separated (spaces after commas OK). "
         "With --file: one workspace only. Must 1:1 match --file or --origin.",
     ),
-    file: Optional[list[str]] = typer.Option(
+    file: list[str] | None = typer.Option(
         None,
         "--file",
         "-f",
@@ -482,7 +492,7 @@ def notebook_compare(
         "Repeatable or comma-separated (spaces after commas OK). "
         "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
     ),
-    origin: Optional[list[str]] = typer.Option(
+    origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
@@ -490,7 +500,7 @@ def notebook_compare(
         "--target. Must 1:1 match --target (no broadcast). "
         "Mutually exclusive with --file.",
     ),
-    manifest: Optional[str] = typer.Option(
+    manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
@@ -524,14 +534,14 @@ def notebook_compare(
 
 @notebook_app.command("delete")
 def notebook_delete(
-    target: Optional[list[str]] = typer.Option(
+    target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK).",
     ),
-    manifest: Optional[str] = typer.Option(
+    manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
@@ -564,14 +574,14 @@ def notebook_delete(
 
 @dataflow_gen1_app.command("download")
 def dataflow_gen1_download(
-    target: Optional[list[str]] = typer.Option(
+    target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
     ),
-    file: Optional[list[str]] = typer.Option(
+    file: list[str] | None = typer.Option(
         None,
         "--file",
         "-f",
@@ -580,7 +590,7 @@ def dataflow_gen1_download(
         "Repeatable or comma-separated (spaces after commas OK). "
         "One file may broadcast to all targets.",
     ),
-    manifest: Optional[str] = typer.Option(
+    manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
@@ -612,7 +622,7 @@ def dataflow_gen1_download(
 
 @dataflow_gen1_app.command("deploy")
 def dataflow_gen1_deploy(
-    target: Optional[list[str]] = typer.Option(
+    target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
@@ -620,7 +630,7 @@ def dataflow_gen1_deploy(
         "Repeatable or comma-separated (spaces after commas OK). "
         "Overwrite (workspace:artifact) is not supported.",
     ),
-    file: Optional[list[str]] = typer.Option(
+    file: list[str] | None = typer.Option(
         None,
         "--file",
         "-f",
@@ -628,7 +638,7 @@ def dataflow_gen1_deploy(
         "Repeatable or comma-separated (spaces after commas OK). "
         "One file may broadcast to all targets. Mutually exclusive with --origin.",
     ),
-    origin: Optional[list[str]] = typer.Option(
+    origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
@@ -636,14 +646,14 @@ def dataflow_gen1_deploy(
         "Repeatable or comma-separated (spaces after commas OK). "
         "One origin may broadcast to all targets. Mutually exclusive with --file.",
     ),
-    name: Optional[list[str]] = typer.Option(
+    name: list[str] | None = typer.Option(
         None,
         "--name",
         "-n",
         help="(optional) Display name written into model.json before import. "
         "Defaults to the model name (or origin name).",
     ),
-    manifest: Optional[str] = typer.Option(
+    manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
@@ -677,7 +687,7 @@ def dataflow_gen1_deploy(
 
 @dataflow_gen1_app.command("compare")
 def dataflow_gen1_compare(
-    target: Optional[list[str]] = typer.Option(
+    target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
@@ -685,7 +695,7 @@ def dataflow_gen1_compare(
         "Repeatable or comma-separated (spaces after commas OK). "
         "With --file: one workspace only. Must 1:1 match --file or --origin.",
     ),
-    file: Optional[list[str]] = typer.Option(
+    file: list[str] | None = typer.Option(
         None,
         "--file",
         "-f",
@@ -693,7 +703,7 @@ def dataflow_gen1_compare(
         "Repeatable or comma-separated (spaces after commas OK). "
         "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
     ),
-    origin: Optional[list[str]] = typer.Option(
+    origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
@@ -701,7 +711,7 @@ def dataflow_gen1_compare(
         "--target. Must 1:1 match --target (no broadcast). "
         "Mutually exclusive with --file.",
     ),
-    manifest: Optional[str] = typer.Option(
+    manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
@@ -728,14 +738,14 @@ def dataflow_gen1_compare(
 
 @dataflow_gen1_app.command("delete")
 def dataflow_gen1_delete(
-    target: Optional[list[str]] = typer.Option(
+    target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK).",
     ),
-    manifest: Optional[str] = typer.Option(
+    manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
@@ -792,6 +802,7 @@ def run_notebook_command(
         confirm_delete_actions,
         confirm_deploy_actions,
         confirm_download_overwrites,
+        resolve_notebook_download_files,
     )
     from fabric_tools.notebook.cells import (
         CellSelectionError,
@@ -929,12 +940,16 @@ def run_notebook_command(
                 )
             _print_op_results(op_results)
             for result in op_results:
-                if result.ok and result.workspace_id and result.item_id:
-                    if "created" in result.message:
-                        typer.secho(
-                            f"GUID: {result.workspace_id}:{result.item_id}",
-                            fg=typer.colors.CYAN,
-                        )
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}",
+                        fg=typer.colors.CYAN,
+                    )
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -1016,6 +1031,7 @@ def run_dataflow_gen1_command(
         confirm_delete_dataflow_gen1,
         confirm_deploy_create_dataflow_gen1,
         confirm_download_overwrites_dataflow_gen1,
+        resolve_dataflow_gen1_download_files,
     )
     from fabric_tools.dataflow_gen1.compare import run_compare_batch as run_df_compare
     from fabric_tools.dataflow_gen1.definition import (
@@ -1151,12 +1167,16 @@ def run_dataflow_gen1_command(
                 )
             _print_op_results(op_results)  # type: ignore[arg-type]
             for result in op_results:
-                if result.ok and result.workspace_id and result.item_id:
-                    if "created" in result.message:
-                        typer.secho(
-                            f"GUID: {result.workspace_id}:{result.item_id}",
-                            fg=typer.colors.CYAN,
-                        )
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}",
+                        fg=typer.colors.CYAN,
+                    )
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -1350,6 +1370,7 @@ def _notify_success(
         compare_results=compare_results,
     )
 
+
 def _resolve_notebook_inputs(
     mode: CommandMode,
     *,
@@ -1419,9 +1440,7 @@ def _resolve_notebook_inputs(
         files = []
         origins = []
 
-    items = build_work_items(
-        mode, targets, files, origins=origins, dry_run=dry_run
-    )
+    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
     effective_names: list[str | None] | list[str] | None = (
         names if names else manifest_names
     )

@@ -30,9 +30,7 @@ class FakeClient:
 def test_dry_run_local_ok(tmp_path: Path) -> None:
     nb = tmp_path / "demo.ipynb"
     nb.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
     results = run_dry_run(
@@ -48,9 +46,7 @@ def test_dry_run_local_ok(tmp_path: Path) -> None:
 def test_dry_run_broadcast_file_validated_once(tmp_path: Path) -> None:
     nb = tmp_path / "demo.ipynb"
     nb.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
     ws1 = "11111111-1111-1111-1111-111111111111"
@@ -77,7 +73,10 @@ def test_dry_run_broadcast_file_validated_once(tmp_path: Path) -> None:
 def test_dry_run_remote_wrong_type() -> None:
     client = FakeClient(item_type="Lakehouse")
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         None,
     )
     results = run_dry_run(
@@ -96,7 +95,10 @@ def test_dry_run_remote_missing_item() -> None:
             raise FabricApiError("missing", status_code=404, error_code="ItemNotFound")
 
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         None,
     )
     results = run_dry_run(
@@ -193,7 +195,9 @@ def test_dry_run_dataflow_gen1_missing_remote() -> None:
             return {"id": group_id, "name": "Dev"}
 
         def get_dataflow(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
-            raise PowerBiApiError("missing", status_code=404, error_code="DataflowNotFound")
+            raise PowerBiApiError(
+                "missing", status_code=404, error_code="DataflowNotFound"
+            )
 
     item = WorkItem(
         Target(
