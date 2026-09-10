@@ -1,9 +1,10 @@
-# Build a one-dir Windows console executable for fabric-tools.
+# Build the Windows release executable for fabric-tools.
 # Usage (from repo root):
 #   powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 #
-# PyInstaller writes dist\fabric-tools\{exe,_internal}; this script flattens to
-# dist\fabric-tools.exe + dist\_internal\ so the layout matches a release zip.
+# 1) Build onedir (staging) to get a thin bootloader + _internal
+# 2) Build onefile release that embeds that bootloader for `setup install`
+# Ship: dist\fabric-tools.exe (portable as-is; setup install unpacks to a fast onedir)
 
 $ErrorActionPreference = "Stop"
 
@@ -23,40 +24,46 @@ if ($LASTEXITCODE -ne 0) {
     throw "pip install failed with exit code $LASTEXITCODE"
 }
 
-Write-Host "Running PyInstaller..."
+Write-Host "Building onedir staging (bootloader + _internal)..."
 & $Python @PythonArgs -m PyInstaller --noconfirm --clean "packaging\fabric-tools.spec"
 if ($LASTEXITCODE -ne 0) {
-    throw "PyInstaller failed with exit code $LASTEXITCODE"
+    throw "Onedir PyInstaller failed with exit code $LASTEXITCODE"
 }
 
-$NestedDir = Join-Path $RepoRoot "dist\fabric-tools"
-$NestedExe = Join-Path $NestedDir "fabric-tools.exe"
-if (-not (Test-Path $NestedExe)) {
-    throw "Expected output not found: $NestedExe"
+$OnedirDir = Join-Path $RepoRoot "dist\fabric-tools"
+$OnedirExe = Join-Path $OnedirDir "fabric-tools.exe"
+if (-not (Test-Path $OnedirExe)) {
+    throw "Expected onedir output not found: $OnedirExe"
+}
+
+Write-Host "Building onefile release (embeds onedir bootloader)..."
+$env:FABRIC_TOOLS_ONEDIR_BOOTLOADER = $OnedirExe
+try {
+    & $Python @PythonArgs -m PyInstaller --noconfirm --clean "packaging\fabric-tools-onefile.spec"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Onefile PyInstaller failed with exit code $LASTEXITCODE"
+    }
+}
+finally {
+    Remove-Item Env:FABRIC_TOOLS_ONEDIR_BOOTLOADER -ErrorAction SilentlyContinue
 }
 
 $DistDir = Join-Path $RepoRoot "dist"
 $ExePath = Join-Path $DistDir "fabric-tools.exe"
-$InternalDir = Join-Path $DistDir "_internal"
-
-Write-Host "Flattening onedir layout into dist\ ..."
-# Remove a previous flat install so Move-Item cannot collide with leftovers.
-if (Test-Path $ExePath) {
-    Remove-Item -LiteralPath $ExePath -Force
-}
-if (Test-Path $InternalDir) {
-    Remove-Item -LiteralPath $InternalDir -Recurse -Force
-}
-Get-ChildItem -LiteralPath $NestedDir | ForEach-Object {
-    Move-Item -LiteralPath $_.FullName -Destination $DistDir -Force
-}
-Remove-Item -LiteralPath $NestedDir -Recurse -Force
-
-if (-not (Test-Path $ExePath) -or -not (Test-Path $InternalDir)) {
-    throw "Flatten failed; expected $ExePath and $InternalDir"
+if (-not (Test-Path $ExePath)) {
+    throw "Expected onefile output not found: $ExePath"
 }
 
-Write-Host "Smoke-testing executable --help..."
+# Drop staging onedir from dist so the release artifact is a single exe.
+if (Test-Path $OnedirDir) {
+    Remove-Item -LiteralPath $OnedirDir -Recurse -Force
+}
+$StaleInternal = Join-Path $DistDir "_internal"
+if (Test-Path $StaleInternal) {
+    Remove-Item -LiteralPath $StaleInternal -Recurse -Force
+}
+
+Write-Host "Smoke-testing onefile --help..."
 & $ExePath --help
 if ($LASTEXITCODE -ne 0) {
     throw "fabric-tools.exe --help failed with exit code $LASTEXITCODE"
@@ -64,6 +71,8 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "Build succeeded: $ExePath"
-Write-Host "Distribute dist\fabric-tools.exe together with dist\_internal\ (e.g. zip those two)."
+Write-Host "Distribute that single exe. Users can run it portable, or:"
+Write-Host "  .\fabric-tools.exe setup install"
+Write-Host "to unpack a fast onedir copy under %LOCALAPPDATA%\fabric-tools\app"
 Write-Host "Note: unsigned binaries may trigger SmartScreen warnings."
 Write-Host "Auth still uses interactive browser/device-code or AZURE_* service principal env vars."

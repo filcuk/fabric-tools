@@ -14,6 +14,7 @@ LEGACY_BIN_DIR_NAME = "bin"
 EXE_NAME = "fabric-tools.exe"
 CMD_NAME = "fabric-tools.cmd"
 INTERNAL_DIR_NAME = "_internal"
+ONEDIR_BOOTLOADER_DIR = "_onedir_bootloader"
 
 
 class PathSetupError(RuntimeError):
@@ -48,21 +49,29 @@ def installed_cmd_path(install_dir: Path | None = None) -> Path:
     return (install_dir or default_install_dir()) / CMD_NAME
 
 
-def frozen_source_root() -> Path:
-    """Directory that holds the running onedir exe and ``_internal``."""
+def meipass_dir() -> Path | None:
+    """PyInstaller extract dir for a running onefile build, else ``None``."""
+    raw = getattr(sys, "_MEIPASS", None)
+    if not raw:
+        return None
+    return Path(raw)
+
+
+def frozen_onedir_root() -> Path | None:
+    """Parent of ``_internal`` when running an already-unpacked onedir build."""
     root = Path(sys.executable).resolve().parent
-    internal = root / INTERNAL_DIR_NAME
-    if not internal.is_dir():
-        raise PathSetupError(
-            "This executable is not a one-dir build (missing _internal next to the exe). "
-            "Rebuild with packaging/fabric-tools.spec (via scripts/build_exe.ps1), then run "
-            "setup install from dist\\fabric-tools.exe."
-        )
-    return root
+    if (root / INTERNAL_DIR_NAME).is_dir():
+        return root
+    return None
 
 
 def install_to_user_path(*, install_dir: Path | None = None) -> dict[str, str | bool]:
-    """Copy/shim this tool into a stable folder and ensure that folder is on user PATH."""
+    """Copy/shim this tool into a stable folder and ensure that folder is on user PATH.
+
+    Frozen onefile builds unpack ``sys._MEIPASS`` into an onedir tree under the install
+    directory (using the embedded onedir bootloader). Onedir / already-installed builds
+    copy the existing ``exe`` + ``_internal`` tree.
+    """
     if os.name != "nt":
         raise PathSetupError("Setup registration is currently supported on Windows only.")
 
@@ -70,10 +79,8 @@ def install_to_user_path(*, install_dir: Path | None = None) -> dict[str, str | 
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if is_frozen():
-        source_root = frozen_source_root()
         destination = installed_exe_path(target_dir)
-        _install_frozen_tree(source_root, target_dir)
-        # Remove stale cmd shim if present from a previous Python install.
+        layout = _install_frozen_app(target_dir)
         cmd_path = installed_cmd_path(target_dir)
         if cmd_path.exists():
             cmd_path.unlink()
@@ -86,18 +93,19 @@ def install_to_user_path(*, install_dir: Path | None = None) -> dict[str, str | 
             f'"{sys.executable}" -m fabric_tools %*\r\n',
             encoding="utf-8",
         )
-        # Prefer cmd shim for Python installs; remove stale copied exe tree if any.
         _remove_frozen_tree(target_dir)
         launcher = str(destination)
         mode = "cmd"
+        layout = "python"
 
     path_added = ensure_user_path_contains(str(target_dir))
     legacy_cleaned = _cleanup_legacy_bin_install()
     return {
         "install_dir": str(target_dir),
-        "bin_dir": str(target_dir),  # backwards-compatible key for callers
+        "bin_dir": str(target_dir),
         "launcher": launcher,
         "mode": mode,
+        "layout": layout,
         "path_added": path_added,
         "already_on_path": not path_added and _user_path_contains(str(target_dir)),
         "legacy_cleaned": legacy_cleaned,
@@ -115,7 +123,6 @@ def uninstall_from_user_path(
 
     target_dir = install_dir or default_install_dir()
     removed_from_path = remove_user_path_entry(str(target_dir))
-    # Also drop legacy bin PATH entry if present.
     legacy = legacy_bin_dir()
     removed_from_path = remove_user_path_entry(str(legacy)) or removed_from_path
 
@@ -178,11 +185,27 @@ def remove_user_path_entry(directory: str) -> bool:
     return True
 
 
+def _install_frozen_app(target_dir: Path) -> str:
+    onedir_root = frozen_onedir_root()
+    if onedir_root is not None:
+        _install_frozen_tree(onedir_root, target_dir)
+        return "onedir"
+
+    meipass = meipass_dir()
+    if meipass is not None:
+        _install_from_onefile_meipass(meipass, target_dir)
+        return "onefile"
+
+    raise PathSetupError(
+        "Frozen executable has neither a sibling _internal folder nor a PyInstaller "
+        "_MEIPASS extract dir; cannot install."
+    )
+
+
 def _install_frozen_tree(source_root: Path, target_dir: Path) -> None:
     source_root = source_root.resolve()
     target_dir = target_dir.resolve()
     if source_root == target_dir:
-        # Already running from the install location; just ensure files look complete.
         if not (target_dir / INTERNAL_DIR_NAME).is_dir():
             raise PathSetupError(
                 f"Install directory is missing {INTERNAL_DIR_NAME}: {target_dir}"
@@ -203,6 +226,34 @@ def _install_frozen_tree(source_root: Path, target_dir: Path) -> None:
         shutil.rmtree(dest_internal)
     shutil.copytree(source_internal, dest_internal)
     shutil.copy2(source_exe, target_dir / EXE_NAME)
+
+
+def _install_from_onefile_meipass(meipass: Path, target_dir: Path) -> None:
+    """Unpack a running onefile build into an onedir install tree."""
+    bootloader = meipass / ONEDIR_BOOTLOADER_DIR / EXE_NAME
+    if not bootloader.is_file():
+        raise PathSetupError(
+            "This one-file build is missing the embedded onedir bootloader "
+            f"({ONEDIR_BOOTLOADER_DIR}\\{EXE_NAME}). Rebuild with scripts\\build_exe.ps1."
+        )
+
+    target_dir = target_dir.resolve()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    dest_internal = target_dir / INTERNAL_DIR_NAME
+    if dest_internal.exists():
+        shutil.rmtree(dest_internal)
+    dest_internal.mkdir(parents=True)
+
+    for item in meipass.iterdir():
+        if item.name == ONEDIR_BOOTLOADER_DIR:
+            continue
+        dest = dest_internal / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest)
+        else:
+            shutil.copy2(item, dest)
+
+    shutil.copy2(bootloader, target_dir / EXE_NAME)
 
 
 def _remove_frozen_tree(target_dir: Path) -> None:
