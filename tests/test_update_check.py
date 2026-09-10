@@ -179,7 +179,7 @@ def test_cli_update_check_up_to_date(monkeypatch: pytest.MonkeyPatch) -> None:
     from fabric_tools.update_check import UpdateCheckResult
 
     monkeypatch.setattr(
-        "fabric_tools.cli.check_for_update",
+        "fabric_tools.update_check.check_for_update",
         lambda: UpdateCheckResult(
             current="0.2.0",
             latest="0.2.0",
@@ -197,7 +197,7 @@ def test_cli_update_check_newer_available(monkeypatch: pytest.MonkeyPatch) -> No
     from fabric_tools.update_check import UpdateCheckResult
 
     monkeypatch.setattr(
-        "fabric_tools.cli.check_for_update",
+        "fabric_tools.update_check.check_for_update",
         lambda: UpdateCheckResult(
             current="0.2.0",
             latest="0.3.0",
@@ -216,7 +216,7 @@ def test_cli_update_check_newer_available(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_cli_update_check_api_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "fabric_tools.cli.check_for_update",
+        "fabric_tools.update_check.check_for_update",
         lambda: (_ for _ in ()).throw(UpdateCheckError("failed to reach GitHub")),
     )
     result = CliRunner().invoke(app, ["update", "--check"])

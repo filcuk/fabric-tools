@@ -2,22 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import typer
 from typer.core import TyperGroup
 
 from fabric_tools import __version__
-from fabric_tools.client import FabricClient
-from fabric_tools.confirm import (
-    ConfirmationAborted,
-    confirm_delete_actions,
-    confirm_delete_dataflow_gen1,
-    confirm_deploy_actions,
-    confirm_deploy_create_dataflow_gen1,
-    confirm_download_overwrites,
-    confirm_download_overwrites_dataflow_gen1,
-)
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW_GEN1,
@@ -34,19 +24,6 @@ from fabric_tools.manifest import (
     save_manifest,
     work_items_from_manifest,
 )
-from fabric_tools.notebook.compare import CompareResult, run_compare_batch
-from fabric_tools.notebook.cells import (
-    CellSelectionError,
-    parse_cell_indices,
-    validate_cells_usage,
-)
-from fabric_tools.notebook.definition import display_name_from_path
-from fabric_tools.notebook.ops import (
-    OpResult,
-    run_delete_batch,
-    run_deploy_batch,
-    run_download_batch,
-)
 from fabric_tools.parsing import (
     CommandMode,
     ParseError,
@@ -57,10 +34,10 @@ from fabric_tools.parsing import (
     parse_target_values,
     rejoin_spaced_csv_argv,
 )
-from fabric_tools.powerbi_client import PowerBiClient
-from fabric_tools.status import busy
-from fabric_tools.update_check import UpdateCheckError, check_for_update
-from fabric_tools.validate import run_dry_run, run_dry_run_dataflow_gen1
+
+if TYPE_CHECKING:
+    from fabric_tools.notebook.compare import CompareResult
+    from fabric_tools.notebook.ops import OpResult
 
 _MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
@@ -138,6 +115,9 @@ def update_cmd(
     ),
 ) -> None:
     """Check for updates from GitHub Releases."""
+    from fabric_tools.status import busy
+    from fabric_tools.update_check import UpdateCheckError, check_for_update
+
     if not check:
         typer.secho(
             "Specify --check / -c to check for a newer release.",
@@ -802,6 +782,27 @@ def run_notebook_command(
     checks/ops/compare results ok), before the process exit code is raised — used
     by interactive mode to offer saving a deployment manifest.
     """
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_actions,
+        confirm_deploy_actions,
+        confirm_download_overwrites,
+    )
+    from fabric_tools.notebook.cells import (
+        CellSelectionError,
+        parse_cell_indices,
+        validate_cells_usage,
+    )
+    from fabric_tools.notebook.compare import run_compare_batch
+    from fabric_tools.notebook.ops import (
+        run_delete_batch,
+        run_deploy_batch,
+        run_download_batch,
+    )
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run
+
     try:
         cell_indices = parse_cell_indices(cells)
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -1005,6 +1006,12 @@ def run_dataflow_gen1_command(
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for dataflow-gen1 CLI commands and the interactive wizard."""
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_dataflow_gen1,
+        confirm_deploy_create_dataflow_gen1,
+        confirm_download_overwrites_dataflow_gen1,
+    )
     from fabric_tools.dataflow_gen1.compare import run_compare_batch as run_df_compare
     from fabric_tools.dataflow_gen1.definition import (
         DefinitionError as DataflowDefinitionError,
@@ -1018,6 +1025,9 @@ def run_dataflow_gen1_command(
     from fabric_tools.dataflow_gen1.ops import (
         run_download_batch as run_df_download,
     )
+    from fabric_tools.powerbi_client import PowerBiClient
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run_dataflow_gen1
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -1485,6 +1495,8 @@ def _resolve_deploy_names(
     items: list,
     names: list[str | None] | list[str] | None,
 ) -> list[str]:
+    from fabric_tools.notebook.definition import display_name_from_path
+
     if names and len(names) not in {1, len(items)}:
         raise ParseError(
             f"--name count must be 1 or match target count ({len(items)}); got {len(names)}"
