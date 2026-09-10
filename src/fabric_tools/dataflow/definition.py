@@ -186,6 +186,53 @@ def part_payloads(definition: dict[str, Any]) -> dict[str, bytes]:
     return out
 
 
+def folder_payloads(path: Path | str) -> dict[str, bytes]:
+    """Read packable local dataflow parts into a ``{filename: bytes}`` map."""
+    folder = validate_local_dataflow(path)
+    payloads: dict[str, bytes] = {
+        QUERY_METADATA_PART: (folder / QUERY_METADATA_PART).read_bytes(),
+        MASHUP_PART: (folder / MASHUP_PART).read_bytes(),
+    }
+    platform = folder / PLATFORM_PART
+    if platform.is_file():
+        payloads[PLATFORM_PART] = platform.read_bytes()
+    for mdf in sorted(folder.glob("*.mdf")):
+        if mdf.is_file():
+            payloads[mdf.name] = mdf.read_bytes()
+    return payloads
+
+
+def definition_to_diff_text(definition: dict[str, Any]) -> str:
+    """Stable multi-file text used for unified diffs of a Fabric definition."""
+    return payloads_to_diff_text(part_payloads(definition))
+
+
+def folder_to_diff_text(path: Path | str) -> str:
+    """Stable multi-file text used for unified diffs of a local dataflow folder."""
+    return payloads_to_diff_text(folder_payloads(path))
+
+
+def payloads_to_diff_text(payloads: dict[str, bytes]) -> str:
+    """Render part payloads as a deterministic multi-section text blob."""
+    chunks: list[str] = []
+    for name in sorted(payloads):
+        chunks.append(f"=== {name} ===\n")
+        chunks.append(_normalize_part_text(name, payloads[name]))
+    return "".join(chunks)
+
+
+def _normalize_part_text(name: str, payload: bytes) -> str:
+    text = payload.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    lower = name.lower()
+    if lower.endswith(".json") or lower == PLATFORM_PART or lower.endswith(".mdf"):
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return text if text.endswith("\n") else text + "\n"
+        return json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    return text if text.endswith("\n") else text + "\n"
+
+
 def _part(path: str, payload: bytes) -> dict[str, str]:
     return {
         "path": path,

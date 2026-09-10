@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fabric_tools.confirm import (
+    resolve_dataflow_download_files,
     resolve_dataflow_gen1_download_files,
     resolve_notebook_download_files,
 )
@@ -24,6 +25,16 @@ class FakeFabricClient:
             "workspaceId": workspace_id,
             "displayName": names.get(item_id, "Notebook"),
             "type": "Notebook",
+        }
+
+
+class FakeDataflowFabricClient:
+    def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
+        return {
+            "id": item_id,
+            "workspaceId": workspace_id,
+            "displayName": "My Flow",
+            "type": "Dataflow",
         }
 
 
@@ -58,3 +69,12 @@ def test_resolve_dataflow_gen1_download_files_defaults() -> None:
         items,
     )
     assert resolved[0].file == Path("My Dataflow.json")
+
+
+def test_resolve_dataflow_download_files_defaults() -> None:
+    items = [WorkItem(Target(WS, A), None)]
+    resolved = resolve_dataflow_download_files(
+        FakeDataflowFabricClient(),  # type: ignore[arg-type]
+        items,
+    )
+    assert resolved[0].file == Path("My Flow.Dataflow")

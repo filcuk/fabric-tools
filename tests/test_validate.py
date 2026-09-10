@@ -214,3 +214,56 @@ def test_dry_run_dataflow_gen1_missing_remote() -> None:
         has_files=False,
     )
     assert any(not r.ok and "DataflowNotFound" in r.message for r in results)
+
+
+def test_dry_run_dataflow_local_and_remote(tmp_path: Path) -> None:
+    from fabric_tools.validate import run_dry_run_dataflow
+
+    folder = tmp_path / "Sales.Dataflow"
+    folder.mkdir()
+    (folder / "queryMetadata.json").write_text(
+        json.dumps(
+            {
+                "formatVersion": "202502",
+                "name": "Sales",
+                "queryGroups": [],
+                "queriesMetadata": {},
+                "connections": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (folder / "mashup.pq").write_text("section Section1;\n", encoding="utf-8")
+    ws = "11111111-1111-1111-1111-111111111111"
+    df = "22222222-2222-2222-2222-222222222222"
+    client = FakeClient(item_type="Dataflow")
+    results = run_dry_run_dataflow(
+        CommandMode.DOWNLOAD,
+        [WorkItem(Target(ws, df), folder)],
+        client=client,  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=True,
+    )
+    assert all(r.ok for r in results)
+    assert any("Dataflow folder" in r.message for r in results)
+    assert any("dataflow" in r.message for r in results)
+
+
+def test_dry_run_dataflow_wrong_type() -> None:
+    from fabric_tools.validate import run_dry_run_dataflow
+
+    item = WorkItem(
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
+        None,
+    )
+    results = run_dry_run_dataflow(
+        CommandMode.DOWNLOAD,
+        [item],
+        client=FakeClient(item_type="Notebook"),  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=False,
+    )
+    assert any(not r.ok and "Notebook" in r.message for r in results)
