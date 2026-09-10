@@ -99,54 +99,32 @@ app.add_typer(dataflow_gen1_app, name="dataflow-gen1")
 
 setup_app = typer.Typer(
     name="setup",
-    help="Install fabric-tools so you can run it as 'fabric-tools' from any terminal.",
+    help="Install, update, and manage the fabric-tools launcher on your PATH.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(setup_app, name="setup")
 
 
-@app.command("update")
-def update_cmd(
-    check: bool = typer.Option(
-        False,
-        "--check",
-        "-c",
-        help="Check GitHub Releases for a newer fabric-tools version.",
-    ),
-) -> None:
-    """Check for updates from GitHub Releases."""
-    from fabric_tools.status import busy
-    from fabric_tools.update_check import UpdateCheckError, check_for_update
+def _flush_update_notice(ctx: typer.Context) -> None:
+    """Print a background update notice on stderr, if one is ready."""
+    if ctx.meta.get("skip_bg_update"):
+        return
+    from fabric_tools.update_check import consume_update_notice
 
-    if not check:
-        typer.secho(
-            "Specify --check / -c to check for a newer release.",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        raise typer.Exit(code=EXIT_USER)
+    notice = consume_update_notice()
+    if notice:
+        typer.secho(notice, fg=typer.colors.YELLOW, err=True)
 
-    try:
-        with busy("Checking for updates..."):
-            result = check_for_update()
-    except UpdateCheckError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
 
-    typer.echo(f"Current version: {result.current}")
-    latest_label = f"{result.latest} ({result.tag_name})"
-    if result.prerelease:
-        latest_label += " [pre-release]"
-    typer.echo(f"Latest release:  {latest_label}")
-    if result.update_available:
-        typer.secho("A newer release is available.", fg=typer.colors.GREEN)
-        if result.release_url:
-            typer.echo(result.release_url)
-        raise typer.Exit(code=EXIT_USER)
+def _start_bg_update_check(ctx: typer.Context) -> None:
+    """Register notice flush and start a once-per-day background check."""
+    ctx.call_on_close(lambda: _flush_update_notice(ctx))
+    if ctx.meta.get("skip_bg_update"):
+        return
+    from fabric_tools.update_check import start_background_update_check
 
-    typer.echo("You are up to date.")
-    raise typer.Exit(code=EXIT_OK)
+    start_background_update_check()
 
 
 @app.command("inspect")
@@ -238,10 +216,13 @@ def main(
             )
             raise typer.Exit(code=EXIT_USER)
         from fabric_tools.interactive import run_interactive_wizard
+        from fabric_tools.update_check import start_background_update_check
 
+        start_background_update_check()
         try:
             run_interactive_wizard()
         finally:
+            _flush_update_notice(ctx)
             from fabric_tools.console_ux import pause_if_double_clicked
 
             pause_if_double_clicked()
@@ -257,15 +238,35 @@ def main(
                 "Opened without arguments (double-click or empty launch).\n"
                 "Starting interactive mode.\n"
             )
+            from fabric_tools.update_check import start_background_update_check
+
+            start_background_update_check()
             try:
                 from fabric_tools.interactive import run_interactive_wizard
 
                 run_interactive_wizard()
             finally:
+                _flush_update_notice(ctx)
                 pause_if_double_clicked()
         else:
             typer.echo(ctx.get_help())
         raise typer.Exit()
+
+    # Nested setup commands decide whether to start the background check.
+    if ctx.invoked_subcommand != "setup":
+        _start_bg_update_check(ctx)
+
+
+@setup_app.callback()
+def setup_main(ctx: typer.Context) -> None:
+    """Manage the fabric-tools install (install / update / status / uninstall)."""
+    root = ctx.find_root()
+    if ctx.invoked_subcommand == "update":
+        root.meta["skip_bg_update"] = True
+        # Still register close flush so skip is honored consistently.
+        root.call_on_close(lambda: _flush_update_notice(root))
+        return
+    _start_bg_update_check(root)
 
 
 @setup_app.command("install")
@@ -349,6 +350,73 @@ def setup_status_cmd() -> None:
     typer.echo(
         f"shutil.which('fabric-tools'): {which or '(not found in this process PATH)'}"
     )
+    raise typer.Exit(code=EXIT_OK)
+
+
+@setup_app.command("update")
+def setup_update(
+    check: bool = typer.Option(
+        False,
+        "--check",
+        "-c",
+        help="Check GitHub Releases for a newer fabric-tools version (no install).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts when downloading/installing.",
+    ),
+) -> None:
+    """Check for a newer release, or download and install it."""
+    from fabric_tools.status import busy
+    from fabric_tools.update_check import UpdateCheckError, check_for_update
+
+    if check:
+        try:
+            with busy("Checking for updates..."):
+                result = check_for_update()
+        except UpdateCheckError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=EXIT_API) from exc
+
+        typer.echo(f"Current version: {result.current}")
+        latest_label = f"{result.latest} ({result.tag_name})"
+        if result.prerelease:
+            latest_label += " [pre-release]"
+        typer.echo(f"Latest release:  {latest_label}")
+        if result.update_available:
+            typer.secho("A newer release is available.", fg=typer.colors.GREEN)
+            if result.release_url:
+                typer.echo(result.release_url)
+            raise typer.Exit(code=EXIT_USER)
+
+        typer.echo("You are up to date.")
+        raise typer.Exit(code=EXIT_OK)
+
+    from fabric_tools.path_setup import PathSetupError, perform_setup_update
+
+    try:
+        result = perform_setup_update(silent=silent)
+    except PathSetupError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except UpdateCheckError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+
+    if result.get("up_to_date"):
+        typer.echo(f"Current version: {result.get('current', '')}")
+        typer.echo("You are up to date.")
+        raise typer.Exit(code=EXIT_OK)
+
+    typer.secho(
+        "Update scheduled — this process will exit; install continues in the background.",
+        fg=typer.colors.GREEN,
+    )
+    if result.get("exe_path"):
+        typer.echo(f"Downloaded: {result['exe_path']}")
+    typer.echo("Open a new terminal afterward, then run: fabric-tools --version")
     raise typer.Exit(code=EXIT_OK)
 
 

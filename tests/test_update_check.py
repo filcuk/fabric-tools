@@ -169,13 +169,23 @@ def test_check_for_update_no_releases() -> None:
             check_for_update(current="0.2.0", client=client)
 
 
-def test_cli_update_requires_check_flag() -> None:
-    result = CliRunner().invoke(app, ["update"])
-    assert result.exit_code == EXIT_USER
-    assert "--check" in result.output or "-c" in result.output
+def test_cli_setup_update_without_check_uses_install_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.perform_setup_update",
+        lambda silent=False: {
+            "up_to_date": False,
+            "exe_path": r"C:\Temp\fabric-tools.exe",
+            "scheduled": True,
+        },
+    )
+    result = CliRunner().invoke(app, ["setup", "update", "--silent"])
+    assert result.exit_code == EXIT_OK
+    assert "scheduled" in result.stdout.lower()
 
 
-def test_cli_update_check_up_to_date(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_setup_update_check_up_to_date(monkeypatch: pytest.MonkeyPatch) -> None:
     from fabric_tools.update_check import UpdateCheckResult
 
     monkeypatch.setattr(
@@ -188,12 +198,14 @@ def test_cli_update_check_up_to_date(monkeypatch: pytest.MonkeyPatch) -> None:
             tag_name="v0.2.0",
         ),
     )
-    result = CliRunner().invoke(app, ["update", "--check"])
+    result = CliRunner().invoke(app, ["setup", "update", "--check"])
     assert result.exit_code == EXIT_OK
     assert "up to date" in result.stdout.lower()
 
 
-def test_cli_update_check_newer_available(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_setup_update_check_newer_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from fabric_tools.update_check import UpdateCheckResult
 
     monkeypatch.setattr(
@@ -207,18 +219,18 @@ def test_cli_update_check_newer_available(monkeypatch: pytest.MonkeyPatch) -> No
             prerelease=True,
         ),
     )
-    result = CliRunner().invoke(app, ["update", "-c"])
+    result = CliRunner().invoke(app, ["setup", "update", "-c"])
     assert result.exit_code == EXIT_USER
     assert "newer release" in result.stdout.lower()
     assert "[pre-release]" in result.stdout
     assert "https://github.com/filcuk/fabric-tools/releases/tag/v0.3.0" in result.stdout
 
 
-def test_cli_update_check_api_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_setup_update_check_api_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "fabric_tools.update_check.check_for_update",
         lambda: (_ for _ in ()).throw(UpdateCheckError("failed to reach GitHub")),
     )
-    result = CliRunner().invoke(app, ["update", "--check"])
+    result = CliRunner().invoke(app, ["setup", "update", "--check"])
     assert result.exit_code == EXIT_API
     assert "failed to reach GitHub" in result.output

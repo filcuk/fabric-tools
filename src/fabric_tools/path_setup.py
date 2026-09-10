@@ -163,6 +163,18 @@ def path_status(*, install_dir: Path | None = None) -> dict[str, str | bool]:
     }
 
 
+def perform_setup_update(*, silent: bool = False) -> dict[str, str | bool]:
+    """Download the latest release exe and schedule install after this process exits.
+
+    Implemented in a following change; CLI wiring calls this entrypoint now.
+    """
+    _ = silent
+    raise PathSetupError(
+        "setup update install is not implemented yet; "
+        "use: fabric-tools setup update --check"
+    )
+
+
 def ensure_user_path_contains(directory: str) -> bool:
     """Add directory to the current user PATH if missing. Returns True if modified."""
     current = _read_user_path()
