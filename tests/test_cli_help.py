@@ -17,6 +17,20 @@ def test_root_help_lists_dataflow_gen1() -> None:
     assert "Commands" in result.stdout
 
 
+def test_root_help_orders_help_and_setup_first() -> None:
+    result = CliRunner().invoke(app, ["--help"])
+    assert result.exit_code == 0
+    help_idx = result.stdout.index("--help")
+    version_idx = result.stdout.index("--version")
+    interactive_idx = result.stdout.index("--interactive")
+    assert help_idx < version_idx < interactive_idx
+
+    setup_idx = result.stdout.index("setup")
+    inspect_idx = result.stdout.index("inspect")
+    notebook_idx = result.stdout.index("notebook")
+    assert setup_idx < inspect_idx < notebook_idx
+
+
 def test_setup_help_lists_update() -> None:
     result = CliRunner().invoke(app, ["setup", "--help"])
     assert result.exit_code == 0

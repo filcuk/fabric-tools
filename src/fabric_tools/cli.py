@@ -90,6 +90,22 @@ _install_description_before_usage()
 class _BannerGroup(TyperGroup):
     """Root help: banner, then subtitle, then Usage / options."""
 
+    def list_commands(self, ctx) -> list[str]:
+        """Keep registration order, but list ``setup`` first."""
+        names = [name for name, _command in self.commands.items()]
+        if "setup" in names:
+            names.remove("setup")
+            names.insert(0, "setup")
+        return names
+
+    def get_params(self, ctx):
+        """Keep registration order, but list ``--help`` first among options."""
+        params = list(self.params)
+        help_option = self.get_help_option(ctx)
+        if help_option is not None:
+            return [help_option, *params]
+        return params
+
     def format_help(self, ctx, formatter) -> None:
         typer.echo(_BANNER)
         subtitle = (self.help or "").strip()
