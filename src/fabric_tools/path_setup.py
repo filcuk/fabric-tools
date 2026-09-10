@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 INSTALL_DIR_NAME = "fabric-tools"
 APP_DIR_NAME = "app"
 LEGACY_BIN_DIR_NAME = "bin"
+UPDATE_DIR_NAME = "update"
 EXE_NAME = "fabric-tools.exe"
 CMD_NAME = "fabric-tools.cmd"
 INTERNAL_DIR_NAME = "_internal"
 ONEDIR_BOOTLOADER_DIR = "_onedir_bootloader"
+APPLY_UPDATE_HELPER_NAME = "apply-update.cmd"
 
 
 class PathSetupError(RuntimeError):
@@ -163,16 +166,122 @@ def path_status(*, install_dir: Path | None = None) -> dict[str, str | bool]:
     }
 
 
-def perform_setup_update(*, silent: bool = False) -> dict[str, str | bool]:
-    """Download the latest release exe and schedule install after this process exits.
+def update_staging_dir() -> Path:
+    """Directory for downloaded release exe + deferred-install helper."""
+    return install_root() / UPDATE_DIR_NAME
 
-    Implemented in a following change; CLI wiring calls this entrypoint now.
-    """
-    _ = silent
-    raise PathSetupError(
-        "setup update install is not implemented yet; "
-        "use: fabric-tools setup update --check"
+
+def perform_setup_update(*, silent: bool = False) -> dict[str, str | bool]:
+    """Download the latest release exe and schedule install after this process exits."""
+    if os.name != "nt":
+        raise PathSetupError("setup update is currently supported on Windows only.")
+    if not is_frozen():
+        raise PathSetupError(
+            "setup update requires the Windows .exe build; "
+            "use: fabric-tools setup update --check"
+        )
+
+    from fabric_tools.confirm import confirm_or_abort
+    from fabric_tools.status import busy
+    from fabric_tools.update_check import (
+        RELEASE_EXE_NAME,
+        check_for_update,
+        download_release_asset,
+        save_update_cache,
     )
+
+    with busy("Checking for updates..."):
+        result = check_for_update()
+    save_update_cache(result)
+
+    if not result.update_available:
+        return {
+            "up_to_date": True,
+            "current": result.current,
+            "latest": result.latest,
+            "scheduled": False,
+            "exe_path": "",
+        }
+
+    if not result.asset_url:
+        raise PathSetupError(
+            f"Release {result.tag_name} has no {RELEASE_EXE_NAME} download asset."
+        )
+
+    label = result.tag_name
+    if result.prerelease:
+        label += " [pre-release]"
+    confirm_or_abort(
+        f"Download and install fabric-tools {label} (current {result.current})?",
+        silent=silent,
+    )
+
+    staging = update_staging_dir()
+    staging.mkdir(parents=True, exist_ok=True)
+    exe_path = staging / EXE_NAME
+
+    with busy(f"Downloading {result.tag_name}..."):
+        download_release_asset(result.asset_url, exe_path)
+
+    helper = staging / APPLY_UPDATE_HELPER_NAME
+    _write_deferred_install_helper(helper)
+    _spawn_deferred_install(helper, os.getpid(), exe_path)
+
+    return {
+        "up_to_date": False,
+        "current": result.current,
+        "latest": result.latest,
+        "tag_name": result.tag_name,
+        "scheduled": True,
+        "exe_path": str(exe_path),
+    }
+
+
+def _write_deferred_install_helper(path: Path) -> None:
+    """Write a cmd script that waits for a PID, then runs ``setup install``."""
+    path.write_text(
+        "\r\n".join(
+            [
+                "@echo off",
+                "setlocal EnableExtensions",
+                'set "PID=%~1"',
+                'set "EXE=%~2"',
+                ":waitloop",
+                'tasklist /FI "PID eq %PID%" 2>NUL | findstr /I "%PID%" >NUL',
+                "if not errorlevel 1 (",
+                "  ping -n 2 127.0.0.1 >NUL",
+                "  goto waitloop",
+                ")",
+                '"%EXE%" setup install',
+                "exit /b %ERRORLEVEL%",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _spawn_deferred_install(helper: Path, pid: int, exe: Path) -> None:
+    """Start the deferred install helper detached from this process."""
+    creationflags = 0
+    if hasattr(subprocess, "DETACHED_PROCESS"):
+        creationflags |= subprocess.DETACHED_PROCESS
+    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        creationflags |= subprocess.CREATE_NO_WINDOW
+
+    try:
+        subprocess.Popen(  # noqa: S603
+            ["cmd.exe", "/c", str(helper), str(pid), str(exe)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+            close_fds=True,
+        )
+    except OSError as exc:
+        raise PathSetupError(f"failed to schedule update install: {exc}") from exc
 
 
 def ensure_user_path_contains(directory: str) -> bool:

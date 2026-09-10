@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import threading
@@ -20,6 +21,7 @@ GITHUB_REPO = "fabric-tools"
 RELEASES_URL = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases"
 RELEASE_EXE_NAME = "fabric-tools.exe"
 DEFAULT_TIMEOUT_S = 5.0
+DOWNLOAD_TIMEOUT_S = 120.0
 DISABLE_UPDATE_CHECK_ENV = "FABRIC_TOOLS_DISABLE_UPDATE_CHECK"
 CACHE_DIR_NAME = "cache"
 CACHE_FILE_NAME = "update-check.json"
@@ -203,6 +205,49 @@ def check_for_update(
         prerelease=prerelease,
         asset_url=asset_url,
     )
+
+
+def download_release_asset(
+    url: str,
+    destination: Path,
+    *,
+    client: httpx.Client | None = None,
+    timeout: float = DOWNLOAD_TIMEOUT_S,
+) -> Path:
+    """Stream a release asset to ``destination`` (atomic replace via ``.partial``)."""
+    headers = {
+        "Accept": "application/octet-stream",
+        "User-Agent": f"fabric-tools/{__version__}",
+    }
+    owns_client = client is None
+    http = client or httpx.Client(
+        timeout=timeout, headers=headers, follow_redirects=True
+    )
+    partial = destination.with_name(destination.name + ".partial")
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with http.stream("GET", url) as response:
+            if response.status_code >= 400:
+                body = response.read()[:200]
+                detail = body.decode("utf-8", errors="replace")
+                raise UpdateCheckError(
+                    f"download failed HTTP {response.status_code}: {detail}"
+                )
+            with partial.open("wb") as handle:
+                for chunk in response.iter_bytes():
+                    handle.write(chunk)
+        partial.replace(destination)
+        return destination
+    except httpx.HTTPError as exc:
+        raise UpdateCheckError(f"failed to download release: {exc}") from exc
+    except OSError as exc:
+        raise UpdateCheckError(f"failed to write download: {exc}") from exc
+    finally:
+        if partial.exists():
+            with contextlib.suppress(OSError):
+                partial.unlink()
+        if owns_client:
+            http.close()
 
 
 def default_update_cache_path() -> Path:

@@ -394,10 +394,14 @@ def setup_update(
         typer.echo("You are up to date.")
         raise typer.Exit(code=EXIT_OK)
 
+    from fabric_tools.confirm import ConfirmationAborted
     from fabric_tools.path_setup import PathSetupError, perform_setup_update
 
     try:
         result = perform_setup_update(silent=silent)
+    except ConfirmationAborted as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
     except PathSetupError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
