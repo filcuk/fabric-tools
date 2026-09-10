@@ -13,6 +13,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_UDF,
     ManifestError,
     item_id_overrides_from_results,
     manifest_from_work_items,
@@ -26,6 +27,7 @@ _TOOL_KIND = {
     "notebook": KIND_NOTEBOOK,
     "dataflow": KIND_DATAFLOW,
     "dataflow-gen1": KIND_DATAFLOW_GEN1,
+    "udf": KIND_UDF,
 }
 
 
@@ -35,6 +37,7 @@ def run_interactive_wizard() -> None:
         run_dataflow_command,
         run_dataflow_gen1_command,
         run_notebook_command,
+        run_udf_command,
     )
 
     typer.echo("fabric-tools interactive mode")
@@ -42,7 +45,7 @@ def run_interactive_wizard() -> None:
 
     tool = _select(
         "Select tool",
-        choices=["notebook", "dataflow", "dataflow-gen1"],
+        choices=["notebook", "dataflow", "dataflow-gen1", "udf"],
         default="notebook",
     )
 
@@ -83,6 +86,9 @@ def run_interactive_wizard() -> None:
         origin_label = "Power BI origin (workspace:artifact)"
     elif tool == "dataflow":
         file_prompt = "Enter folder (*.Dataflow)"
+        origin_label = "Fabric origin (workspace:artifact)"
+    elif tool == "udf":
+        file_prompt = "Enter folder (*.UserDataFunction)"
         origin_label = "Fabric origin (workspace:artifact)"
     else:
         file_prompt = "Enter file (.ipynb or *.Notebook folder)"
@@ -250,6 +256,17 @@ def run_interactive_wizard() -> None:
         )
     elif tool == "dataflow":
         run_dataflow_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    elif tool == "udf":
+        run_udf_command(
             mode,
             target_values=targets or None,
             file_values=files or None,

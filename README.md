@@ -14,9 +14,6 @@ Open a new terminal (restart your IDE if the command is not found) and get start
 
 ```powershell
 fabric-tools --help
-fabric-tools notebook --help
-fabric-tools dataflow --help
-fabric-tools dataflow-gen1 --help
 fabric-tools --interactive
 fabric-tools setup update --check
 ```
@@ -46,13 +43,18 @@ Commands may print a one-line update notice on stderr at most once per local day
   - `model.json` — CDM dataflow definition
   - download, deploy (**create only**), compare, delete
   - Connections/credentials are not in the JSON; configure them in the service after create
+- User Data Functions (`udf`)
+  - `*.UserDataFunction\` — Fabric Git-style folder (`definition.json`, `function_app.py`, `resources/functions.json`; optional `.platform`, `privateLibraries/*.whl`)
+  - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Overwrite preserves the target item’s `connectedDataSources`
+  - Fabric APIs require interactive user auth (service principal is not supported)
 
 ## Flags
 
 | Flag | Alias | Purpose |
 |------|---------|---------|
 | `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated). Overwrite CSV: one workspace per `-t` (bare artifact ids inherit that workspace). Create CSV may list multiple workspaces. |
-| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, or Gen1 `model.json` (repeatable or comma-separated). Optional on download: defaults to remote name + `.ipynb` / `.Dataflow` / `.json` in the current folder. |
+| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, Gen1 `model.json`, or UDF `*.UserDataFunction` folder (repeatable or comma-separated). Optional on download: defaults to remote name + `.ipynb` / `.Dataflow` / `.json` / `.UserDataFunction` in the current folder. |
 | `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as `--target`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
@@ -116,6 +118,14 @@ fabric-tools dataflow-gen1 deploy -s -t <workspaceId> -f .\model.json -n "Sales"
 fabric-tools dataflow-gen1 compare -t <workspaceId>:<dataflowId> -f .\model.json
 fabric-tools dataflow-gen1 delete -s -t <workspaceId>:<dataflowId>
 
+# User Data Function: download / create / overwrite / compare / delete
+fabric-tools udf download -s -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
+fabric-tools udf download -s -t <workspaceId>:<udfId>
+fabric-tools udf deploy -s -t <workspaceId> -f .\Demo.UserDataFunction -n "Demo"
+fabric-tools udf deploy -s -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
+fabric-tools udf compare -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
+fabric-tools udf delete -s -t <workspaceId>:<udfId>
+
 # Dry-run validate and write test.ftdep (no remote changes)
 fabric-tools notebook deploy -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
 
@@ -145,10 +155,12 @@ fabric-tools setup update -s
 Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
 broker, then falls back to browser or device-code auth.
 
-Notebooks and Dataflow Gen2 use the Fabric API token. Dataflow Gen1 uses a Power BI API token
+Notebooks, Dataflow Gen2, and User Data Functions use the Fabric API token. Dataflow Gen1 uses a Power BI API token
 (same sign-in / service principal; different audience).
 
-For automation, set a service principal:
+User Data Function APIs do **not** support service principals — use interactive user sign-in for `udf` commands.
+
+For automation (notebooks / dataflows), set a service principal:
 
 ```powershell
 $env:AZURE_TENANT_ID="..."
