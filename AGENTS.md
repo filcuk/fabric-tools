@@ -2,7 +2,7 @@
 
 Guidance for AI agents and contributors working on this repository.
 
-Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVELOPMENT.md). End-user CLI docs are in [README.md](README.md).
+Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md](DEVELOPMENT.md). End-user CLI docs are in [README.md](README.md).
 
 ## Project goal
 
@@ -36,6 +36,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 - Python 3.11+, `src/` layout, Hatchling build
 - CLI framework: Typer; HTTP: httpx; auth: azure-identity (+ azure-identity-broker on Windows WAM)
 - Prefer small, focused modules over large catch-all files
+- Lint/format with Ruff (`ruff check` / `ruff format`; config in `pyproject.toml`)
 - Do not commit secrets, `.env`, or built `dist/` / `build/` artifacts
 - Plan execution: complete one plan step, stop for user review/commit, wait for `continue`
 
@@ -77,6 +78,8 @@ py -3 -m pip install -e ".[dev]"
 py -3 -m fabric_tools --version
 py -3 -m fabric_tools notebook --help
 py -3 -m fabric_tools dataflow-gen1 --help
+py -3 -m ruff check .
+py -3 -m ruff format --check .
 py -3 -m pytest
 powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 ```
