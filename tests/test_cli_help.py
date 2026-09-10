@@ -16,7 +16,8 @@ def test_root_help_lists_dataflow_gen1() -> None:
     assert "pipeline" in result.stdout
     assert "udf" in result.stdout
     assert "setup" in result.stdout
-    assert "Commands" in result.stdout
+    assert "Local" in result.stdout
+    assert "Fabric" in result.stdout
 
 
 def test_root_help_orders_help_and_setup_first() -> None:
@@ -27,10 +28,23 @@ def test_root_help_orders_help_and_setup_first() -> None:
     interactive_idx = result.stdout.index("--interactive")
     assert help_idx < version_idx < interactive_idx
 
+    # Panel titles use a leading box edge; avoid matching "Fabric" in the subtitle.
+    local_idx = result.stdout.index("─ Local")
+    fabric_idx = result.stdout.index("─ Fabric")
     setup_idx = result.stdout.index("setup")
     inspect_idx = result.stdout.index("inspect")
+    dataflow_idx = result.stdout.index("dataflow")
+    dataflow_gen1_idx = result.stdout.index("dataflow-gen1")
     notebook_idx = result.stdout.index("notebook")
-    assert setup_idx < inspect_idx < notebook_idx
+    assert (
+        local_idx
+        < setup_idx
+        < inspect_idx
+        < fabric_idx
+        < dataflow_idx
+        < dataflow_gen1_idx
+        < notebook_idx
+    )
 
 
 def test_setup_help_lists_update() -> None:

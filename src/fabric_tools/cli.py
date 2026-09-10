@@ -92,13 +92,24 @@ _install_description_before_usage()
 class _BannerGroup(TyperGroup):
     """Root help: banner, then subtitle, then Usage / options."""
 
+    # Help list order: setup first, then inspect, then artifact groups
+    # (dataflow family before notebook).
+    _COMMAND_ORDER = (
+        "setup",
+        "inspect",
+        "dataflow",
+        "dataflow-gen1",
+        "notebook",
+        "pipeline",
+        "udf",
+    )
+
     def list_commands(self, ctx) -> list[str]:
-        """Keep registration order, but list ``setup`` first."""
+        """List commands in a stable help order (setup first)."""
         names = [name for name, _command in self.commands.items()]
-        if "setup" in names:
-            names.remove("setup")
-            names.insert(0, "setup")
-        return names
+        ordered = [name for name in self._COMMAND_ORDER if name in names]
+        remaining = [name for name in names if name not in ordered]
+        return [*ordered, *remaining]
 
     def get_params(self, ctx):
         """Keep registration order, but list ``--help`` first among options."""
@@ -139,7 +150,7 @@ notebook_app = typer.Typer(
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
-app.add_typer(notebook_app, name="notebook")
+app.add_typer(notebook_app, name="notebook", rich_help_panel="Fabric")
 
 dataflow_app = typer.Typer(
     name="dataflow",
@@ -147,7 +158,7 @@ dataflow_app = typer.Typer(
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
-app.add_typer(dataflow_app, name="dataflow")
+app.add_typer(dataflow_app, name="dataflow", rich_help_panel="Fabric")
 
 dataflow_gen1_app = typer.Typer(
     name="dataflow-gen1",
@@ -155,7 +166,7 @@ dataflow_gen1_app = typer.Typer(
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
-app.add_typer(dataflow_gen1_app, name="dataflow-gen1")
+app.add_typer(dataflow_gen1_app, name="dataflow-gen1", rich_help_panel="Fabric")
 
 pipeline_app = typer.Typer(
     name="pipeline",
@@ -163,7 +174,7 @@ pipeline_app = typer.Typer(
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
-app.add_typer(pipeline_app, name="pipeline")
+app.add_typer(pipeline_app, name="pipeline", rich_help_panel="Fabric")
 
 udf_app = typer.Typer(
     name="udf",
@@ -171,7 +182,7 @@ udf_app = typer.Typer(
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
-app.add_typer(udf_app, name="udf")
+app.add_typer(udf_app, name="udf", rich_help_panel="Fabric")
 
 setup_app = typer.Typer(
     name="setup",
@@ -179,7 +190,7 @@ setup_app = typer.Typer(
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
-app.add_typer(setup_app, name="setup")
+app.add_typer(setup_app, name="setup", rich_help_panel="Local")
 
 
 def _flush_update_notice(ctx: typer.Context) -> None:
@@ -203,7 +214,7 @@ def _start_bg_update_check(ctx: typer.Context) -> None:
     start_background_update_check()
 
 
-@app.command("inspect")
+@app.command("inspect", rich_help_panel="Local")
 def inspect_manifest(
     manifest: str | None = typer.Option(
         None,
