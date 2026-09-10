@@ -17,6 +17,8 @@ from fabric_tools.confirm import (
     confirm_deploy_create_dataflow_gen1,
     confirm_download_overwrites,
     confirm_download_overwrites_dataflow_gen1,
+    resolve_dataflow_gen1_download_files,
+    resolve_notebook_download_files,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
@@ -370,7 +372,8 @@ def notebook_download(
         None,
         "--file",
         "-f",
-        help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
+        help="(optional) Local .ipynb or *.Notebook folder. "
+        "Defaults to remote display name with .ipynb in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
         "One file may broadcast to all targets.",
     ),
@@ -589,7 +592,8 @@ def dataflow_gen1_download(
         None,
         "--file",
         "-f",
-        help="(required without -m or -d) Local model.json path. "
+        help="(optional) Local model.json path. "
+        "Defaults to remote name with .json in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
         "One file may broadcast to all targets.",
     ),
@@ -885,6 +889,7 @@ def run_notebook_command(
         client.ensure_authenticated()
     try:
         if mode is CommandMode.DOWNLOAD:
+            items = resolve_notebook_download_files(client, items)
             confirm_download_overwrites(client, items, silent=silent)
             with busy("Downloading..."):
                 op_results = run_download_batch(client, items)
@@ -1099,6 +1104,7 @@ def run_dataflow_gen1_command(
         client.ensure_authenticated()
     try:
         if mode is CommandMode.DOWNLOAD:
+            items = resolve_dataflow_gen1_download_files(client, items)
             confirm_download_overwrites_dataflow_gen1(client, items, silent=silent)
             with busy("Downloading..."):
                 op_results = run_df_download(client, items)

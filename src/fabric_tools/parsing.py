@@ -170,13 +170,17 @@ def build_work_items(
         _require_items(targets, mode)
         return [WorkItem(t, None) for t in targets]
 
-    _require_exclusive_source(files, origin_list, allow_neither=False)
+    allow_neither = mode is CommandMode.DOWNLOAD
+    _require_exclusive_source(files, origin_list, allow_neither=allow_neither)
 
     if mode is CommandMode.DOWNLOAD:
         if origin_list:
             raise ParseError("download does not support --origin (use --file destination)")
         _require_items(targets, mode)
         _require_single_workspace(targets, mode)
+        if not files:
+            # Destination defaults to remote display name + extension at download time.
+            return [WorkItem(t, None) for t in targets]
         paired_files = _pair_sources(targets, files, allow_broadcast=True, kind="file")
         return [WorkItem(t, f) for t, f in zip(targets, paired_files, strict=True)]
 
@@ -402,3 +406,42 @@ def _parse_guid(value: str, *, what: str) -> str:
 
 def _split_csv(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+_INVALID_FILENAME_CHARS = frozenset('<>:"/\\|?*')
+
+
+def sanitize_download_filename(name: str) -> str:
+    """Make a remote display name safe as a single path segment."""
+    cleaned = "".join(
+        "_" if (ch in _INVALID_FILENAME_CHARS or ord(ch) < 32) else ch
+        for ch in name.strip()
+    )
+    cleaned = cleaned.rstrip(" .")
+    return cleaned or "download"
+
+
+def default_download_paths(
+    display_names: list[str],
+    *,
+    extension: str,
+) -> list[Path]:
+    """Build unique cwd-relative paths from display names and an extension.
+
+    ``extension`` should include the dot (e.g. ``.ipynb``, ``.json``). Duplicate
+    names in the same batch get `` (2)``, `` (3)``, … suffixes before the extension.
+    """
+    if not extension.startswith("."):
+        extension = f".{extension}"
+    used: set[str] = set()
+    paths: list[Path] = []
+    for raw_name in display_names:
+        stem = sanitize_download_filename(raw_name)
+        candidate = f"{stem}{extension}"
+        n = 2
+        while candidate.casefold() in used:
+            candidate = f"{stem} ({n}){extension}"
+            n += 1
+        used.add(candidate.casefold())
+        paths.append(Path(candidate))
+    return paths

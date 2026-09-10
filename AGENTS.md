@@ -43,7 +43,7 @@ Human contributor setup (install, pytest, exe build) is in [DEVELOPMENT.md](DEVE
 ### Shared
 
 - Targets: `--target <workspaceId>:<artifactId>` (create: `--target <workspaceId>` only). Repeatable or comma-separated. Overwrite CSV is one workspace per flag value (bare artifact GUIDs inherit that workspace; use separate `-t` for other workspaces). Create CSV may list multiple workspaces.
-- Files: `--file` paired 1:1 with targets, or one file broadcast to N targets (deploy/download)
+- Files: `--file` paired 1:1 with targets, or one file broadcast to N targets (deploy/download). Download may omit `--file` (defaults to remote display name + `.ipynb` / `.json` in the current folder).
 - Origins: `--origin` / `-o` `<workspaceId>:<artifactId>` for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as targets; deploy may broadcast one origin to N targets; compare is 1:1)
 - Delete: `--target` workspace:artifact only (no `--file`/`--origin`); optional `-m` load when entries have `itemId` (manifest not rewritten after delete)
 - Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Schema v1 = file sources; v2 adds origin fields. Top-level `inspect` lists `.ftdep` in cwd; `inspect -m` shows one. Interactive may offer save after execute or dry-run.

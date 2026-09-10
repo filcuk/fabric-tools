@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from fabric_tools.client import FabricApiError, FabricClient
-from fabric_tools.parsing import Target, WorkItem
+from fabric_tools.parsing import Target, WorkItem, default_download_paths
 from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
 from fabric_tools.status import busy
 
@@ -64,6 +64,82 @@ def resolve_powerbi_dataflow_name(client: PowerBiClient, target: Target) -> str:
         return f"{target.item_id} (unavailable: {exc})"
     name = data.get("name") or target.item_id
     return f"{name} ({target.item_id})"
+
+
+def notebook_display_name(client: FabricClient, target: Target) -> str:
+    """Return Fabric item display name for a notebook target (fallback: id)."""
+    if target.item_id is None:
+        return "Notebook"
+    try:
+        data = client.get_item(target.workspace_id, target.item_id)
+    except FabricApiError:
+        return target.item_id
+    name = data.get("displayName") or data.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return target.item_id
+
+
+def dataflow_gen1_display_name(client: PowerBiClient, target: Target) -> str:
+    """Return Power BI dataflow name for a Gen1 target (fallback: id)."""
+    if target.item_id is None:
+        return "Dataflow"
+    try:
+        data = client.get_dataflow(target.workspace_id, target.item_id)
+    except PowerBiApiError:
+        return target.item_id
+    name = data.get("name") or data.get("displayName")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return target.item_id
+
+
+def resolve_notebook_download_files(
+    client: FabricClient,
+    items: list[WorkItem],
+) -> list[WorkItem]:
+    """Fill missing download destinations from remote notebook display names (``.ipynb``)."""
+    if not items or all(item.file is not None for item in items):
+        return items
+    if any(item.file is not None for item in items):
+        raise ValueError("download work items must all omit --file or all provide it")
+
+    with busy("Resolving download paths..."):
+        names = [
+            notebook_display_name(client, item.target)
+            if item.target is not None
+            else "Notebook"
+            for item in items
+        ]
+        paths = default_download_paths(names, extension=".ipynb")
+    return [
+        WorkItem(item.target, path, origin=item.origin)
+        for item, path in zip(items, paths, strict=True)
+    ]
+
+
+def resolve_dataflow_gen1_download_files(
+    client: PowerBiClient,
+    items: list[WorkItem],
+) -> list[WorkItem]:
+    """Fill missing download destinations from remote dataflow names (``.json``)."""
+    if not items or all(item.file is not None for item in items):
+        return items
+    if any(item.file is not None for item in items):
+        raise ValueError("download work items must all omit --file or all provide it")
+
+    with busy("Resolving download paths..."):
+        names = [
+            dataflow_gen1_display_name(client, item.target)
+            if item.target is not None
+            else "Dataflow"
+            for item in items
+        ]
+        paths = default_download_paths(names, extension=".json")
+    return [
+        WorkItem(item.target, path, origin=item.origin)
+        for item, path in zip(items, paths, strict=True)
+    ]
 
 
 def confirm_download_overwrites(

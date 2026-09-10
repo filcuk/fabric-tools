@@ -43,7 +43,7 @@ fabric-tools path uninstall
 | Flag | Alias | Purpose |
 |------|---------|---------|
 | `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated). Overwrite CSV: one workspace per `-t` (bare artifact ids inherit that workspace). Create CSV may list multiple workspaces. |
-| `--file` | `-f` | Local notebook path/folder or Gen1 `model.json` (repeatable or comma-separated) |
+| `--file` | `-f` | Local notebook path/folder or Gen1 `model.json` (repeatable or comma-separated). Optional on download: defaults to remote name + `.ipynb` / `.json` in the current folder. |
 | `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as `--target`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
@@ -61,8 +61,9 @@ fabric-tools notebook deploy -d -f .\etl.ipynb
 # Dry-run: remote target only
 fabric-tools notebook download -d -t <workspaceId>:<notebookId>
 
-# Download (format inferred from destination path)
+# Download (format inferred from destination path; -f optional → remote name.ipynb)
 fabric-tools notebook download -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
+fabric-tools notebook download -s -t <workspaceId>:<notebookId>
 
 # Deploy overwrite from local file
 fabric-tools notebook deploy -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
@@ -93,6 +94,7 @@ fabric-tools notebook delete -s -t <workspaceId>:<notebookId>
 
 # Dataflow Gen1: download / create / compare / delete
 fabric-tools dataflow-gen1 download -s -t <workspaceId>:<dataflowId> -f .\model.json
+fabric-tools dataflow-gen1 download -s -t <workspaceId>:<dataflowId>
 fabric-tools dataflow-gen1 deploy -s -t <workspaceId> -f .\model.json -n "Sales"
 fabric-tools dataflow-gen1 compare -t <workspaceId>:<dataflowId> -f .\model.json
 fabric-tools dataflow-gen1 delete -s -t <workspaceId>:<dataflowId>

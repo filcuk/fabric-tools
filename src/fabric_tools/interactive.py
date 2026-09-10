@@ -102,6 +102,18 @@ def run_interactive_wizard() -> None:
             targets.append(target)
             if not _confirm("Add another target?", default=False):
                 break
+    elif mode is CommandMode.DOWNLOAD and run_mode != "dry_files":
+        typer.echo("\nEnter target(s). Local path defaults to remote name + extension.")
+        while True:
+            target = _text(_target_prompt(mode, tool=tool), allow_empty=bool(targets))
+            if not target:
+                break
+            targets.append(target)
+            if not _confirm("Add another target?", default=False):
+                break
+        if _confirm("Specify local destination path(s)?", default=False):
+            for target in targets:
+                files.append(_text(f"{file_prompt} for {target}", allow_empty=False))
     elif run_mode == "dry_files":
         while True:
             path = _text(file_prompt, allow_empty=bool(files))
@@ -201,7 +213,12 @@ def run_interactive_wizard() -> None:
     offer_manifest = (
         mode is not CommandMode.DELETE
         and bool(targets)
-        and (bool(files) or bool(origins))
+        and (
+            bool(files)
+            or bool(origins)
+            # Download may omit --file; paths are filled from remote names before save.
+            or (mode is CommandMode.DOWNLOAD and not dry_run)
+        )
     )
     kind = KIND_DATAFLOW_GEN1 if tool == "dataflow-gen1" else KIND_NOTEBOOK
     on_success = (
