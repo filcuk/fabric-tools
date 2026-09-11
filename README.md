@@ -4,11 +4,13 @@ CLI for working with Microsoft Fabric artifacts.
 
 ## Quick start
 
-Download the single `fabric-tools.exe` release. You can run it as-is, or install it for faster startup:
+Download the single `fabric-tools.exe` release. You can run it as-is (portable, slower startup), or install it for up to ~20× faster launches:
 
 ```powershell
 .\fabric-tools.exe setup install
 ```
+
+Portable one-file runs print a yellow stderr warning suggesting install. After install, use the PATH launcher (not the downloaded exe) to get the speedup.
 
 Open a new terminal (restart your IDE if the command is not found) and get started:
 

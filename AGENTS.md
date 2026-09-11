@@ -62,7 +62,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Auth: interactive default; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` (not supported for `udf`)
 - Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute and `setup install` / `setup update` (install) / `setup uninstall`. Allows download, compare, inspect, `--dry-run`, `setup status`, `setup update --check`. `--silent` does not override.
 - Env report: `fabric-tools env` lists supported env vars (`FABRIC_TOOLS_*`, `AZURE_*`) and current process values (`AZURE_CLIENT_SECRET` redacted). `env set` / `env unset` persist catalogued names in the Windows user environment (new terminal needed for other shells; secret values never echoed). Allowed under read-only.
-- Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only.
+- Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only. Portable one-file runs warn on stderr to install for up to ~20× faster startup (skipped under `setup install` / `setup update`).
 
 ### Notebooks
 

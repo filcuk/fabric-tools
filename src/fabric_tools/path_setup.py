@@ -69,6 +69,21 @@ def frozen_onedir_root() -> Path | None:
     return None
 
 
+def is_portable_onefile() -> bool:
+    """True when running a PyInstaller one-file build (extracts to temp each launch)."""
+    return is_frozen() and meipass_dir() is not None and frozen_onedir_root() is None
+
+
+def format_install_speed_notice() -> str | None:
+    """Warn portable one-file users to install for faster startup."""
+    if not is_portable_onefile():
+        return None
+    return (
+        "Warning: portable one-file exe extracts on every launch (slow startup). "
+        "Install for up to 20x faster launches: fabric-tools setup install"
+    )
+
+
 def install_to_user_path(*, install_dir: Path | None = None) -> dict[str, str | bool]:
     """Copy/shim this tool into a stable folder and ensure that folder is on user PATH.
 

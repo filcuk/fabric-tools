@@ -270,6 +270,17 @@ def _flush_update_notice(ctx: typer.Context) -> None:
         typer.secho(notice, fg=typer.colors.YELLOW, err=True)
 
 
+def _emit_install_speed_notice(*, skip: bool = False) -> None:
+    """Warn when running the portable one-file exe (slow extract each launch)."""
+    if skip:
+        return
+    from fabric_tools.path_setup import format_install_speed_notice
+
+    notice = format_install_speed_notice()
+    if notice:
+        typer.secho(notice, fg=typer.colors.YELLOW, err=True)
+
+
 def _start_bg_update_check(ctx: typer.Context) -> None:
     """Register notice flush and start a once-per-day background check."""
     ctx.call_on_close(lambda: _flush_update_notice(ctx))
@@ -409,6 +420,10 @@ def main(
     Run without arguments to list commands. Use ``--help`` on any command
     for parameters (required vs optional).
     """
+    # setup install/update emit their own decision in setup_main.
+    if ctx.invoked_subcommand != "setup":
+        _emit_install_speed_notice()
+
     if interactive:
         if ctx.invoked_subcommand is not None:
             typer.secho(
@@ -464,6 +479,10 @@ def main(
 def setup_main(ctx: typer.Context) -> None:
     """Manage the fabric-tools install (install / update / status / uninstall)."""
     root = ctx.find_root()
+    # Skip speed warning while installing/updating (user is already acting on it).
+    _emit_install_speed_notice(
+        skip=ctx.invoked_subcommand in {"install", "update"},
+    )
     if ctx.invoked_subcommand == "update":
         root.meta["skip_bg_update"] = True
         # Still register close flush so skip is honored consistently.

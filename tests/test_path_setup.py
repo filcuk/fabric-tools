@@ -18,6 +18,8 @@ from fabric_tools.path_setup import (
     _normalize_dir,
     _split_path,
     _write_deferred_install_helper,
+    format_install_speed_notice,
+    is_portable_onefile,
     perform_setup_update,
 )
 from fabric_tools.update_check import UpdateCheckResult
@@ -120,6 +122,43 @@ def test_write_deferred_install_helper(tmp_path: Path) -> None:
     text = helper.read_text(encoding="utf-8")
     assert "tasklist" in text
     assert "setup install" in text
+
+
+def test_is_portable_onefile_false_when_not_frozen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: False)
+    assert is_portable_onefile() is False
+    assert format_install_speed_notice() is None
+
+
+def test_is_portable_onefile_true_for_onefile_layout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.meipass_dir", lambda: tmp_path / "_MEI123"
+    )
+    monkeypatch.setattr("fabric_tools.path_setup.frozen_onedir_root", lambda: None)
+    assert is_portable_onefile() is True
+    notice = format_install_speed_notice()
+    assert notice is not None
+    assert "20x" in notice
+    assert "setup install" in notice
+
+
+def test_is_portable_onefile_false_for_onedir_layout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.meipass_dir", lambda: tmp_path / "_internal"
+    )
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.frozen_onedir_root", lambda: tmp_path / "app"
+    )
+    assert is_portable_onefile() is False
+    assert format_install_speed_notice() is None
 
 
 def test_perform_setup_update_requires_frozen(monkeypatch: pytest.MonkeyPatch) -> None:
