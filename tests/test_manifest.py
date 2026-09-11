@@ -19,7 +19,11 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
     KIND_PIPELINE,
+    KIND_REPORT,
+    KIND_SEMANTIC_MODEL,
     KIND_UDF,
+    DeploymentManifest,
+    ManifestEntry,
     ManifestError,
     delete_targets_from_manifest,
     format_inspect,
@@ -98,6 +102,66 @@ def test_wrong_kind_rejected(tmp_path: Path) -> None:
     loaded = load_manifest(path)
     with pytest.raises(ManifestError, match="expected 'notebook'"):
         work_items_from_manifest(loaded)
+
+
+def test_report_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Sales.Report"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_REPORT,
+        display_names=["Sales"],
+    )
+    path = save_manifest(tmp_path / "rpt", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_REPORT
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_REPORT)
+    assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_semantic_model_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Sales.SemanticModel"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_SEMANTIC_MODEL,
+        display_names=["Sales"],
+    )
+    path = save_manifest(tmp_path / "sm", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_SEMANTIC_MODEL
+    work_items, names = work_items_from_manifest(
+        loaded, expected_kind=KIND_SEMANTIC_MODEL
+    )
+    assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_report_semantic_model_id_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Sales.Report"
+    folder.mkdir()
+    built = DeploymentManifest(
+        kind=KIND_REPORT,
+        entries=(
+            ManifestEntry(
+                workspace_id=WS,
+                item_id=ITEM,
+                file=folder,
+                display_name="Sales",
+                semantic_model_id=ITEM2,
+            ),
+        ),
+    )
+    path = save_manifest(tmp_path / "rpt_sm", built)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["entries"][0]["semanticModelId"] == ITEM2
+    loaded = load_manifest(path)
+    assert loaded.entries[0].semantic_model_id == ITEM2
+    text = format_inspect(loaded, path=path)
+    assert f"semanticModelId={ITEM2}" in text
 
 
 def test_dataflow_gen1_kind_round_trip(tmp_path: Path) -> None:

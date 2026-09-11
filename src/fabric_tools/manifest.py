@@ -19,6 +19,8 @@ KIND_DATAFLOW = "dataflow"
 KIND_DATAFLOW_GEN1 = "dataflow-gen1"
 KIND_PIPELINE = "pipeline"
 KIND_UDF = "udf"
+KIND_REPORT = "report"
+KIND_SEMANTIC_MODEL = "semantic-model"
 
 
 class ManifestError(ValueError):
@@ -33,6 +35,8 @@ class ManifestEntry:
     display_name: str | None = None
     origin_workspace_id: str | None = None
     origin_item_id: str | None = None
+    # Optional bound semantic model id for report manifests (joined create/download).
+    semantic_model_id: str | None = None
 
     @property
     def has_file(self) -> bool:
@@ -326,11 +330,16 @@ def format_inspect(manifest: DeploymentManifest, *, path: Path | None = None) ->
             else f"{entry.workspace_id} (create)"
         )
         name_part = f", name={entry.display_name!r}" if entry.display_name else ""
+        sm_part = (
+            f", semanticModelId={entry.semantic_model_id}"
+            if entry.semantic_model_id
+            else ""
+        )
         if entry.has_origin:
             source = f"{entry.origin_workspace_id}:{entry.origin_item_id}"
         else:
             source = str(entry.file)
-        lines.append(f"  {index}. {target} <- {source}{name_part}")
+        lines.append(f"  {index}. {target} <- {source}{name_part}{sm_part}")
     return "\n".join(lines)
 
 
@@ -413,6 +422,16 @@ def _parse_entry(
     if isinstance(display_name, str):
         display_name = display_name.strip() or None
 
+    sm_raw = raw.get("semanticModelId", None)
+    if sm_raw is None or sm_raw == "":
+        semantic_model_id = None
+    elif isinstance(sm_raw, str):
+        semantic_model_id = sm_raw.strip() or None
+    else:
+        raise ManifestError(
+            f"entries[{index}].semanticModelId must be a string or null in {path}"
+        )
+
     return ManifestEntry(
         workspace_id=workspace_id.strip(),
         item_id=item_id,
@@ -420,6 +439,7 @@ def _parse_entry(
         display_name=display_name,
         origin_workspace_id=origin_workspace_id,
         origin_item_id=origin_item_id,
+        semantic_model_id=semantic_model_id,
     )
 
 
@@ -441,4 +461,6 @@ def _entry_to_json(entry: ManifestEntry, *, base: Path) -> dict[str, Any]:
         payload["originItemId"] = entry.origin_item_id
     if entry.display_name:
         payload["displayName"] = entry.display_name
+    if entry.semantic_model_id:
+        payload["semanticModelId"] = entry.semantic_model_id
     return payload
