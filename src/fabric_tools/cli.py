@@ -97,14 +97,16 @@ class _BannerGroup(TyperGroup):
     """Root help: banner, then subtitle, then Usage / options."""
 
     # Help list order: setup first, then inspect, then artifact groups
-    # (dataflow family before notebook).
+    # (dataflow-gen1 before dataflow; report under pipeline; semantic-model under report).
     _COMMAND_ORDER = (
         "setup",
         "inspect",
-        "dataflow",
         "dataflow-gen1",
+        "dataflow",
         "notebook",
         "pipeline",
+        "report",
+        "semantic-model",
         "udf",
     )
 
@@ -174,8 +176,7 @@ app.add_typer(semantic_model_app, name="semantic-model", rich_help_panel="Fabric
 
 report_app = typer.Typer(
     name="report",
-    help="Download, deploy, compare, and delete Fabric report items "
-    "(joins a packable semantic model by default; use --independent / -i to opt out).",
+    help="Download, deploy, compare, and delete Fabric report items.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )

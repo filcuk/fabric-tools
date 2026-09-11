@@ -35,17 +35,26 @@ def test_root_help_orders_help_and_setup_first() -> None:
     fabric_idx = result.stdout.index("─ Fabric")
     setup_idx = result.stdout.index("setup")
     inspect_idx = result.stdout.index("inspect")
-    dataflow_idx = result.stdout.index("dataflow")
     dataflow_gen1_idx = result.stdout.index("dataflow-gen1")
+    # "dataflow" is a prefix of "dataflow-gen1"; take the standalone command line.
+    dataflow_idx = result.stdout.index("dataflow ", dataflow_gen1_idx + 1)
     notebook_idx = result.stdout.index("notebook")
+    pipeline_idx = result.stdout.index("pipeline")
+    report_idx = result.stdout.index("report")
+    semantic_model_idx = result.stdout.index("semantic-model")
+    udf_idx = result.stdout.index("udf")
     assert (
         local_idx
         < setup_idx
         < inspect_idx
         < fabric_idx
-        < dataflow_idx
         < dataflow_gen1_idx
+        < dataflow_idx
         < notebook_idx
+        < pipeline_idx
+        < report_idx
+        < semantic_model_idx
+        < udf_idx
     )
 
 
