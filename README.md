@@ -29,6 +29,8 @@ fabric-tools setup uninstall
 
 Commands may print a one-line update notice on stderr at most once per local day when a newer GitHub release exists. Disable with `$env:FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`.
 
+Set `$env:FABRIC_TOOLS_READONLY=1` to refuse deploy, delete, and mutating `setup` actions (install / update / uninstall). Download, compare, inspect, `--dry-run`, `setup status`, and `setup update --check` still work. Useful for agents.
+
 ## Support
 
 - Notebooks

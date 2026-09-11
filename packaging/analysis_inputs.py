@@ -24,6 +24,7 @@ def analysis_inputs(project_root: Path) -> tuple[list, list, list]:
         "fabric_tools.parsing",
         "fabric_tools.validate",
         "fabric_tools.exit_codes",
+        "fabric_tools.readonly",
         "fabric_tools.notebook",
         "fabric_tools.notebook.definition",
         "fabric_tools.notebook.ops",

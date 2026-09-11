@@ -43,6 +43,11 @@ from fabric_tools.parsing import (
     parse_target_values,
     rejoin_spaced_csv_argv,
 )
+from fabric_tools.readonly import (
+    ReadOnlyError,
+    ensure_command_allowed,
+    ensure_setup_mutation_allowed,
+)
 
 if TYPE_CHECKING:
     from fabric_tools.notebook.compare import CompareResult
@@ -59,6 +64,24 @@ _BANNER = r"""
 |   __| .'| . |  _| |  _|___| | | | . | . | |_ -|
 |__|  |__,|___|_| |_|___|     |_| |___|___|_|___|
 """
+
+
+def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
+    """Exit if ``FABRIC_TOOLS_READONLY`` blocks this mode (unless dry-run)."""
+    try:
+        ensure_command_allowed(mode, dry_run=dry_run)
+    except ReadOnlyError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+
+def _enforce_readonly_setup(action: str) -> None:
+    """Exit if ``FABRIC_TOOLS_READONLY`` blocks a mutating setup action."""
+    try:
+        ensure_setup_mutation_allowed(action)
+    except ReadOnlyError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
 
 
 def _install_description_before_usage() -> None:
@@ -394,6 +417,7 @@ def setup_install() -> None:
     """Install fabric-tools into a stable folder and register it for your user account."""
     from fabric_tools.path_setup import PathSetupError, install_to_user_path
 
+    _enforce_readonly_setup("install")
     try:
         result = install_to_user_path()
     except PathSetupError as exc:
@@ -431,6 +455,7 @@ def setup_uninstall(
     """Remove fabric-tools registration (and installed files by default)."""
     from fabric_tools.path_setup import PathSetupError, uninstall_from_user_path
 
+    _enforce_readonly_setup("uninstall")
     try:
         result = uninstall_from_user_path(delete_files=not keep_files)
     except PathSetupError as exc:
@@ -517,6 +542,7 @@ def setup_update(
     from fabric_tools.confirm import ConfirmationAborted
     from fabric_tools.path_setup import PathSetupError, perform_setup_update
 
+    _enforce_readonly_setup("update")
     try:
         result = perform_setup_update(silent=silent)
     except ConfirmationAborted as exc:
@@ -2225,6 +2251,7 @@ def run_notebook_command(
     checks/ops/compare results ok), before the process exit code is raised — used
     by interactive mode to offer saving a deployment manifest.
     """
+    _enforce_readonly_command(mode, dry_run=dry_run)
     from fabric_tools.client import FabricClient
     from fabric_tools.confirm import (
         ConfirmationAborted,
@@ -2455,6 +2482,7 @@ def run_dataflow_command(
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for dataflow (Gen2) CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
     from fabric_tools.client import FabricClient
     from fabric_tools.confirm import (
         ConfirmationAborted,
@@ -2676,6 +2704,7 @@ def run_semantic_model_command(
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for semantic-model CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
     from fabric_tools.client import FabricClient
     from fabric_tools.confirm import (
         ConfirmationAborted,
@@ -2924,6 +2953,7 @@ def run_report_command(
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for report CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
     from fabric_tools.client import FabricClient
     from fabric_tools.confirm import (
         ConfirmationAborted,
@@ -3184,6 +3214,7 @@ def run_dataflow_gen1_command(
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for dataflow-gen1 CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
     from fabric_tools.confirm import (
         ConfirmationAborted,
         confirm_delete_dataflow_gen1,
@@ -3407,6 +3438,7 @@ def run_paginated_report_command(
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for paginated-report CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
     from fabric_tools.confirm import (
         ConfirmationAborted,
         confirm_delete_paginated_report,
@@ -3632,6 +3664,7 @@ def run_pipeline_command(
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for pipeline CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
     from fabric_tools.client import FabricClient
     from fabric_tools.confirm import (
         ConfirmationAborted,
@@ -3852,6 +3885,7 @@ def run_udf_command(
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for User Data Function CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
     from fabric_tools.client import FabricClient
     from fabric_tools.confirm import (
         ConfirmationAborted,
