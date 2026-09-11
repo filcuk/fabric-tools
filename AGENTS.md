@@ -97,6 +97,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - API: Fabric DataPipeline (`/workspaces/{ws}/dataPipelines/...` + create via `/items` with type `DataPipeline`), same Fabric auth as notebooks
 - Deploy: create or overwrite (`updateDefinition`; `updateMetadata=true` when `.platform` is present); `.schedules` round-trips when present
 - Compare: normalized JSON unified diff of `pipeline-content.json` and `.schedules` (`.platform` excluded)
+- `--ignore-schedules` / `-i` on download/deploy/compare: omit `.schedules` (download also removes a leftover local `.schedules`)
 - Delete: Fabric soft delete (`DELETE .../dataPipelines/{id}`)
 - Activity references (notebook / lakehouse / connection GUIDs) are passed through as-is; they must be valid in the target workspace (no remapping)
 

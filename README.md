@@ -61,6 +61,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 - DataPipeline (`pipeline`)
   - `*.DataPipeline\` — Fabric Git folder with `pipeline-content.json` (optional `.platform`, `.schedules`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
+  - `--ignore-schedules` / `-i`: omit `.schedules` on download/deploy/compare (Job Scheduler surface is optional vs activity JSON)
   - Activity references (notebooks, lakehouses, connections) are passed through as-is and must be valid in the target workspace
 - User Data Functions (`udf`)
   - `*.UserDataFunction\` — Fabric Git-style folder (`definition.json`, `function_app.py`, `resources/functions.json`; optional `.platform`, `privateLibraries/*.whl`)
@@ -98,6 +99,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 | `--cells` | `-c` | Notebook overwrite only: listed 1-based cells (single local `.ipynb` only) |
 | `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`) |
 | `--independent` | `-i` | `report` download/deploy/compare and `semantic-model deploy`: act only on this command’s artifact; not on `semantic-model delete` |
+| `--ignore-schedules` | `-i` | `pipeline` download/deploy/compare: omit `.schedules` (not on delete) |
 
 ## Example commands
 
@@ -157,9 +159,12 @@ fabric-tools dataflow-gen1 delete -s -t <workspaceId>:<dataflowId>
 # DataPipeline: download / create / overwrite / compare / delete
 fabric-tools pipeline download -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
 fabric-tools pipeline download -s -t <workspaceId>:<pipelineId>
+fabric-tools pipeline download -s -t <workspaceId>:<pipelineId> -i
 fabric-tools pipeline deploy -s -t <workspaceId> -f .\ETL.DataPipeline -n "ETL"
 fabric-tools pipeline deploy -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
+fabric-tools pipeline deploy -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline -i
 fabric-tools pipeline compare -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
+fabric-tools pipeline compare -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline -i
 fabric-tools pipeline delete -s -t <workspaceId>:<pipelineId>
 
 # User Data Function: download / create / overwrite / compare / delete

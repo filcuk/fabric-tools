@@ -10,6 +10,7 @@ from fabric_tools.parsing import WorkItem
 from fabric_tools.pipeline.definition import (
     DefinitionError,
     definition_has_platform,
+    definition_without_schedules,
     detect_pipeline_path,
     display_name_from_path,
     pack_definition,
@@ -28,7 +29,12 @@ class OpResult:
     item_id: str | None = None
 
 
-def download_pipeline(client: FabricClient, item: WorkItem) -> OpResult:
+def download_pipeline(
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    ignore_schedules: bool = False,
+) -> OpResult:
     """Download one remote DataPipeline definition to a local folder."""
     if item.target is None or item.target.item_id is None:
         return OpResult(False, "download requires workspace:artifact target")
@@ -42,7 +48,7 @@ def download_pipeline(client: FabricClient, item: WorkItem) -> OpResult:
         definition = get_pipeline_definition(
             client, target.workspace_id, target.item_id
         )
-        written = unpack_definition(definition, dest)
+        written = unpack_definition(definition, dest, ignore_schedules=ignore_schedules)
     except (FabricApiError, DefinitionError, OSError) as exc:
         return OpResult(
             False,
@@ -65,6 +71,7 @@ def deploy_pipeline(
     *,
     display_name: str | None = None,
     origin_definition_cache: dict[str, dict[str, Any]] | None = None,
+    ignore_schedules: bool = False,
 ) -> OpResult:
     """Create or overwrite one DataPipeline from a local folder or Fabric origin."""
     if item.target is None:
@@ -81,6 +88,7 @@ def deploy_pipeline(
             client,
             item,
             origin_definition_cache=origin_definition_cache,
+            ignore_schedules=ignore_schedules,
         )
     except (FabricApiError, DefinitionError) as exc:
         return OpResult(
@@ -231,7 +239,12 @@ def update_pipeline_definition(
     )
 
 
-def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+def run_download_batch(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    ignore_schedules: bool = False,
+) -> list[OpResult]:
     results: list[OpResult] = []
     for item in items:
         target = item.target
@@ -240,7 +253,9 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
             update_status(f"Downloading {target.label()} -> {dest}...")
         else:
             update_status("Downloading pipeline...")
-        results.append(download_pipeline(client, item))
+        results.append(
+            download_pipeline(client, item, ignore_schedules=ignore_schedules)
+        )
     return results
 
 
@@ -249,6 +264,7 @@ def run_deploy_batch(
     items: list[WorkItem],
     *,
     display_names: list[str] | None = None,
+    ignore_schedules: bool = False,
 ) -> list[OpResult]:
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
@@ -274,6 +290,7 @@ def run_deploy_batch(
                 item,
                 display_name=name,
                 origin_definition_cache=origin_cache,
+                ignore_schedules=ignore_schedules,
             )
         )
     return results
@@ -296,20 +313,28 @@ def _resolve_source_definition(
     item: WorkItem,
     *,
     origin_definition_cache: dict[str, dict[str, Any]] | None,
+    ignore_schedules: bool = False,
 ) -> tuple[dict[str, Any], str]:
     if item.file is not None:
-        return pack_definition(item.file), str(item.file)
+        return (
+            pack_definition(item.file, ignore_schedules=ignore_schedules),
+            str(item.file),
+        )
 
     assert item.origin is not None and item.origin.item_id is not None
     origin = item.origin
     label = f"origin {origin.label()}"
     cache_key = origin.label()
     if origin_definition_cache is not None and cache_key in origin_definition_cache:
-        return origin_definition_cache[cache_key], label
-
-    definition = get_pipeline_definition(client, origin.workspace_id, origin.item_id)
-    if origin_definition_cache is not None:
-        origin_definition_cache[cache_key] = definition
+        definition = origin_definition_cache[cache_key]
+    else:
+        definition = get_pipeline_definition(
+            client, origin.workspace_id, origin.item_id
+        )
+        if origin_definition_cache is not None:
+            origin_definition_cache[cache_key] = definition
+    if ignore_schedules:
+        definition = definition_without_schedules(definition)
     return definition, label
 
 

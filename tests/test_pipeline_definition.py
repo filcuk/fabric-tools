@@ -188,3 +188,69 @@ def test_diff_text_excludes_platform(tmp_path: Path) -> None:
 
     definition = pack_definition(folder)
     assert ".platform" not in definition_to_diff_text(definition)
+
+
+def test_pack_ignore_schedules(tmp_path: Path) -> None:
+    folder = _write_pipeline_folder(
+        tmp_path / "ETL.DataPipeline",
+        schedules='{"schedules":[{"name":"daily"}]}\n',
+    )
+    definition = pack_definition(folder, ignore_schedules=True)
+    assert {part["path"] for part in definition["parts"]} == {
+        "pipeline-content.json",
+        ".platform",
+    }
+
+
+def test_unpack_ignore_schedules_skips_and_removes_leftover(tmp_path: Path) -> None:
+    folder = _write_pipeline_folder(
+        tmp_path / "ETL.DataPipeline",
+        schedules='{"schedules":[]}\n',
+    )
+    definition = pack_definition(folder)
+    out = tmp_path / "Restored.DataPipeline"
+    out.mkdir()
+    (out / ".schedules").write_text(
+        '{"schedules":[{"name":"stale"}]}\n', encoding="utf-8"
+    )
+    unpack_definition(definition, out, ignore_schedules=True)
+    assert (out / "pipeline-content.json").is_file()
+    assert (out / ".platform").is_file()
+    assert not (out / ".schedules").exists()
+
+
+def test_definition_without_schedules() -> None:
+    from fabric_tools.pipeline.definition import definition_without_schedules
+
+    content = json.dumps(_sample_content()).encode("utf-8")
+    definition = {
+        "parts": [
+            {
+                "path": "pipeline-content.json",
+                "payload": base64.b64encode(content).decode("ascii"),
+                "payloadType": "InlineBase64",
+            },
+            {
+                "path": ".schedules",
+                "payload": base64.b64encode(b'{"schedules":[]}').decode("ascii"),
+                "payloadType": "InlineBase64",
+            },
+        ]
+    }
+    stripped = definition_without_schedules(definition)
+    assert {part["path"] for part in stripped["parts"]} == {"pipeline-content.json"}
+    assert definition_without_schedules(stripped) is stripped
+
+
+def test_diff_text_ignore_schedules(tmp_path: Path) -> None:
+    folder = _write_pipeline_folder(
+        tmp_path / "Diff.DataPipeline",
+        schedules='{"schedules":[{"name":"daily"}]}\n',
+    )
+    text = folder_to_diff_text(folder, ignore_schedules=True)
+    assert "=== pipeline-content.json ===" in text
+    assert ".schedules" not in text
+    definition = pack_definition(folder)
+    assert ".schedules" not in definition_to_diff_text(
+        definition, ignore_schedules=True
+    )

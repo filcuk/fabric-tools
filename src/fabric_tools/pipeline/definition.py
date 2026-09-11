@@ -94,18 +94,27 @@ def validate_local_pipeline(path: Path | str) -> Path:
     return folder
 
 
-def pack_definition(path: Path | str) -> dict[str, Any]:
+def pack_definition(
+    path: Path | str,
+    *,
+    ignore_schedules: bool = False,
+) -> dict[str, Any]:
     """Build a Fabric pipeline definition object from a local ``*.DataPipeline`` folder."""
     folder = validate_local_pipeline(path)
     parts = [_part(CONTENT_PART, (folder / CONTENT_PART).read_bytes())]
-    for name in OPTIONAL_PARTS:
+    for name in _optional_part_names(ignore_schedules=ignore_schedules):
         optional = folder / name
         if optional.is_file():
             parts.append(_part(name, optional.read_bytes()))
     return {"parts": parts}
 
 
-def unpack_definition(definition: dict[str, Any], destination: Path | str) -> Path:
+def unpack_definition(
+    definition: dict[str, Any],
+    destination: Path | str,
+    *,
+    ignore_schedules: bool = False,
+) -> Path:
     """Write a Fabric definition response to a local pipeline folder.
 
     Returns the destination folder written.
@@ -131,9 +140,34 @@ def unpack_definition(definition: dict[str, Any], destination: Path | str) -> Pa
 
     dest.mkdir(parents=True, exist_ok=True)
     for relative_path, payload in decoded_parts:
-        target = dest / Path(relative_path).name
+        name = Path(relative_path).name
+        if ignore_schedules and name == SCHEDULES_PART:
+            continue
+        target = dest / name
         target.write_bytes(payload)
+    if ignore_schedules:
+        leftover = dest / SCHEDULES_PART
+        if leftover.is_file():
+            leftover.unlink()
     return dest
+
+
+def definition_without_schedules(definition: dict[str, Any]) -> dict[str, Any]:
+    """Return *definition* with any ``.schedules`` parts removed (copy when needed)."""
+    parts = definition.get("parts")
+    if not isinstance(parts, list) or not parts:
+        return definition
+    filtered = [
+        part
+        for part in parts
+        if not (
+            isinstance(part, dict)
+            and Path(str(part.get("path", ""))).name == SCHEDULES_PART
+        )
+    ]
+    if len(filtered) == len(parts):
+        return definition
+    return {**definition, "parts": filtered}
 
 
 def definition_has_platform(definition: dict[str, Any]) -> bool:
@@ -148,7 +182,11 @@ def definition_has_platform(definition: dict[str, Any]) -> bool:
     return False
 
 
-def part_payloads(definition: dict[str, Any]) -> dict[str, bytes]:
+def part_payloads(
+    definition: dict[str, Any],
+    *,
+    ignore_schedules: bool = False,
+) -> dict[str, bytes]:
     """Decode definition parts to a ``{filename: bytes}`` map (last wins)."""
     parts = definition.get("parts")
     if not isinstance(parts, list) or not parts:
@@ -156,45 +194,82 @@ def part_payloads(definition: dict[str, Any]) -> dict[str, bytes]:
     out: dict[str, bytes] = {}
     for part in parts:
         path, payload = _decode_part(part)
-        out[Path(path).name] = payload
+        name = Path(path).name
+        if ignore_schedules and name == SCHEDULES_PART:
+            continue
+        out[name] = payload
     return out
 
 
-def folder_payloads(path: Path | str) -> dict[str, bytes]:
+def folder_payloads(
+    path: Path | str,
+    *,
+    ignore_schedules: bool = False,
+) -> dict[str, bytes]:
     """Read packable local pipeline parts into a ``{filename: bytes}`` map."""
     folder = validate_local_pipeline(path)
     payloads: dict[str, bytes] = {
         CONTENT_PART: (folder / CONTENT_PART).read_bytes(),
     }
-    for name in OPTIONAL_PARTS:
+    for name in _optional_part_names(ignore_schedules=ignore_schedules):
         optional = folder / name
         if optional.is_file():
             payloads[name] = optional.read_bytes()
     return payloads
 
 
-def definition_to_diff_text(definition: dict[str, Any]) -> str:
+def definition_to_diff_text(
+    definition: dict[str, Any],
+    *,
+    ignore_schedules: bool = False,
+) -> str:
     """Stable multi-file text used for unified diffs of a Fabric definition."""
-    return payloads_to_diff_text(part_payloads(definition))
+    return payloads_to_diff_text(
+        part_payloads(definition, ignore_schedules=ignore_schedules),
+        ignore_schedules=ignore_schedules,
+    )
 
 
-def folder_to_diff_text(path: Path | str) -> str:
+def folder_to_diff_text(
+    path: Path | str,
+    *,
+    ignore_schedules: bool = False,
+) -> str:
     """Stable multi-file text used for unified diffs of a local pipeline folder."""
-    return payloads_to_diff_text(folder_payloads(path))
+    return payloads_to_diff_text(
+        folder_payloads(path, ignore_schedules=ignore_schedules),
+        ignore_schedules=ignore_schedules,
+    )
 
 
-def payloads_to_diff_text(payloads: dict[str, bytes]) -> str:
+def payloads_to_diff_text(
+    payloads: dict[str, bytes],
+    *,
+    ignore_schedules: bool = False,
+) -> str:
     """Render compare-relevant part payloads as a deterministic multi-section text blob.
 
     Excludes ``.platform`` (logicalId differs across workspaces).
     """
     chunks: list[str] = []
-    for name in DIFF_PARTS:
+    for name in _diff_part_names(ignore_schedules=ignore_schedules):
         if name not in payloads:
             continue
         chunks.append(f"=== {name} ===\n")
         chunks.append(_normalize_part_text(name, payloads[name]))
     return "".join(chunks)
+
+
+def _optional_part_names(*, ignore_schedules: bool) -> tuple[str, ...]:
+    if ignore_schedules:
+        return (PLATFORM_PART,)
+    return OPTIONAL_PARTS
+
+
+def _diff_part_names(*, ignore_schedules: bool) -> tuple[str, ...]:
+    if ignore_schedules:
+        return (CONTENT_PART,)
+    return DIFF_PARTS
 
 
 def _normalize_part_text(name: str, payload: bytes) -> str:

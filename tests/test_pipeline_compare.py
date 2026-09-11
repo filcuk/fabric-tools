@@ -48,6 +48,7 @@ def _definition(
     wait_seconds: int = 10,
     activity_name: str = "Wait_1",
     with_platform: bool = False,
+    schedules: bytes | None = None,
 ) -> dict[str, Any]:
     parts = [
         _part(
@@ -71,6 +72,8 @@ def _definition(
                 ).encode("utf-8"),
             )
         )
+    if schedules is not None:
+        parts.append(_part(".schedules", schedules))
     return {"parts": parts}
 
 
@@ -79,6 +82,7 @@ def _write_folder(
     *,
     wait_seconds: int = 10,
     activity_name: str = "Wait_1",
+    schedules: str | None = None,
 ) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "pipeline-content.json").write_text(
@@ -89,6 +93,8 @@ def _write_folder(
         + "\n",
         encoding="utf-8",
     )
+    if schedules is not None:
+        (folder / ".schedules").write_text(schedules, encoding="utf-8")
     return folder
 
 
@@ -173,3 +179,28 @@ def test_compare_origin_to_target() -> None:
     assert result.ok
     assert not result.identical
     assert "OriginWait" in result.diff_text or "TargetWait" in result.diff_text
+
+
+def test_compare_ignore_schedules(tmp_path: Path) -> None:
+    folder = _write_folder(
+        tmp_path / "ETL.DataPipeline",
+        wait_seconds=10,
+        schedules='{"schedules":[{"name":"local"}]}\n',
+    )
+    client = FakeClient(
+        {
+            PL: _definition(
+                wait_seconds=10,
+                schedules=b'{"schedules":[{"name":"remote"}]}\n',
+            )
+        }
+    )
+    item = WorkItem(Target(WS, PL), folder)
+    without = compare_pipeline(client, item)  # type: ignore[arg-type]
+    assert without.ok
+    assert not without.identical
+
+    ignored = compare_pipeline(client, item, ignore_schedules=True)  # type: ignore[arg-type]
+    assert ignored.ok
+    assert ignored.identical
+    assert ignored.diff_text == ""

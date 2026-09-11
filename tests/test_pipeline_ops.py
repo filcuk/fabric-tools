@@ -78,6 +78,7 @@ def _write_local_pipeline(
     *,
     wait_seconds: int = 10,
     with_platform: bool = True,
+    with_schedules: bool = False,
 ) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     content = _content()
@@ -93,6 +94,8 @@ def _write_local_pipeline(
             json.dumps({"metadata": {"type": "DataPipeline", "displayName": "ETL"}}),
             encoding="utf-8",
         )
+    if with_schedules:
+        (folder / ".schedules").write_text('{"schedules":[]}\n', encoding="utf-8")
     return folder
 
 
@@ -251,3 +254,45 @@ def test_download_rejects_bad_destination(tmp_path: Path) -> None:
     result = download_pipeline(client, item)  # type: ignore[arg-type]
     assert not result.ok
     assert "Unsupported pipeline path" in result.message
+
+
+def test_download_ignore_schedules(tmp_path: Path) -> None:
+    client = FakeClient(definitions_by_item={PL: _definition(with_schedules=True)})
+    dest = tmp_path / "out.DataPipeline"
+    dest.mkdir()
+    (dest / ".schedules").write_text(
+        '{"schedules":[{"name":"stale"}]}\n', encoding="utf-8"
+    )
+    item = WorkItem(Target(WS, PL), dest)
+    result = download_pipeline(client, item, ignore_schedules=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert (dest / "pipeline-content.json").is_file()
+    assert not (dest / ".schedules").exists()
+
+
+def test_deploy_ignore_schedules_from_folder(tmp_path: Path) -> None:
+    client = FakeClient()
+    src = _write_local_pipeline(tmp_path / "ETL.DataPipeline", with_schedules=True)
+    item = WorkItem(Target(WS, PL), src)
+    result = deploy_pipeline(client, item, ignore_schedules=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert client.last_update_definition is not None
+    paths = {
+        part["path"] for part in client.last_update_definition["definition"]["parts"]
+    }
+    assert ".schedules" not in paths
+    assert "pipeline-content.json" in paths
+
+
+def test_deploy_ignore_schedules_from_origin() -> None:
+    client = FakeClient(
+        definitions_by_item={ORIGIN: _definition(wait_seconds=20, with_schedules=True)}
+    )
+    item = WorkItem(Target(WS, PL), None, origin=Target(WS, ORIGIN))
+    result = deploy_pipeline(client, item, ignore_schedules=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert client.last_update_definition is not None
+    paths = {
+        part["path"] for part in client.last_update_definition["definition"]["parts"]
+    }
+    assert ".schedules" not in paths

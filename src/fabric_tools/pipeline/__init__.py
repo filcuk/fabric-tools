@@ -10,6 +10,7 @@ __all__ = [
     "create_pipeline",
     "definition_has_platform",
     "definition_to_diff_text",
+    "definition_without_schedules",
     "delete_pipeline",
     "deploy_pipeline",
     "detect_pipeline_path",
