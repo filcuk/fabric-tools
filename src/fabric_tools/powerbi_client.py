@@ -1,4 +1,4 @@
-"""Power BI REST API client (Dataflow Gen1 and related group APIs)."""
+"""Power BI REST API client (Dataflow Gen1, reports, paginated reports)."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class PowerBiApiError(Exception):
 
 
 class PowerBiClient:
-    """Thin httpx wrapper around Power BI REST APIs used for Dataflow Gen1."""
+    """Thin httpx wrapper around Power BI REST APIs used by fabric-tools."""
 
     def __init__(
         self,
@@ -166,6 +166,7 @@ class PowerBiClient:
         """GET /groups/{groupId}/reports/{reportId}/Export — return PBIX bytes.
 
         *download_type* is ``IncludeModel`` (thick) or ``LiveConnect`` (thin).
+        For paginated reports (``.rdl``), use :meth:`export_report_definition`.
         """
         if download_type not in {"IncludeModel", "LiveConnect"}:
             raise ValueError("download_type must be 'IncludeModel' or 'LiveConnect'")
@@ -177,6 +178,88 @@ class PowerBiClient:
         if response.status_code != 200:
             self._raise_api_error(response)
         return response.content
+
+    def export_report_definition(self, group_id: str, report_id: str) -> bytes:
+        """GET /groups/{groupId}/reports/{reportId}/Export — return RDL bytes.
+
+        Used for paginated reports. Does not pass ``downloadType`` (PBIX-only).
+        """
+        response = self._client.get(
+            f"{self.base_url}/groups/{group_id}/reports/{report_id}/Export",
+            headers=self._auth_headers(),
+        )
+        if response.status_code != 200:
+            self._raise_api_error(response)
+        return response.content
+
+    def delete_report(self, group_id: str, report_id: str) -> None:
+        """DELETE /groups/{groupId}/reports/{reportId}."""
+        response = self._client.delete(
+            f"{self.base_url}/groups/{group_id}/reports/{report_id}",
+            headers=self._json_headers(),
+        )
+        if response.status_code not in (200, 204):
+            self._raise_api_error(response)
+
+    def import_paginated_report(
+        self,
+        group_id: str,
+        rdl_bytes: bytes,
+        *,
+        display_name: str,
+        name_conflict: str = "Abort",
+        wait: bool = True,
+    ) -> dict[str, Any]:
+        """Import a paginated report ``.rdl`` via POST /groups/{groupId}/imports.
+
+        *name_conflict* is ``Abort`` (create) or ``Overwrite`` (replace by name).
+        *display_name* should be the report display name; ``.rdl`` is appended
+        when missing. Returns the completed Import object when *wait* is True.
+        Use :func:`report_id_from_import` to extract the report id.
+        """
+        if name_conflict not in {"Abort", "Overwrite"}:
+            raise ValueError(
+                "name_conflict must be 'Abort' or 'Overwrite' for paginated reports"
+            )
+
+        dataset_display_name = display_name.strip()
+        if not dataset_display_name:
+            raise ValueError("display_name must be non-empty")
+        if not dataset_display_name.lower().endswith(".rdl"):
+            dataset_display_name = f"{dataset_display_name}.rdl"
+
+        params = {
+            "datasetDisplayName": dataset_display_name,
+            "nameConflict": name_conflict,
+        }
+        files = {
+            "file": (
+                dataset_display_name,
+                rdl_bytes,
+                "application/octet-stream",
+            ),
+        }
+        response = self._client.post(
+            f"{self.base_url}/groups/{group_id}/imports",
+            headers=self._auth_headers(),
+            params=params,
+            files=files,
+        )
+        if response.status_code not in (200, 202):
+            self._raise_api_error(response)
+
+        payload = self._json_or_none(response)
+        if not isinstance(payload, dict) or not payload.get("id"):
+            raise PowerBiApiError(
+                "Import response missing import id",
+                status_code=response.status_code,
+                details=payload,
+            )
+
+        if not wait:
+            return payload
+
+        return self.wait_for_import(group_id, str(payload["id"]))
 
     def import_pbix(
         self,
@@ -439,10 +522,16 @@ def dataflow_id_from_import(import_payload: dict[str, Any]) -> str | None:
     return None
 
 
+def report_id_from_import(import_payload: dict[str, Any]) -> str | None:
+    """Extract the created/updated report id from a completed Import payload."""
+    report_id, _ = report_and_dataset_ids_from_import(import_payload)
+    return report_id
+
+
 def report_and_dataset_ids_from_import(
     import_payload: dict[str, Any],
 ) -> tuple[str | None, str | None]:
-    """Extract ``(report_id, dataset_id)`` from a completed PBIX Import payload."""
+    """Extract ``(report_id, dataset_id)`` from a completed Import payload."""
     report_id: str | None = None
     dataset_id: str | None = None
     reports = import_payload.get("reports")

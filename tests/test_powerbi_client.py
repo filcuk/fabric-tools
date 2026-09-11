@@ -9,6 +9,7 @@ from fabric_tools.powerbi_client import (
     PowerBiApiError,
     PowerBiClient,
     dataflow_id_from_import,
+    report_id_from_import,
 )
 
 
@@ -194,3 +195,121 @@ def test_dataflow_id_from_import_fallbacks() -> None:
     assert dataflow_id_from_import({"dataflows": [{"targetDataflowId": "b"}]}) == "b"
     assert dataflow_id_from_import({"dataflows": []}) is None
     assert dataflow_id_from_import({}) is None
+
+
+def test_export_report_definition_returns_rdl_bytes() -> None:
+    rdl = b'<?xml version="1.0"?><Report xmlns="x">...</Report>'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path.endswith("/groups/ws-1/reports/r-1/Export")
+        assert "downloadType" not in request.url.params
+        return httpx.Response(200, content=rdl)
+
+    with _client(httpx.MockTransport(handler)) as client:
+        payload = client.export_report_definition("ws-1", "r-1")
+    assert payload == rdl
+
+
+def test_delete_report() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+        assert request.method == "DELETE"
+        assert request.url.path.endswith("/groups/ws-1/reports/r-1")
+        return httpx.Response(200)
+
+    with _client(httpx.MockTransport(handler)) as client:
+        client.delete_report("ws-1", "r-1")
+    assert calls == ["DELETE"]
+
+
+def test_import_paginated_report_polls_until_succeeded() -> None:
+    calls = {"n": 0}
+    rdl = b'<?xml version="1.0"?><Report />'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if request.method == "POST" and request.url.path.endswith("/imports"):
+            assert request.url.params["datasetDisplayName"] == "Sales.rdl"
+            assert request.url.params["nameConflict"] == "Abort"
+            assert "multipart/form-data" in request.headers["Content-Type"]
+            return httpx.Response(
+                202, json={"id": "imp-rdl", "importState": "Publishing"}
+            )
+        if request.method == "GET" and request.url.path.endswith("/imports/imp-rdl"):
+            if calls["n"] < 3:
+                return httpx.Response(
+                    200,
+                    json={"id": "imp-rdl", "importState": "Publishing"},
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "id": "imp-rdl",
+                    "importState": "Succeeded",
+                    "reports": [
+                        {
+                            "id": "r-new",
+                            "name": "Sales",
+                            "reportType": "PaginatedReport",
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(
+            404, json={"error": {"message": f"unexpected {request.url}"}}
+        )
+
+    with _client(httpx.MockTransport(handler)) as client:
+        result = client.import_paginated_report(
+            "ws-1",
+            rdl,
+            display_name="Sales",
+            name_conflict="Abort",
+        )
+    assert result["importState"] == "Succeeded"
+    assert report_id_from_import(result) == "r-new"
+
+
+def test_import_paginated_report_overwrite_keeps_rdl_suffix() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            assert request.url.params["datasetDisplayName"] == "Finance.rdl"
+            assert request.url.params["nameConflict"] == "Overwrite"
+            return httpx.Response(202, json={"id": "imp-2"})
+        return httpx.Response(
+            200,
+            json={
+                "id": "imp-2",
+                "importState": "Succeeded",
+                "reports": [{"id": "r-2"}],
+            },
+        )
+
+    with _client(httpx.MockTransport(handler)) as client:
+        result = client.import_paginated_report(
+            "ws-1",
+            b"<Report />",
+            display_name="Finance.rdl",
+            name_conflict="Overwrite",
+        )
+    assert report_id_from_import(result) == "r-2"
+
+
+def test_import_paginated_report_rejects_bad_name_conflict() -> None:
+    with _client(httpx.MockTransport(lambda _r: httpx.Response(500))) as client:
+        with pytest.raises(ValueError, match="Abort.*Overwrite"):
+            client.import_paginated_report(
+                "ws-1",
+                b"<Report />",
+                display_name="X",
+                name_conflict="GenerateUniqueName",
+            )
+
+
+def test_report_id_from_import() -> None:
+    assert report_id_from_import({"reports": [{"id": "r1"}]}) == "r1"
+    assert report_id_from_import({"reports": []}) is None
+    assert report_id_from_import({}) is None
