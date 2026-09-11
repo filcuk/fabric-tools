@@ -31,11 +31,16 @@ Commands may print a one-line update notice on stderr at most once per local day
 
 Set `$env:FABRIC_TOOLS_READONLY=1` to refuse deploy, delete, and mutating `setup` actions (install / update / uninstall). Download, compare, inspect, `--dry-run`, `setup status`, and `setup update --check` still work. Useful for agents.
 
-List supported environment variables and their current values:
+List or change supported environment variables (Windows user environment for set/unset):
 
 ```powershell
 fabric-tools env
+fabric-tools env set FABRIC_TOOLS_READONLY 1
+fabric-tools env set AZURE_TENANT_ID <guid>
+fabric-tools env unset AZURE_CLIENT_SECRET
 ```
+
+`env set` / `env unset` only accept catalogued names. Open a new terminal for other shells to pick up changes. `AZURE_CLIENT_SECRET` is never printed back.
 
 ## Support
 

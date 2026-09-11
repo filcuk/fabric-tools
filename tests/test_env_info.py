@@ -1,4 +1,4 @@
-"""Tests for fabric-tools env reporting."""
+"""Tests for fabric-tools env reporting and user-env set/unset."""
 
 from __future__ import annotations
 
@@ -6,8 +6,16 @@ import pytest
 from typer.testing import CliRunner
 
 from fabric_tools.cli import app
-from fabric_tools.env_info import ENV_VAR_SPECS, collect_env_statuses
-from fabric_tools.exit_codes import EXIT_OK
+from fabric_tools.env_info import (
+    ENV_VAR_SPECS,
+    EnvError,
+    collect_env_statuses,
+    format_set_confirmation,
+    get_spec,
+    set_user_env,
+    unset_user_env,
+)
+from fabric_tools.exit_codes import EXIT_OK, EXIT_USER
 from fabric_tools.readonly import READONLY_ENV
 from fabric_tools.update_check import DISABLE_UPDATE_CHECK_ENV
 
@@ -54,6 +62,63 @@ def test_collect_env_statuses_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     assert by_name["AZURE_CLIENT_SECRET"].value == "(unset)"
 
 
+def test_get_spec_rejects_unknown() -> None:
+    with pytest.raises(EnvError, match="Unknown"):
+        get_spec("NOT_A_REAL_VAR")
+
+
+def test_set_user_env_updates_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    written: list[tuple[str, str]] = []
+
+    def fake_write(name: str, value: str) -> None:
+        written.append((name, value))
+
+    monkeypatch.setattr("fabric_tools.env_info._write_user_env", fake_write)
+    monkeypatch.delenv(READONLY_ENV, raising=False)
+
+    spec = set_user_env(READONLY_ENV, "1")
+    assert spec.name == READONLY_ENV
+    assert written == [(READONLY_ENV, "1")]
+    assert __import__("os").environ.get(READONLY_ENV) == "1"
+
+
+def test_unset_user_env_updates_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    deleted: list[str] = []
+
+    def fake_delete(name: str) -> None:
+        deleted.append(name)
+
+    monkeypatch.setattr("fabric_tools.env_info._delete_user_env", fake_delete)
+    monkeypatch.setenv(READONLY_ENV, "1")
+
+    spec = unset_user_env(READONLY_ENV)
+    assert spec.name == READONLY_ENV
+    assert deleted == [READONLY_ENV]
+    assert READONLY_ENV not in __import__("os").environ
+
+
+def test_set_user_env_rejects_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fabric_tools.env_info._write_user_env", lambda *_a, **_k: None)
+    with pytest.raises(EnvError, match="Empty value"):
+        set_user_env(READONLY_ENV, "")
+
+
+def test_set_user_env_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fabric_tools.env_info.os.name", "posix")
+    with pytest.raises(EnvError, match="Windows"):
+        set_user_env(READONLY_ENV, "1")
+
+
+def test_format_set_confirmation_hides_secret() -> None:
+    spec = get_spec("AZURE_CLIENT_SECRET")
+    text = format_set_confirmation(spec, "super-secret-value")
+    assert "AZURE_CLIENT_SECRET" in text
+    assert "super-secret-value" not in text
+    assert "value hidden" in text
+
+
 def test_cli_env_command(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(READONLY_ENV, "true")
     monkeypatch.delenv("AZURE_CLIENT_SECRET", raising=False)
@@ -65,7 +130,61 @@ def test_cli_env_command(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "read-only=" in result.stdout
 
 
+def test_cli_env_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    written: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "fabric_tools.env_info._write_user_env",
+        lambda name, value: written.append((name, value)),
+    )
+    result = CliRunner().invoke(app, ["env", "set", READONLY_ENV, "1"])
+    assert result.exit_code == EXIT_OK
+    assert written == [(READONLY_ENV, "1")]
+    assert READONLY_ENV in result.stdout
+    assert "Open a new terminal" in result.stdout
+
+
+def test_cli_env_set_secret_not_echoed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fabric_tools.env_info._write_user_env", lambda *_a, **_k: None)
+    secret = "super-secret-value"
+    result = CliRunner().invoke(app, ["env", "set", "AZURE_CLIENT_SECRET", secret])
+    assert result.exit_code == EXIT_OK
+    assert secret not in result.stdout
+    assert "value hidden" in result.stdout
+
+
+def test_cli_env_set_unknown() -> None:
+    result = CliRunner().invoke(app, ["env", "set", "NOPE", "1"])
+    assert result.exit_code == EXIT_USER
+    assert "Unknown" in (result.stderr or result.output)
+
+
+def test_cli_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    deleted: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.env_info._delete_user_env",
+        lambda name: deleted.append(name),
+    )
+    result = CliRunner().invoke(app, ["env", "unset", READONLY_ENV])
+    assert result.exit_code == EXIT_OK
+    assert deleted == [READONLY_ENV]
+    assert "Unset" in result.stdout
+
+
+def test_cli_env_set_allowed_when_readonly(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(READONLY_ENV, "1")
+    monkeypatch.setattr("fabric_tools.env_info._write_user_env", lambda *_a, **_k: None)
+    result = CliRunner().invoke(app, ["env", "set", "AZURE_TENANT_ID", "tenant"])
+    assert result.exit_code == EXIT_OK
+
+
 def test_root_help_lists_env() -> None:
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "env" in result.stdout
+
+
+def test_env_help_lists_set_unset() -> None:
+    result = CliRunner().invoke(app, ["env", "--help"])
+    assert result.exit_code == 0
+    assert "set" in result.stdout
+    assert "unset" in result.stdout

@@ -249,6 +249,15 @@ setup_app = typer.Typer(
 )
 app.add_typer(setup_app, name="setup", rich_help_panel="Local")
 
+env_app = typer.Typer(
+    name="env",
+    help="Show or change supported environment variables.",
+    invoke_without_command=True,
+    no_args_is_help=False,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(env_app, name="env", rich_help_panel="Local")
+
 
 def _flush_update_notice(ctx: typer.Context) -> None:
     """Print a background update notice on stderr, if one is ready."""
@@ -271,12 +280,53 @@ def _start_bg_update_check(ctx: typer.Context) -> None:
     start_background_update_check()
 
 
-@app.command("env", rich_help_panel="Local")
-def env_cmd() -> None:
+@env_app.callback(invoke_without_command=True)
+def env_main(ctx: typer.Context) -> None:
     """Show supported environment variables and their current values."""
+    if ctx.invoked_subcommand is not None:
+        return
     from fabric_tools.env_info import print_env_report
 
     print_env_report()
+    raise typer.Exit(code=EXIT_OK)
+
+
+@env_app.command("set")
+def env_set(
+    name: str = typer.Argument(help="Variable name (from the supported catalog)."),
+    value: str = typer.Argument(help="Value to store in the user environment."),
+) -> None:
+    """Set a supported variable in the Windows user environment."""
+    from fabric_tools.env_info import EnvError, format_set_confirmation, set_user_env
+
+    try:
+        spec = set_user_env(name, value)
+    except EnvError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    typer.secho(format_set_confirmation(spec, value), fg=typer.colors.GREEN)
+    raise typer.Exit(code=EXIT_OK)
+
+
+@env_app.command("unset")
+def env_unset(
+    name: str = typer.Argument(help="Variable name (from the supported catalog)."),
+) -> None:
+    """Remove a supported variable from the Windows user environment."""
+    from fabric_tools.env_info import (
+        EnvError,
+        format_unset_confirmation,
+        unset_user_env,
+    )
+
+    try:
+        spec = unset_user_env(name)
+    except EnvError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    typer.secho(format_unset_confirmation(spec), fg=typer.colors.GREEN)
     raise typer.Exit(code=EXIT_OK)
 
 
