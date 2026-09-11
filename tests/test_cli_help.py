@@ -36,7 +36,8 @@ def test_root_help_orders_help_and_setup_first() -> None:
     fabric_idx = result.stdout.index("─ Fabric")
     setup_idx = result.stdout.index("setup")
     inspect_idx = result.stdout.index("inspect")
-    assert local_idx < setup_idx < inspect_idx < fabric_idx
+    env_idx = result.stdout.index("env")
+    assert local_idx < setup_idx < inspect_idx < env_idx < fabric_idx
 
     # Command order comes from _BannerGroup.list_commands (not fragile substring scans:
     # "report" is a suffix of "paginated-report", "dataflow" of "dataflow-gen1", etc.).
@@ -46,6 +47,7 @@ def test_root_help_orders_help_and_setup_first() -> None:
     expected = [
         "setup",
         "inspect",
+        "env",
         "dataflow-gen1",
         "dataflow",
         "notebook",
