@@ -471,6 +471,207 @@ def confirm_delete_dataflow(
     confirm_or_abort("\n".join(lines), silent=False)
 
 
+def semantic_model_display_name(client: FabricClient, target: Target) -> str:
+    """Return Fabric item display name for a semantic model target (fallback: id)."""
+    if target.item_id is None:
+        return "SemanticModel"
+    try:
+        data = client.get_item(target.workspace_id, target.item_id)
+    except FabricApiError:
+        return target.item_id
+    name = data.get("displayName") or data.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return target.item_id
+
+
+def resolve_semantic_model_download_files(
+    client: FabricClient,
+    items: list[WorkItem],
+) -> list[WorkItem]:
+    """Fill missing download destinations from remote names (``.SemanticModel``)."""
+    if not items or all(item.file is not None for item in items):
+        return items
+    if any(item.file is not None for item in items):
+        raise ValueError("download work items must all omit --file or all provide it")
+
+    with busy("Resolving download paths..."):
+        names = [
+            semantic_model_display_name(client, item.target)
+            if item.target is not None
+            else "SemanticModel"
+            for item in items
+        ]
+        paths = default_download_paths(names, extension=".SemanticModel")
+    return [
+        WorkItem(item.target, path, origin=item.origin)
+        for item, path in zip(items, paths, strict=True)
+    ]
+
+
+def confirm_download_overwrites_semantic_model(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm before overwriting existing local semantic model folders."""
+    if silent or not items:
+        return
+    existing = [item for item in items if item.file is not None and item.file.exists()]
+    if not existing:
+        return
+
+    lines = ["About to overwrite local path(s):"]
+    with busy("Resolving targets..."):
+        for item in existing:
+            assert item.target is not None and item.file is not None
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            remote = resolve_item_name(client, item.target)
+            lines.append(f"  - {item.file}  (from {remote} in {workspace})")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
+def _bound_report_lines(
+    workspace_id: str,
+    semantic_model_id: str,
+) -> tuple[list[str], str | None]:
+    """Best-effort list of report lines bound to a semantic model in a workspace.
+
+    Returns ``(lines, error_note)``. *error_note* is set when the Power BI list
+    could not be loaded.
+    """
+    from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
+
+    try:
+        with PowerBiClient() as pbi:
+            pbi.ensure_authenticated()
+            reports = pbi.reports_bound_to_dataset(workspace_id, semantic_model_id)
+    except PowerBiApiError as exc:
+        return [], f"(could not list dependent reports: {exc})"
+    except Exception as exc:  # noqa: BLE001 - confirm should not crash auth noise
+        return [], f"(could not list dependent reports: {exc})"
+
+    lines: list[str] = []
+    for report in reports:
+        rid = str(report.get("id") or "")
+        rname = str(report.get("name") or report.get("displayName") or rid)
+        lines.append(f'report "{rname}" ({rid})')
+    return lines, None
+
+
+def confirm_deploy_actions_semantic_model(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+    display_names: list[str] | None = None,
+) -> None:
+    """Confirm create or overwrite of remote semantic models (with impact list)."""
+    from fabric_tools.semantic_model.definition import display_name_from_path
+
+    if silent or not items:
+        return
+
+    creates = [
+        item for item in items if item.target is not None and item.target.is_create
+    ]
+    overwrites = [
+        item
+        for item in items
+        if item.target is not None and item.target.item_id is not None
+    ]
+
+    if creates:
+        lines = ["About to create semantic model(s):"]
+        with busy("Resolving targets..."):
+            for index, item in enumerate(items):
+                if item.target is None or not item.target.is_create:
+                    continue
+                workspace = resolve_workspace_name(client, item.target.workspace_id)
+                if (
+                    display_names
+                    and index < len(display_names)
+                    and display_names[index]
+                ):
+                    name = display_names[index]
+                elif item.file is not None:
+                    name = display_name_from_path(item.file)
+                else:
+                    name = "SemanticModel"
+                source = (
+                    str(item.file)
+                    if item.file is not None
+                    else (
+                        f"origin {item.origin.label()}"
+                        if item.origin is not None
+                        else "?"
+                    )
+                )
+                lines.append(f"  - '{name}' in {workspace} from {source}")
+        lines.append("Are you sure?")
+        confirm_or_abort("\n".join(lines), silent=False)
+
+    if overwrites:
+        lines = [
+            "About to overwrite remote semantic model(s).",
+            "Other reports bound to these models may be affected:",
+        ]
+        with busy("Resolving targets and impact..."):
+            for item in overwrites:
+                assert item.target is not None and item.target.item_id is not None
+                workspace = resolve_workspace_name(client, item.target.workspace_id)
+                name = semantic_model_display_name(client, item.target)
+                sm_id = item.target.item_id
+                lines.append(
+                    f'Deploy/overwrite: semantic model "{name}" ({sm_id}) in {workspace}'
+                )
+                report_lines, err = _bound_report_lines(item.target.workspace_id, sm_id)
+                if err:
+                    lines.append(f"  {err}")
+                elif not report_lines:
+                    lines.append("  (no other reports found in this workspace)")
+                else:
+                    for report_line in report_lines:
+                        lines.append(f"  affects: {report_line}")
+        lines.append("Are you sure?")
+        confirm_or_abort("\n".join(lines), silent=False)
+
+
+def confirm_delete_semantic_model(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm semantic model delete; list downstream reports the service will remove."""
+    if silent or not items:
+        return
+
+    lines = [
+        "About to delete semantic model(s).",
+        "Fabric deletes upstream models and destroys dependent reports:",
+    ]
+    with busy("Resolving targets and dependents..."):
+        for item in items:
+            assert item.target is not None and item.target.item_id is not None
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            name = semantic_model_display_name(client, item.target)
+            sm_id = item.target.item_id
+            lines.append(f'Delete: semantic model "{name}" ({sm_id}) in {workspace}')
+            report_lines, err = _bound_report_lines(item.target.workspace_id, sm_id)
+            if err:
+                lines.append(f"  {err}")
+            elif not report_lines:
+                lines.append("  (no dependent reports found in this workspace)")
+            else:
+                for report_line in report_lines:
+                    lines.append(f"  also deletes: {report_line}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
 def pipeline_display_name(client: FabricClient, target: Target) -> str:
     """Return Fabric item display name for a DataPipeline target (fallback: id)."""
     if target.item_id is None:

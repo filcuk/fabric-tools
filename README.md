@@ -52,6 +52,12 @@ Commands may print a one-line update notice on stderr at most once per local day
   - download, deploy (create/overwrite), compare, delete (soft delete)
   - Overwrite preserves the target item’s `connectedDataSources`
   - Fabric APIs require interactive user auth (service principal is not supported)
+- Semantic models (`semantic-model`)
+  - `*.SemanticModel\` — Fabric Git folder (`definition.pbism` + TMDL `definition/` or TMSL `model.bim`)
+  - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Delete confirms list dependent reports in the workspace (service removes them with the model)
+  - Overwrite confirms list other reports bound to the model
+  - Deploy `--independent` / `-i`: reserved for model-only from a packaged report source (e.g. future `.pbix`); no-op for folders; not on delete
 
 ## Flags
 
@@ -65,7 +71,8 @@ Commands may print a one-line update notice on stderr at most once per local day
 | `--dry-run` | `-d` | Validate only (either side may be omitted); with `-m`, writes the manifest on success |
 | `--name` | `-n` | Display name for create deploys |
 | `--cells` | `-c` | Notebook overwrite only: listed 1-based cells (single local `.ipynb` only) |
-| `--interactive` | `-i` | Guided wizard to build a request |
+| `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`) |
+| `--independent` | `-i` | `semantic-model deploy` (and later `report`): act only on this command’s artifact; not on `semantic-model delete` |
 
 ## Example commands
 
@@ -138,6 +145,14 @@ fabric-tools udf deploy -s -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
 fabric-tools udf compare -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
 fabric-tools udf delete -s -t <workspaceId>:<udfId>
 
+# Semantic model: download / create / overwrite / compare / delete
+fabric-tools semantic-model download -s -t <workspaceId>:<modelId> -f .\Sales.SemanticModel
+fabric-tools semantic-model download -s -t <workspaceId>:<modelId>
+fabric-tools semantic-model deploy -s -t <workspaceId> -f .\Sales.SemanticModel -n "Sales"
+fabric-tools semantic-model deploy -s -t <workspaceId>:<modelId> -f .\Sales.SemanticModel
+fabric-tools semantic-model compare -t <workspaceId>:<modelId> -f .\Sales.SemanticModel
+fabric-tools semantic-model delete -s -t <workspaceId>:<modelId>
+
 # Dry-run validate and write test.ftdep (no remote changes)
 fabric-tools notebook deploy -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
 
@@ -167,8 +182,8 @@ fabric-tools setup update -s
 Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
 broker, then falls back to browser or device-code auth.
 
-Notebooks, Dataflow Gen2, DataPipeline, and User Data Functions use the Fabric API token. Dataflow Gen1 uses a Power BI API token
-(same sign-in / service principal; different audience).
+Notebooks, Dataflow Gen2, DataPipeline, User Data Functions, and semantic models use the Fabric API token. Dataflow Gen1 uses a Power BI API token
+(same sign-in / service principal; different audience). Semantic-model overwrite/delete confirms may also call Power BI to list reports bound to the model.
 
 User Data Function APIs do **not** support service principals — use interactive user sign-in for `udf` commands.
 

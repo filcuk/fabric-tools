@@ -15,6 +15,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
     KIND_PIPELINE,
+    KIND_SEMANTIC_MODEL,
     KIND_UDF,
     ManifestError,
     delete_targets_from_manifest,
@@ -159,6 +160,14 @@ dataflow_app = typer.Typer(
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(dataflow_app, name="dataflow", rich_help_panel="Fabric")
+
+semantic_model_app = typer.Typer(
+    name="semantic-model",
+    help="Download, deploy, compare, and delete Fabric semantic model items.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(semantic_model_app, name="semantic-model", rich_help_panel="Fabric")
 
 dataflow_gen1_app = typer.Typer(
     name="dataflow-gen1",
@@ -926,6 +935,210 @@ def dataflow_delete(
 ) -> None:
     """Soft-delete Dataflow Gen2 item(s) in Fabric."""
     run_dataflow_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@semantic_model_app.command("download")
+def semantic_model_download(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(optional) Local *.SemanticModel folder. "
+        "Defaults to remote name with .SemanticModel in the current folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One folder may broadcast to all targets.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or local folders only; do not download.",
+    ),
+) -> None:
+    """Download semantic model definition(s) to local *.SemanticModel folders."""
+    run_semantic_model_command(
+        CommandMode.DOWNLOAD,
+        target_values=target,
+        file_values=file,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@semantic_model_app.command("deploy")
+def semantic_model_deploy(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.SemanticModel folder. "
+        "Repeatable or comma-separated. One folder may broadcast to all targets.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(optional) Remote workspace:artifact source (mutually exclusive with --file).",
+    ),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="(optional) Display name for create. Defaults from folder stem. "
+        "One name may broadcast.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        "-i",
+        help="(optional) Model-only when the source also packages a report "
+        "(e.g. thick .pbix → skipReport). No-op for *.SemanticModel folders. "
+        "Not available on delete (service cascade cannot be opted out).",
+    ),
+) -> None:
+    """Create or overwrite semantic model(s) from a local folder or Fabric origin."""
+    run_semantic_model_command(
+        CommandMode.DEPLOY,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        names=name,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+        independent=independent,
+    )
+
+
+@semantic_model_app.command("compare")
+def semantic_model_compare(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.SemanticModel folder. "
+        "Repeatable or comma-separated (1:1 with targets).",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(optional) Remote workspace:artifact source (mutually exclusive with --file).",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not compare.",
+    ),
+) -> None:
+    """Compare target semantic model to a local folder or Fabric origin."""
+    run_semantic_model_command(
+        CommandMode.COMPARE,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=True,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@semantic_model_app.command("delete")
+def semantic_model_delete(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Soft-delete semantic model(s); the service also removes dependent reports."""
+    run_semantic_model_command(
         CommandMode.DELETE,
         target_values=target,
         file_values=None,
@@ -2004,6 +2217,254 @@ def run_dataflow_command(
         client.close()
 
 
+def run_semantic_model_command(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    origin_values: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
+    manifest: str | None = None,
+    independent: bool = False,
+    on_success: Callable[..., None] | None = None,
+) -> None:
+    """Shared entry for semantic-model CLI commands and the interactive wizard."""
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_semantic_model,
+        confirm_deploy_actions_semantic_model,
+        confirm_download_overwrites_semantic_model,
+        resolve_semantic_model_download_files,
+    )
+    from fabric_tools.semantic_model.compare import (
+        run_compare_batch as run_sm_compare,
+    )
+    from fabric_tools.semantic_model.ops import (
+        run_delete_batch as run_sm_delete,
+    )
+    from fabric_tools.semantic_model.ops import (
+        run_deploy_batch as run_sm_deploy,
+    )
+    from fabric_tools.semantic_model.ops import (
+        run_download_batch as run_sm_download,
+    )
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run_semantic_model
+
+    if independent and mode is not CommandMode.DEPLOY:
+        typer.secho(
+            "--independent / -i is only valid on semantic-model deploy "
+            "(delete always follows service cascade).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USER)
+
+    try:
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_semantic_model_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
+        )
+    except (ParseError, ManifestError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    if mode is CommandMode.DEPLOY and any(
+        item.file is not None and item.file.suffix.lower() == ".pbix" for item in items
+    ):
+        typer.secho(
+            "semantic-model deploy from .pbix is not supported yet "
+            "(folder *.SemanticModel only; PBIX skipReport via --independent "
+            "comes with report support).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USER)
+
+    # Folder/origin deploy is already model-only; --independent is reserved for
+    # thick .pbix (skipReport) once PBIX import is wired.
+    _ = independent
+
+    if dry_run:
+        client: FabricClient | None = None
+        try:
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    client.ensure_authenticated()
+            with busy("Checking..."):
+                results = run_dry_run_semantic_model(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                )
+        except Exception as exc:  # noqa: BLE001
+            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=EXIT_API) from exc
+        finally:
+            if client is not None:
+                client.close()
+
+        failed = False
+        for result in results:
+            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            typer.secho(result.message, fg=color)
+            if not result.ok:
+                failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_semantic_model_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except ParseError as exc:
+                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=EXIT_USER) from exc
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_SEMANTIC_MODEL,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+            )
+        raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
+
+    try:
+        display_names = (
+            _resolve_semantic_model_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
+            else None
+        )
+    except ParseError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    with busy("Authenticating..."):
+        client = FabricClient()
+        client.ensure_authenticated()
+    try:
+        if mode is CommandMode.DOWNLOAD:
+            items = resolve_semantic_model_download_files(client, items)
+            confirm_download_overwrites_semantic_model(client, items, silent=silent)
+            with busy("Downloading..."):
+                op_results = run_sm_download(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_SEMANTIC_MODEL,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_actions_semantic_model(
+                client,
+                items,
+                silent=silent,
+                display_names=display_names,
+            )
+            with busy("Deploying..."):
+                op_results = run_sm_deploy(
+                    client,
+                    items,
+                    display_names=display_names,
+                )
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            for result in op_results:
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}",
+                        fg=typer.colors.CYAN,
+                    )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_SEMANTIC_MODEL,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.COMPARE:
+            with busy("Comparing..."):
+                compare_results = run_sm_compare(client, items)
+            _print_compare_results(compare_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+                kind=KIND_SEMANTIC_MODEL,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+            )
+            _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DELETE:
+            confirm_delete_semantic_model(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_sm_delete(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        else:
+            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=EXIT_USER)
+    except ConfirmationAborted as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+    finally:
+        client.close()
+
+
 def run_dataflow_gen1_command(
     mode: CommandMode,
     *,
@@ -2758,6 +3219,109 @@ def _resolve_dataflow_deploy_names(
     names: list[str | None] | list[str] | None,
 ) -> list[str]:
     from fabric_tools.dataflow.definition import display_name_from_path
+
+    if names and len(names) not in {1, len(items)}:
+        raise ParseError(
+            f"--name count must be 1 or match target count ({len(items)}); "
+            f"got {len(names)}"
+        )
+    resolved: list[str] = []
+    for index, item in enumerate(items):
+        chosen: str | None = None
+        if names:
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
+        elif item.file is not None:
+            resolved.append(display_name_from_path(item.file))
+        else:
+            resolved.append("")
+    return resolved
+
+
+def _resolve_semantic_model_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve semantic-model targets/files/origins from CLI and/or a manifest."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
+    manifest_names: list[str | None] | None = None
+
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(
+                loaded, expected_kind=KIND_SEMANTIC_MODEL
+            )
+            return items, None, True, False, False
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False
+
+    if cli_targets or cli_files or cli_origins:
+        targets = cli_targets
+        files = cli_files
+        origins = cli_origins
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_SEMANTIC_MODEL
+        )
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
+            )
+    else:
+        targets = []
+        files = []
+        origins = []
+
+    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files), bool(origins)
+
+
+def _resolve_semantic_model_deploy_names(
+    items: list[WorkItem],
+    names: list[str | None] | list[str] | None,
+) -> list[str]:
+    from fabric_tools.semantic_model.definition import display_name_from_path
 
     if names and len(names) not in {1, len(items)}:
         raise ParseError(

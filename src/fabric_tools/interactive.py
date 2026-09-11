@@ -14,6 +14,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
     KIND_PIPELINE,
+    KIND_SEMANTIC_MODEL,
     KIND_UDF,
     ManifestError,
     item_id_overrides_from_results,
@@ -30,6 +31,7 @@ _TOOL_KIND = {
     "dataflow-gen1": KIND_DATAFLOW_GEN1,
     "pipeline": KIND_PIPELINE,
     "udf": KIND_UDF,
+    "semantic-model": KIND_SEMANTIC_MODEL,
 }
 
 
@@ -40,6 +42,7 @@ def run_interactive_wizard() -> None:
         run_dataflow_gen1_command,
         run_notebook_command,
         run_pipeline_command,
+        run_semantic_model_command,
         run_udf_command,
     )
 
@@ -48,7 +51,14 @@ def run_interactive_wizard() -> None:
 
     tool = _select(
         "Select tool",
-        choices=["notebook", "dataflow", "dataflow-gen1", "pipeline", "udf"],
+        choices=[
+            "notebook",
+            "dataflow",
+            "dataflow-gen1",
+            "pipeline",
+            "udf",
+            "semantic-model",
+        ],
         default="notebook",
     )
 
@@ -95,6 +105,9 @@ def run_interactive_wizard() -> None:
         origin_label = "Fabric origin (workspace:artifact)"
     elif tool == "udf":
         file_prompt = "Enter folder (*.UserDataFunction)"
+        origin_label = "Fabric origin (workspace:artifact)"
+    elif tool == "semantic-model":
+        file_prompt = "Enter folder (*.SemanticModel)"
         origin_label = "Fabric origin (workspace:artifact)"
     else:
         file_prompt = "Enter file (.ipynb or *.Notebook folder)"
@@ -284,6 +297,17 @@ def run_interactive_wizard() -> None:
         )
     elif tool == "udf":
         run_udf_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    elif tool == "semantic-model":
+        run_semantic_model_command(
             mode,
             target_values=targets or None,
             file_values=files or None,

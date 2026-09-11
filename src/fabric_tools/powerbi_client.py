@@ -117,6 +117,32 @@ class PowerBiClient:
             raise PowerBiApiError("Dataflows list response missing 'value'")
         return [item for item in value if isinstance(item, dict)]
 
+    def list_reports(self, group_id: str) -> list[dict[str, Any]]:
+        """GET /groups/{groupId}/reports."""
+        response = self._client.get(
+            f"{self.base_url}/groups/{group_id}/reports",
+            headers=self._json_headers(),
+        )
+        if response.status_code != 200:
+            self._raise_api_error(response)
+        result = self._json_or_none(response)
+        if not isinstance(result, dict):
+            raise PowerBiApiError("Unexpected empty reports list response")
+        value = result.get("value")
+        if not isinstance(value, list):
+            raise PowerBiApiError("Reports list response missing 'value'")
+        return [item for item in value if isinstance(item, dict)]
+
+    def reports_bound_to_dataset(
+        self, group_id: str, dataset_id: str
+    ) -> list[dict[str, Any]]:
+        """Return workspace reports whose ``datasetId`` matches *dataset_id*."""
+        return [
+            report
+            for report in self.list_reports(group_id)
+            if str(report.get("datasetId") or "") == dataset_id
+        ]
+
     def get_dataflow(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
         """Resolve a dataflow by id from the workspace list (name/metadata)."""
         for item in self.list_dataflows(group_id):
