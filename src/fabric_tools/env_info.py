@@ -23,6 +23,17 @@ class EnvVarSpec:
     kind: EnvKind
 
 
+@dataclass(frozen=True)
+class EnvVarStatus:
+    """Resolved display fields for one env var in the current process."""
+
+    name: str
+    value: str
+    status: str
+    description: str
+    kind: EnvKind
+
+
 # Keep in sync with README / AGENTS; used by ``fabric-tools env``.
 ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec(
@@ -58,37 +69,75 @@ def _flag_enabled(raw: str) -> bool:
     return raw.strip().lower() in _TRUTHY
 
 
-def _format_entry(spec: EnvVarSpec) -> str:
+def _resolve_status(spec: EnvVarSpec) -> EnvVarStatus:
     raw = os.environ.get(spec.name)
     present = raw is not None and raw != ""
 
     if spec.kind == "flag":
         if not present:
-            value_part = "(unset)"
-            status = "unset"
+            value, status = "(unset)", "unset"
         else:
-            value_part = raw
+            value = raw
             status = "enabled" if _flag_enabled(raw) else "set (not enabled)"
-        return f"{spec.name}={value_part}\n  [{status}] {spec.description}"
-
-    if spec.kind == "secret":
-        value_part = "***" if present else "(unset)"
+    elif spec.kind == "secret":
+        value = "***" if present else "(unset)"
         status = "set" if present else "unset"
-        return f"{spec.name}={value_part}\n  [{status}] {spec.description}"
+    else:
+        value = raw if present else "(unset)"
+        status = "set" if present else "unset"
 
-    value_part = raw if present else "(unset)"
-    status = "set" if present else "unset"
-    return f"{spec.name}={value_part}\n  [{status}] {spec.description}"
+    return EnvVarStatus(
+        name=spec.name,
+        value=value,
+        status=status,
+        description=spec.description,
+        kind=spec.kind,
+    )
 
 
-def format_env_report() -> str:
-    """Human-readable report of supported env vars and current process values."""
-    lines = [_format_entry(spec) for spec in ENV_VAR_SPECS]
+def collect_env_statuses() -> list[EnvVarStatus]:
+    """Resolve all catalogued env vars against the current process environment."""
+    return [_resolve_status(spec) for spec in ENV_VAR_SPECS]
+
+
+def _status_style(status: str) -> str:
+    if status in {"enabled", "set"}:
+        return "green"
+    if status == "set (not enabled)":
+        return "yellow"
+    return "cyan"
+
+
+def print_env_report() -> None:
+    """Print supported env vars and current values (plain lines, light color)."""
+    from rich.console import Console
+    from rich.text import Text
 
     from fabric_tools.auth import service_principal_configured
 
-    sp = "configured" if service_principal_configured() else "not configured"
-    readonly = "on" if is_readonly_enabled() else "off"
-    lines.append("")
-    lines.append(f"Effective: read-only={readonly}; service principal={sp}")
-    return "\n".join(lines)
+    rows = collect_env_statuses()
+    name_w = max(len(row.name) for row in rows)
+    value_w = max(len(row.value) for row in rows)
+    status_w = max(len(row.status) for row in rows)
+    console = Console()
+
+    for row in rows:
+        line = Text()
+        line.append(f"{row.name:<{name_w}}  {row.value:<{value_w}}  ")
+        line.append(f"{row.status:<{status_w}}", style=_status_style(row.status))
+        line.append(f"  {row.description}")
+        console.print(line)
+
+    readonly = is_readonly_enabled()
+    sp = service_principal_configured()
+    summary = Text("\nEffective: read-only=")
+    summary.append(
+        "on" if readonly else "off",
+        style="green" if readonly else "cyan",
+    )
+    summary.append("; service principal=")
+    summary.append(
+        "configured" if sp else "not configured",
+        style="green" if sp else "cyan",
+    )
+    console.print(summary)

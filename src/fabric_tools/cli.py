@@ -274,9 +274,9 @@ def _start_bg_update_check(ctx: typer.Context) -> None:
 @app.command("env", rich_help_panel="Local")
 def env_cmd() -> None:
     """Show supported environment variables and their current values."""
-    from fabric_tools.env_info import format_env_report
+    from fabric_tools.env_info import print_env_report
 
-    typer.echo(format_env_report())
+    print_env_report()
     raise typer.Exit(code=EXIT_OK)
 
 
