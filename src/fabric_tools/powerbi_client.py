@@ -143,6 +143,103 @@ class PowerBiClient:
             if str(report.get("datasetId") or "") == dataset_id
         ]
 
+    def get_report(self, group_id: str, report_id: str) -> dict[str, Any]:
+        """GET /groups/{groupId}/reports/{reportId}."""
+        response = self._client.get(
+            f"{self.base_url}/groups/{group_id}/reports/{report_id}",
+            headers=self._json_headers(),
+        )
+        if response.status_code != 200:
+            self._raise_api_error(response)
+        result = self._json_or_none(response)
+        if not isinstance(result, dict):
+            raise PowerBiApiError("Unexpected empty report response")
+        return result
+
+    def export_report(
+        self,
+        group_id: str,
+        report_id: str,
+        *,
+        download_type: str = "IncludeModel",
+    ) -> bytes:
+        """GET /groups/{groupId}/reports/{reportId}/Export — return PBIX bytes.
+
+        *download_type* is ``IncludeModel`` (thick) or ``LiveConnect`` (thin).
+        """
+        if download_type not in {"IncludeModel", "LiveConnect"}:
+            raise ValueError("download_type must be 'IncludeModel' or 'LiveConnect'")
+        response = self._client.get(
+            f"{self.base_url}/groups/{group_id}/reports/{report_id}/Export",
+            headers=self._auth_headers(),
+            params={"downloadType": download_type},
+        )
+        if response.status_code != 200:
+            self._raise_api_error(response)
+        return response.content
+
+    def import_pbix(
+        self,
+        group_id: str,
+        pbix_bytes: bytes,
+        *,
+        dataset_display_name: str,
+        name_conflict: str = "Abort",
+        skip_report: bool = False,
+        wait: bool = True,
+    ) -> dict[str, Any]:
+        """Import a ``.pbix`` via POST /groups/{groupId}/imports; optionally wait.
+
+        When *skip_report* is True, only the semantic model is imported (must be
+        True if set — Power BI API requirement).
+        """
+        allowed = {
+            "Abort",
+            "CreateOrOverwrite",
+            "GenerateUniqueName",
+            "Ignore",
+            "Overwrite",
+        }
+        if name_conflict not in allowed:
+            raise ValueError(
+                "name_conflict must be one of: " + ", ".join(sorted(allowed))
+            )
+
+        params: dict[str, str] = {
+            "datasetDisplayName": dataset_display_name,
+            "nameConflict": name_conflict,
+        }
+        if skip_report:
+            params["skipReport"] = "true"
+
+        filename = dataset_display_name
+        if not filename.lower().endswith(".pbix"):
+            filename = f"{filename}.pbix"
+        files = {
+            "file": (filename, pbix_bytes, "application/octet-stream"),
+        }
+        response = self._client.post(
+            f"{self.base_url}/groups/{group_id}/imports",
+            headers=self._auth_headers(),
+            params=params,
+            files=files,
+        )
+        if response.status_code not in (200, 202):
+            self._raise_api_error(response)
+
+        payload = self._json_or_none(response)
+        if not isinstance(payload, dict) or not payload.get("id"):
+            raise PowerBiApiError(
+                "Import response missing import id",
+                status_code=response.status_code,
+                details=payload,
+            )
+
+        if not wait:
+            return payload
+
+        return self.wait_for_import(group_id, str(payload["id"]))
+
     def get_dataflow(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
         """Resolve a dataflow by id from the workspace list (name/metadata)."""
         for item in self.list_dataflows(group_id):
@@ -340,3 +437,24 @@ def dataflow_id_from_import(import_payload: dict[str, Any]) -> str | None:
             if object_id:
                 return str(object_id)
     return None
+
+
+def report_and_dataset_ids_from_import(
+    import_payload: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    """Extract ``(report_id, dataset_id)`` from a completed PBIX Import payload."""
+    report_id: str | None = None
+    dataset_id: str | None = None
+    reports = import_payload.get("reports")
+    if isinstance(reports, list):
+        for item in reports:
+            if isinstance(item, dict) and item.get("id"):
+                report_id = str(item["id"])
+                break
+    datasets = import_payload.get("datasets")
+    if isinstance(datasets, list):
+        for item in datasets:
+            if isinstance(item, dict) and item.get("id"):
+                dataset_id = str(item["id"])
+                break
+    return report_id, dataset_id

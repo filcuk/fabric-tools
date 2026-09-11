@@ -672,6 +672,237 @@ def confirm_delete_semantic_model(
     confirm_or_abort("\n".join(lines), silent=False)
 
 
+def report_display_name(client: FabricClient, target: Target) -> str:
+    """Return Fabric item display name for a report target (fallback: id)."""
+    if target.item_id is None:
+        return "Report"
+    try:
+        data = client.get_item(target.workspace_id, target.item_id)
+    except FabricApiError:
+        return target.item_id
+    name = data.get("displayName") or data.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return target.item_id
+
+
+def resolve_report_download_files(
+    client: FabricClient,
+    items: list[WorkItem],
+) -> list[WorkItem]:
+    """Fill missing download destinations from remote names (``.Report``)."""
+    if not items or all(item.file is not None for item in items):
+        return items
+    if any(item.file is not None for item in items):
+        raise ValueError("download work items must all omit --file or all provide it")
+
+    with busy("Resolving download paths..."):
+        names = [
+            report_display_name(client, item.target)
+            if item.target is not None
+            else "Report"
+            for item in items
+        ]
+        paths = default_download_paths(names, extension=".Report")
+    return [
+        WorkItem(item.target, path, origin=item.origin)
+        for item, path in zip(items, paths, strict=True)
+    ]
+
+
+def confirm_download_overwrites_report(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm before overwriting existing local report folders or ``.pbix`` files."""
+    if silent or not items:
+        return
+    existing = [item for item in items if item.file is not None and item.file.exists()]
+    if not existing:
+        return
+
+    lines = ["About to overwrite local path(s):"]
+    with busy("Resolving targets..."):
+        for item in existing:
+            assert item.target is not None and item.file is not None
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            remote = resolve_item_name(client, item.target)
+            lines.append(f"  - {item.file}  (from {remote} in {workspace})")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
+def confirm_deploy_actions_report(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+    display_names: list[str] | None = None,
+    independent: bool = False,
+    join_model_paths: list[Path | None] | None = None,
+) -> None:
+    """Confirm create/overwrite of reports; name joined models and shared consumers."""
+    from fabric_tools.report.definition import display_name_from_path, is_pbix_path
+
+    if silent or not items:
+        return
+
+    creates = [
+        item for item in items if item.target is not None and item.target.is_create
+    ]
+    overwrites = [
+        item
+        for item in items
+        if item.target is not None and item.target.item_id is not None
+    ]
+
+    if creates:
+        lines = ["About to create report(s):"]
+        with busy("Resolving targets..."):
+            for index, item in enumerate(items):
+                if item.target is None or not item.target.is_create:
+                    continue
+                workspace = resolve_workspace_name(client, item.target.workspace_id)
+                if (
+                    display_names
+                    and index < len(display_names)
+                    and display_names[index]
+                ):
+                    name = display_names[index]
+                elif item.file is not None:
+                    name = display_name_from_path(item.file)
+                else:
+                    name = "Report"
+                source = (
+                    str(item.file)
+                    if item.file is not None
+                    else (
+                        f"origin {item.origin.label()}"
+                        if item.origin is not None
+                        else "?"
+                    )
+                )
+                lines.append(f"  - report '{name}' in {workspace} from {source}")
+                model_path = None
+                if join_model_paths and index < len(join_model_paths):
+                    model_path = join_model_paths[index]
+                if (
+                    not independent
+                    and item.file is not None
+                    and not is_pbix_path(item.file)
+                    and model_path is not None
+                ):
+                    lines.append(
+                        f"    + joined semantic model '{model_path.name}' "
+                        f"({model_path})"
+                    )
+                elif (
+                    not independent
+                    and item.file is not None
+                    and is_pbix_path(item.file)
+                ):
+                    lines.append("    + embedded semantic model from .pbix")
+        lines.append("Are you sure?")
+        confirm_or_abort("\n".join(lines), silent=False)
+
+    if overwrites:
+        lines = ["About to overwrite remote report(s):"]
+        with busy("Resolving targets and impact..."):
+            for index, item in enumerate(items):
+                if item.target is None or item.target.item_id is None:
+                    continue
+                workspace = resolve_workspace_name(client, item.target.workspace_id)
+                name = report_display_name(client, item.target)
+                rid = item.target.item_id
+                lines.append(
+                    f'Deploy/overwrite: report "{name}" ({rid}) in {workspace}'
+                )
+                model_path = None
+                if join_model_paths and index < len(join_model_paths):
+                    model_path = join_model_paths[index]
+                dataset_id = _report_dataset_id(item.target.workspace_id, rid)
+                if not independent and (
+                    model_path is not None
+                    or (item.file is not None and is_pbix_path(item.file))
+                    or dataset_id
+                ):
+                    if dataset_id:
+                        lines.append(f'  also updates semantic model id "{dataset_id}"')
+                        report_lines, err = _bound_report_lines(
+                            item.target.workspace_id, dataset_id
+                        )
+                        if err:
+                            lines.append(f"  {err}")
+                        elif report_lines:
+                            for report_line in report_lines:
+                                if rid not in report_line:
+                                    lines.append(f"  affects: {report_line}")
+                    elif model_path is not None:
+                        lines.append(f"  also updates joined model {model_path}")
+                    else:
+                        lines.append(
+                            "  also updates embedded semantic model from .pbix"
+                        )
+        lines.append("Are you sure?")
+        confirm_or_abort("\n".join(lines), silent=False)
+
+
+def confirm_delete_report(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm report delete; note orphan upstream semantic model when known."""
+    if silent or not items:
+        return
+
+    lines = [
+        "About to delete report(s).",
+        "Deleting a report leaves its semantic model intact:",
+    ]
+    with busy("Resolving targets..."):
+        for item in items:
+            assert item.target is not None and item.target.item_id is not None
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            name = report_display_name(client, item.target)
+            rid = item.target.item_id
+            lines.append(f'Delete: report "{name}" ({rid}) in {workspace}')
+            dataset_id = _report_dataset_id(item.target.workspace_id, rid)
+            if dataset_id:
+                model_label = dataset_id
+                try:
+                    meta = client.get_item(item.target.workspace_id, dataset_id)
+                    model_name = meta.get("displayName") or meta.get("name")
+                    if isinstance(model_name, str) and model_name.strip():
+                        model_label = f"{model_name.strip()}"
+                except FabricApiError:
+                    pass
+                lines.append(f'  leaves semantic model "{model_label}" ({dataset_id})')
+            else:
+                lines.append("  (bound semantic model unknown / unbound)")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
+def _report_dataset_id(workspace_id: str, report_id: str) -> str | None:
+    """Best-effort datasetId for a report via Power BI."""
+    from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
+
+    try:
+        with PowerBiClient() as pbi:
+            pbi.ensure_authenticated()
+            report = pbi.get_report(workspace_id, report_id)
+    except PowerBiApiError:
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+    dataset_id = report.get("datasetId")
+    return str(dataset_id) if dataset_id else None
+
+
 def pipeline_display_name(client: FabricClient, target: Target) -> str:
     """Return Fabric item display name for a DataPipeline target (fallback: id)."""
     if target.item_id is None:
