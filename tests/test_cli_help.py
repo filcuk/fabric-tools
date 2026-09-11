@@ -16,6 +16,7 @@ def test_root_help_lists_dataflow_gen1() -> None:
     assert "pipeline" in result.stdout
     assert "udf" in result.stdout
     assert "semantic-model" in result.stdout
+    assert "report" in result.stdout
     assert "setup" in result.stdout
     assert "Local" in result.stdout
     assert "Fabric" in result.stdout
@@ -117,6 +118,24 @@ def test_semantic_model_deploy_help_lists_independent() -> None:
     assert "--independent" in deploy.stdout
     assert "-i" in deploy.stdout
     delete = CliRunner().invoke(app, ["semantic-model", "delete", "--help"])
+    assert delete.exit_code == 0
+    assert "--independent" not in delete.stdout
+
+
+def test_report_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["report", "--help"])
+    assert result.exit_code == 0
+    for name in ("download", "deploy", "compare", "delete"):
+        assert name in result.stdout
+    assert "report" in result.stdout.lower()
+
+
+def test_report_independent_on_download_deploy_compare_not_delete() -> None:
+    for cmd in ("download", "deploy", "compare"):
+        result = CliRunner().invoke(app, ["report", cmd, "--help"])
+        assert result.exit_code == 0
+        assert "--independent" in result.stdout
+    delete = CliRunner().invoke(app, ["report", "delete", "--help"])
     assert delete.exit_code == 0
     assert "--independent" not in delete.stdout
 

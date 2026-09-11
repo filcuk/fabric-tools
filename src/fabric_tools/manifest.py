@@ -212,11 +212,14 @@ def manifest_from_work_items(
     kind: str = KIND_NOTEBOOK,
     display_names: Sequence[str | None] | None = None,
     item_id_overrides: Sequence[str | None] | None = None,
+    semantic_model_id_overrides: Sequence[str | None] | None = None,
 ) -> DeploymentManifest:
     """Build a manifest from effective work items.
 
     *item_id_overrides* (e.g. create-deploy results) replaces ``None`` item ids
     when the override at the same index is set.
+
+    *semantic_model_id_overrides* sets optional ``semanticModelId`` on report entries.
 
     Writes schemaVersion 2 when any entry uses a Fabric origin; otherwise v1.
     """
@@ -243,9 +246,22 @@ def manifest_from_work_items(
             f"({len(items)})"
         )
 
+    sm_overrides = (
+        list(semantic_model_id_overrides)
+        if semantic_model_id_overrides is not None
+        else [None] * len(items)
+    )
+    if len(sm_overrides) != len(items):
+        raise ManifestError(
+            f"semantic_model_id override count ({len(sm_overrides)}) must match "
+            f"work items ({len(items)})"
+        )
+
     entries: list[ManifestEntry] = []
     uses_origin = False
-    for item, name, override_id in zip(items, names, overrides, strict=True):
+    for item, name, override_id, sm_id in zip(
+        items, names, overrides, sm_overrides, strict=True
+    ):
         if item.target is None:
             raise ManifestError("manifest entry requires a target")
         if item.file is None and item.origin is None:
@@ -269,6 +285,7 @@ def manifest_from_work_items(
                 display_name=name,
                 origin_workspace_id=origin_ws,
                 origin_item_id=origin_item,
+                semantic_model_id=sm_id,
             )
         )
 
@@ -290,6 +307,25 @@ def item_id_overrides_from_results(
         item_id = getattr(result, "item_id", None)
         overrides.append(str(item_id) if ok and item_id else None)
     return overrides
+
+
+def semantic_model_id_overrides_from_results(
+    results: Sequence[Any],
+) -> list[str | None]:
+    """Extract per-index ``semantic_model_id`` from report-like operation results."""
+    overrides: list[str | None] = []
+    for result in results:
+        ok = bool(getattr(result, "ok", False))
+        sm_id = getattr(result, "semantic_model_id", None)
+        overrides.append(str(sm_id) if ok and sm_id else None)
+    return overrides
+
+
+def semantic_model_ids_from_manifest(
+    manifest: DeploymentManifest,
+) -> list[str | None]:
+    """Return per-entry ``semanticModelId`` values from a loaded manifest."""
+    return [entry.semantic_model_id for entry in manifest.entries]
 
 
 def list_manifest_paths(directory: str | Path | None = None) -> list[Path]:

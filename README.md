@@ -58,13 +58,18 @@ Commands may print a one-line update notice on stderr at most once per local day
   - Delete confirms list dependent reports in the workspace (service removes them with the model)
   - Overwrite confirms list other reports bound to the model
   - Deploy `--independent` / `-i`: reserved for model-only from a packaged report source (e.g. future `.pbix`); no-op for folders; not on delete
+- Reports (`report`)
+  - `*.Report\` folder or `.pbix` — joins a packable semantic model by default
+  - download, deploy (create/overwrite), compare, delete (soft delete; model left intact)
+  - `--independent` / `-i`: report only (errors on thick `.pbix` deploy)
+  - Overwrite confirms name shared-model consumers; delete confirms note the orphan model when known
 
 ## Flags
 
 | Flag | Alias | Purpose |
 |------|---------|---------|
 | `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated). Overwrite CSV: one workspace per `-t` (bare artifact ids inherit that workspace). Create CSV may list multiple workspaces. |
-| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, Gen1 `model.json`, DataPipeline `*.DataPipeline` folder, or UDF `*.UserDataFunction` folder (repeatable or comma-separated). Optional on download: defaults to remote name + `.ipynb` / `.Dataflow` / `.json` / `.DataPipeline` / `.UserDataFunction` in the current folder. |
+| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, Gen1 `model.json`, DataPipeline `*.DataPipeline` folder, UDF `*.UserDataFunction` folder, `*.SemanticModel` folder, `*.Report` folder, or `.pbix` (repeatable or comma-separated). Optional on download: defaults to remote name + extension in the current folder. |
 | `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as `--target`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
@@ -72,7 +77,7 @@ Commands may print a one-line update notice on stderr at most once per local day
 | `--name` | `-n` | Display name for create deploys |
 | `--cells` | `-c` | Notebook overwrite only: listed 1-based cells (single local `.ipynb` only) |
 | `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`) |
-| `--independent` | `-i` | `semantic-model deploy` (and later `report`): act only on this command’s artifact; not on `semantic-model delete` |
+| `--independent` | `-i` | `report` download/deploy/compare and `semantic-model deploy`: act only on this command’s artifact; not on `semantic-model delete` |
 
 ## Example commands
 
@@ -153,6 +158,15 @@ fabric-tools semantic-model deploy -s -t <workspaceId>:<modelId> -f .\Sales.Sema
 fabric-tools semantic-model compare -t <workspaceId>:<modelId> -f .\Sales.SemanticModel
 fabric-tools semantic-model delete -s -t <workspaceId>:<modelId>
 
+# Report: download / create / overwrite / compare / delete (joins model by default)
+fabric-tools report download -s -t <workspaceId>:<reportId> -f .\Sales.Report
+fabric-tools report download -s -t <workspaceId>:<reportId> -i
+fabric-tools report deploy -s -t <workspaceId> -f .\Sales.Report -n "Sales"
+fabric-tools report deploy -s -t <workspaceId> -f .\Sales.pbix -n "Sales"
+fabric-tools report deploy -s -t <workspaceId>:<reportId> -f .\Sales.Report
+fabric-tools report compare -t <workspaceId>:<reportId> -f .\Sales.Report
+fabric-tools report delete -s -t <workspaceId>:<reportId>
+
 # Dry-run validate and write test.ftdep (no remote changes)
 fabric-tools notebook deploy -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
 
@@ -182,8 +196,10 @@ fabric-tools setup update -s
 Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
 broker, then falls back to browser or device-code auth.
 
-Notebooks, Dataflow Gen2, DataPipeline, User Data Functions, and semantic models use the Fabric API token. Dataflow Gen1 uses a Power BI API token
-(same sign-in / service principal; different audience). Semantic-model overwrite/delete confirms may also call Power BI to list reports bound to the model.
+Notebooks, Dataflow Gen2, DataPipeline, User Data Functions, semantic models, and reports
+(folders) use the Fabric API token. Dataflow Gen1 and `.pbix` import/export use a Power BI API token
+(same sign-in / service principal; different audience). Report and semantic-model overwrite/delete
+confirms may also call Power BI to list reports bound to a model.
 
 User Data Function APIs do **not** support service principals — use interactive user sign-in for `udf` commands.
 

@@ -15,6 +15,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
     KIND_PIPELINE,
+    KIND_REPORT,
     KIND_SEMANTIC_MODEL,
     KIND_UDF,
     ManifestError,
@@ -27,6 +28,8 @@ from fabric_tools.manifest import (
     manifest_from_work_items,
     resolve_manifest_path,
     save_manifest,
+    semantic_model_id_overrides_from_results,
+    semantic_model_ids_from_manifest,
     work_items_from_manifest,
 )
 from fabric_tools.parsing import (
@@ -168,6 +171,15 @@ semantic_model_app = typer.Typer(
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(semantic_model_app, name="semantic-model", rich_help_panel="Fabric")
+
+report_app = typer.Typer(
+    name="report",
+    help="Download, deploy, compare, and delete Fabric report items "
+    "(joins a packable semantic model by default; use --independent / -i to opt out).",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(report_app, name="report", rich_help_panel="Fabric")
 
 dataflow_gen1_app = typer.Typer(
     name="dataflow-gen1",
@@ -1139,6 +1151,223 @@ def semantic_model_delete(
 ) -> None:
     """Soft-delete semantic model(s); the service also removes dependent reports."""
     run_semantic_model_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@report_app.command("download")
+def report_download(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(optional) Local *.Report folder or .pbix path. "
+        "Defaults to remote name with .Report in the current folder. "
+        "Repeatable or comma-separated. One path may broadcast to all targets.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or local paths only; do not download.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        "-i",
+        help="(optional) Download the report only (no joined semantic model / "
+        "LiveConnect for .pbix).",
+    ),
+) -> None:
+    """Download report definition(s) to local *.Report folders or .pbix files."""
+    run_report_command(
+        CommandMode.DOWNLOAD,
+        target_values=target,
+        file_values=file,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+        independent=independent,
+    )
+
+
+@report_app.command("deploy")
+def report_deploy(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.Report folder or .pbix. "
+        "Repeatable or comma-separated. One path may broadcast to all targets.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(optional) Remote workspace:artifact source (mutually exclusive with --file).",
+    ),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="(optional) Display name for create. Defaults from folder/.pbix stem. "
+        "One name may broadcast.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        "-i",
+        help="(optional) Deploy the report only (no joined model). "
+        "Errors on thick .pbix or packable sibling *.SemanticModel.",
+    ),
+) -> None:
+    """Create or overwrite report(s); joins a packable semantic model by default."""
+    run_report_command(
+        CommandMode.DEPLOY,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        names=name,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+        independent=independent,
+    )
+
+
+@report_app.command("compare")
+def report_compare(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.Report folder. "
+        "Repeatable or comma-separated (1:1 with targets). .pbix is not supported.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(optional) Remote workspace:artifact source (mutually exclusive with --file).",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not compare.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        "-i",
+        help="(optional) Compare the report definition only (skip joined-model notes).",
+    ),
+) -> None:
+    """Compare target report to a local *.Report folder or Fabric origin."""
+    run_report_command(
+        CommandMode.COMPARE,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=True,
+        dry_run=dry_run,
+        manifest=manifest,
+        independent=independent,
+    )
+
+
+@report_app.command("delete")
+def report_delete(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Soft-delete report(s); the bound semantic model is left intact."""
+    run_report_command(
         CommandMode.DELETE,
         target_values=target,
         file_values=None,
@@ -2465,6 +2694,267 @@ def run_semantic_model_command(
         client.close()
 
 
+def run_report_command(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    origin_values: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
+    manifest: str | None = None,
+    independent: bool = False,
+    on_success: Callable[..., None] | None = None,
+) -> None:
+    """Shared entry for report CLI commands and the interactive wizard."""
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_report,
+        confirm_deploy_actions_report,
+        confirm_download_overwrites_report,
+        resolve_report_download_files,
+    )
+    from fabric_tools.report.compare import (
+        run_compare_batch as run_report_compare,
+    )
+    from fabric_tools.report.definition import (
+        DefinitionError as ReportDefinitionError,
+    )
+    from fabric_tools.report.definition import (
+        is_pbix_path,
+        packable_local_model,
+    )
+    from fabric_tools.report.ops import (
+        run_delete_batch as run_report_delete,
+    )
+    from fabric_tools.report.ops import (
+        run_deploy_batch as run_report_deploy,
+    )
+    from fabric_tools.report.ops import (
+        run_download_batch as run_report_download,
+    )
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run_report
+
+    if independent and mode is CommandMode.DELETE:
+        typer.secho(
+            "--independent / -i is not used on report delete "
+            "(delete always removes the report only).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USER)
+
+    try:
+        items, resolved_names, has_targets, has_files, has_origins, sm_ids = (
+            _resolve_report_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
+        )
+    except (ParseError, ManifestError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    if dry_run:
+        client: FabricClient | None = None
+        try:
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    client.ensure_authenticated()
+            with busy("Checking..."):
+                results = run_dry_run_report(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                )
+        except Exception as exc:  # noqa: BLE001
+            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=EXIT_API) from exc
+        finally:
+            if client is not None:
+                client.close()
+
+        failed = False
+        for result in results:
+            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            typer.secho(result.message, fg=color)
+            if not result.ok:
+                failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_report_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except ParseError as exc:
+                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=EXIT_USER) from exc
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_REPORT,
+                semantic_model_ids=sm_ids,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+            )
+        raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
+
+    try:
+        display_names = (
+            _resolve_report_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
+            else None
+        )
+    except ParseError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    with busy("Authenticating..."):
+        client = FabricClient()
+        client.ensure_authenticated()
+    try:
+        if mode is CommandMode.DOWNLOAD:
+            items = resolve_report_download_files(client, items)
+            confirm_download_overwrites_report(client, items, silent=silent)
+            with busy("Downloading..."):
+                op_results = run_report_download(client, items, independent=independent)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_REPORT,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DEPLOY:
+            join_model_paths: list[object | None] = []
+            for item in items:
+                if independent or item.file is None or is_pbix_path(item.file):
+                    join_model_paths.append(None)
+                    continue
+                try:
+                    join_model_paths.append(packable_local_model(item.file))
+                except ReportDefinitionError:
+                    join_model_paths.append(None)
+            confirm_deploy_actions_report(
+                client,
+                items,
+                silent=silent,
+                display_names=display_names,
+                independent=independent,
+                join_model_paths=join_model_paths,  # type: ignore[arg-type]
+            )
+            with busy("Deploying..."):
+                op_results = run_report_deploy(
+                    client,
+                    items,
+                    display_names=display_names,
+                    independent=independent,
+                    semantic_model_ids=sm_ids,
+                )
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            for result in op_results:
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}",
+                        fg=typer.colors.CYAN,
+                    )
+                    sm = getattr(result, "semantic_model_id", None)
+                    if sm:
+                        typer.secho(
+                            f"semanticModelId: {sm}",
+                            fg=typer.colors.CYAN,
+                        )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_REPORT,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.COMPARE:
+            with busy("Comparing..."):
+                compare_results = run_report_compare(
+                    client, items, independent=independent
+                )
+            _print_compare_results(compare_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+                kind=KIND_REPORT,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+            )
+            _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DELETE:
+            confirm_delete_report(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_report_delete(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        else:
+            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=EXIT_USER)
+    except ConfirmationAborted as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+    finally:
+        client.close()
+
+
 def run_dataflow_gen1_command(
     mode: CommandMode,
     *,
@@ -3342,6 +3832,116 @@ def _resolve_semantic_model_deploy_names(
     return resolved
 
 
+def _resolve_report_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[
+    list[WorkItem],
+    list[str | None] | list[str] | None,
+    bool,
+    bool,
+    bool,
+    list[str | None] | None,
+]:
+    """Resolve report targets/files/origins from CLI and/or a manifest."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
+    manifest_names: list[str | None] | None = None
+    sm_ids: list[str | None] | None = None
+
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(loaded, expected_kind=KIND_REPORT)
+            return items, None, True, False, False, None
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False, None
+
+    if cli_targets or cli_files or cli_origins:
+        targets = cli_targets
+        files = cli_files
+        origins = cli_origins
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_REPORT
+        )
+        sm_ids = semantic_model_ids_from_manifest(loaded)
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
+            )
+    else:
+        targets = []
+        files = []
+        origins = []
+
+    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files), bool(origins), sm_ids
+
+
+def _resolve_report_deploy_names(
+    items: list[WorkItem],
+    names: list[str | None] | list[str] | None,
+) -> list[str]:
+    from fabric_tools.report.definition import display_name_from_path
+
+    if names and len(names) not in {1, len(items)}:
+        raise ParseError(
+            f"--name count must be 1 or match target count ({len(items)}); "
+            f"got {len(names)}"
+        )
+    resolved: list[str] = []
+    for index, item in enumerate(items):
+        chosen: str | None = None
+        if names:
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
+        elif item.file is not None:
+            resolved.append(display_name_from_path(item.file))
+        else:
+            resolved.append("")
+    return resolved
+
+
 def _resolve_dataflow_gen1_inputs(
     mode: CommandMode,
     *,
@@ -3763,6 +4363,7 @@ def _write_manifest_after_success(
     op_results: list[OpResult] | None = None,
     compare_results: list[CompareResult] | None = None,
     kind: str = KIND_NOTEBOOK,
+    semantic_model_ids: list[str | None] | None = None,
 ) -> None:
     """Rewrite ``.ftdep`` when ``-m`` is set and the operation or dry-run succeeded."""
     if not manifest:
@@ -3775,12 +4376,18 @@ def _write_manifest_after_success(
     overrides = (
         item_id_overrides_from_results(op_results) if op_results is not None else None
     )
+    sm_overrides = semantic_model_ids
+    if op_results is not None and kind == KIND_REPORT:
+        from_results = semantic_model_id_overrides_from_results(op_results)
+        if any(from_results):
+            sm_overrides = from_results
     try:
         built = manifest_from_work_items(
             items,
             kind=kind,
             display_names=display_names,
             item_id_overrides=overrides,
+            semantic_model_id_overrides=sm_overrides,
         )
         path = save_manifest(manifest, built)
     except ManifestError as exc:
@@ -3813,6 +4420,9 @@ def _print_compare_results(results: list[CompareResult]) -> None:
             typer.secho("differences found", fg=typer.colors.YELLOW)
             if result.diff_text:
                 typer.echo(result.diff_text.rstrip())
+        messages = getattr(result, "messages", None) or []
+        for message in messages:
+            typer.secho(message, fg=typer.colors.YELLOW)
         typer.echo("")
 
 

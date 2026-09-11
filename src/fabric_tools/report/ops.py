@@ -329,6 +329,7 @@ def run_deploy_batch(
     *,
     display_names: list[str] | None = None,
     independent: bool = False,
+    semantic_model_ids: list[str | None] | None = None,
     powerbi_client: Any | None = None,
 ) -> list[OpResult]:
     results: list[OpResult] = []
@@ -337,6 +338,9 @@ def run_deploy_batch(
         name = None
         if display_names and index < len(display_names):
             name = display_names[index]
+        sm_id = None
+        if semantic_model_ids and index < len(semantic_model_ids):
+            sm_id = semantic_model_ids[index]
         target = item.target
         if target is not None and target.is_create:
             label = name or (
@@ -353,6 +357,7 @@ def run_deploy_batch(
                 item,
                 display_name=name,
                 independent=independent,
+                semantic_model_id=sm_id,
                 origin_definition_cache=origin_cache,
                 powerbi_client=powerbi_client,
             )

@@ -6,22 +6,22 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 
 ## Project goal
 
-`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), and semantic model sync (`semantic-model`).
+`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), semantic model sync (`semantic-model`), and report sync (`report`; joins a packable model by default).
 
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` groups, `inspect`, `setup`
+  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` + `report` groups, `inspect`, `setup`
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `semantic-model` \| `report`)
   - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; onefile unpacks to onedir under `%LOCALAPPDATA%\fabric-tools\app`; `setup update` downloads release exe and deferred-installs)
   - `update_check.py` — GitHub Releases check (`setup update --check`); once-per-day background notice; release asset download
   - `auth.py` — Azure token acquisition (Fabric + Power BI scopes; SP env, WAM broker, browser/device code; persistent cache)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
-  - `powerbi_client.py` — Power BI REST client (Gen1 dataflow get/delete/import + poll; report list for semantic-model impact)
+  - `powerbi_client.py` — Power BI REST client (Gen1 dataflow get/delete/import + poll; report list/export/import for report + semantic-model impact)
   - `definition_parts.py` — recursive folder ↔ InlineBase64 definition parts
   - `parsing.py` — `--target` / `--file` / `--origin` parsing and mode validation (`download` \| `deploy` \| `compare` \| `delete`; `deploy_create_only` for Gen1)
-  - `validate.py` — `--dry-run` remote/local checks (Fabric notebooks + Dataflow Gen2 + Power BI Gen1 + DataPipeline + UDF + semantic model)
+  - `validate.py` — `--dry-run` remote/local checks (Fabric notebooks + Dataflow Gen2 + Power BI Gen1 + DataPipeline + UDF + semantic model + report)
   - `confirm.py` — overwrite / create / delete prompts
   - `status.py` — Rich spinner / status line for auth and long-running work
   - `exit_codes.py` — CLI exit code constants
@@ -31,6 +31,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `pipeline/` — DataPipeline Git-style folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `udf/` — User Data Function folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `semantic_model/` — semantic model folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
+  - `report/` — report folder + PBIX (`definition.py`); join/bind rewrite; download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
 - `tests/` — unit tests
 - `packaging/fabric-tools.spec` — PyInstaller onedir staging build
 - `packaging/fabric-tools-onefile.spec` — PyInstaller one-file release (embeds onedir bootloader)
@@ -112,6 +113,16 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Delete: Fabric soft delete; service also removes dependent reports — confirm lists known consumers in the workspace (Power BI report list, best-effort); **no** `--independent` (cascade cannot be opted out)
 - Overwrite confirm lists other reports bound to the model (best-effort)
 
+### Reports (`report`)
+
+- Format: Fabric Git-style `*.Report` folder (`definition.pbir` required; PBIR `definition/` **or** PBIR-Legacy `report.json`) or Power BI `.pbix`
+- API: Fabric Report Items for folders; Power BI Import/Export for `.pbix`
+- Join by default when a packable model is present (sibling / `byPath` `.SemanticModel`, or thick `.pbix` / `IncludeModel`); thin/live-connect → report only
+- Opt-out: `--independent` / `-i` on download/deploy/compare (not delete). Thick `.pbix` + `--independent` → error
+- Deploy joined folders: create/update model, rewrite `definition.pbir` to `byConnection`, then report
+- Compare: folders/origins only (reject `.pbix`)
+- Delete: report only; confirm notes orphan upstream model when known
+
 ## Commands agents should know
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for full install/test/build steps.
@@ -122,6 +133,7 @@ py -3 -m fabric_tools --version
 py -3 -m fabric_tools notebook --help
 py -3 -m fabric_tools dataflow --help
 py -3 -m fabric_tools semantic-model --help
+py -3 -m fabric_tools report --help
 py -3 -m fabric_tools dataflow-gen1 --help
 py -3 -m fabric_tools pipeline --help
 py -3 -m fabric_tools udf --help

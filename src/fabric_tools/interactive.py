@@ -14,12 +14,14 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
     KIND_PIPELINE,
+    KIND_REPORT,
     KIND_SEMANTIC_MODEL,
     KIND_UDF,
     ManifestError,
     item_id_overrides_from_results,
     manifest_from_work_items,
     save_manifest,
+    semantic_model_id_overrides_from_results,
 )
 from fabric_tools.notebook.compare import CompareResult
 from fabric_tools.notebook.ops import OpResult
@@ -32,6 +34,7 @@ _TOOL_KIND = {
     "pipeline": KIND_PIPELINE,
     "udf": KIND_UDF,
     "semantic-model": KIND_SEMANTIC_MODEL,
+    "report": KIND_REPORT,
 }
 
 
@@ -42,6 +45,7 @@ def run_interactive_wizard() -> None:
         run_dataflow_gen1_command,
         run_notebook_command,
         run_pipeline_command,
+        run_report_command,
         run_semantic_model_command,
         run_udf_command,
     )
@@ -58,6 +62,7 @@ def run_interactive_wizard() -> None:
             "pipeline",
             "udf",
             "semantic-model",
+            "report",
         ],
         default="notebook",
     )
@@ -108,6 +113,9 @@ def run_interactive_wizard() -> None:
         origin_label = "Fabric origin (workspace:artifact)"
     elif tool == "semantic-model":
         file_prompt = "Enter folder (*.SemanticModel)"
+        origin_label = "Fabric origin (workspace:artifact)"
+    elif tool == "report":
+        file_prompt = "Enter folder (*.Report) or .pbix path"
         origin_label = "Fabric origin (workspace:artifact)"
     else:
         file_prompt = "Enter file (.ipynb or *.Notebook folder)"
@@ -241,6 +249,18 @@ def run_interactive_wizard() -> None:
             f"  names:    {', '.join(n or '(from source)' for n in resolved_names)}"
         )
 
+    independent = False
+    if tool == "report" and mode in {
+        CommandMode.DOWNLOAD,
+        CommandMode.DEPLOY,
+        CommandMode.COMPARE,
+    }:
+        independent = _confirm(
+            "Independent (report only — do not join semantic model)?",
+            default=False,
+        )
+        typer.echo(f"  independent: {independent}")
+
     if not _confirm("Proceed?", default=True):
         typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=EXIT_USER)
@@ -317,6 +337,18 @@ def run_interactive_wizard() -> None:
             names=resolved_names,
             on_success=on_success,
         )
+    elif tool == "report":
+        run_report_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            independent=independent,
+            on_success=on_success,
+        )
     else:
         run_notebook_command(
             mode,
@@ -356,12 +388,18 @@ def prompt_save_manifest(
     overrides = (
         item_id_overrides_from_results(op_results) if op_results is not None else None
     )
+    sm_overrides = None
+    if op_results is not None and kind == KIND_REPORT:
+        from_results = semantic_model_id_overrides_from_results(op_results)
+        if any(from_results):
+            sm_overrides = from_results
     try:
         built = manifest_from_work_items(
             items,
             kind=kind,
             display_names=display_names,
             item_id_overrides=overrides,
+            semantic_model_id_overrides=sm_overrides,
         )
         path = save_manifest(stem, built)
     except ManifestError as exc:
