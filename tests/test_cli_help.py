@@ -36,29 +36,29 @@ def test_root_help_orders_help_and_setup_first() -> None:
     fabric_idx = result.stdout.index("─ Fabric")
     setup_idx = result.stdout.index("setup")
     inspect_idx = result.stdout.index("inspect")
-    dataflow_gen1_idx = result.stdout.index("dataflow-gen1")
-    # "dataflow" is a prefix of "dataflow-gen1"; take the standalone command line.
-    dataflow_idx = result.stdout.index("dataflow ", dataflow_gen1_idx + 1)
-    notebook_idx = result.stdout.index("notebook")
-    pipeline_idx = result.stdout.index("pipeline")
-    report_idx = result.stdout.index("report")
-    paginated_report_idx = result.stdout.index("paginated-report")
-    semantic_model_idx = result.stdout.index("semantic-model")
-    udf_idx = result.stdout.index("udf")
-    assert (
-        local_idx
-        < setup_idx
-        < inspect_idx
-        < fabric_idx
-        < dataflow_gen1_idx
-        < dataflow_idx
-        < notebook_idx
-        < pipeline_idx
-        < report_idx
-        < paginated_report_idx
-        < semantic_model_idx
-        < udf_idx
-    )
+    assert local_idx < setup_idx < inspect_idx < fabric_idx
+
+    # Command order comes from _BannerGroup.list_commands (not fragile substring scans:
+    # "report" is a suffix of "paginated-report", "dataflow" of "dataflow-gen1", etc.).
+    from typer.main import get_command
+
+    names = get_command(app).list_commands(None)
+    expected = [
+        "setup",
+        "inspect",
+        "dataflow-gen1",
+        "dataflow",
+        "notebook",
+        "paginated-report",
+        "pipeline",
+        "report",
+        "semantic-model",
+        "udf",
+    ]
+    assert names[: len(expected)] == expected
+    for name in expected:
+        assert name in result.stdout
+
 
 
 def test_setup_help_lists_update() -> None:

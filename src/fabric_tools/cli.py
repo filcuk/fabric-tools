@@ -98,17 +98,17 @@ class _BannerGroup(TyperGroup):
     """Root help: banner, then subtitle, then Usage / options."""
 
     # Help list order: setup first, then inspect, then artifact groups
-    # (dataflow-gen1 before dataflow; report under pipeline; paginated-report
-    # under report; semantic-model under report).
+    # (dataflow-gen1 before dataflow; paginated-report before pipeline;
+    # report before semantic-model).
     _COMMAND_ORDER = (
         "setup",
         "inspect",
         "dataflow-gen1",
         "dataflow",
         "notebook",
+        "paginated-report",
         "pipeline",
         "report",
-        "paginated-report",
         "semantic-model",
         "udf",
     )
@@ -155,7 +155,7 @@ app = typer.Typer(
 
 notebook_app = typer.Typer(
     name="notebook",
-    help="Download, deploy, compare, and delete Fabric notebooks.",
+    help="Fabric notebooks.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -163,7 +163,7 @@ app.add_typer(notebook_app, name="notebook", rich_help_panel="Fabric")
 
 dataflow_app = typer.Typer(
     name="dataflow",
-    help="Download, deploy, compare, and delete Fabric Dataflow Gen2 items.",
+    help="Fabric Dataflow Gen2 items.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -171,7 +171,7 @@ app.add_typer(dataflow_app, name="dataflow", rich_help_panel="Fabric")
 
 semantic_model_app = typer.Typer(
     name="semantic-model",
-    help="Download, deploy, compare, and delete Fabric semantic model items.",
+    help="Fabric semantic model items.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -179,7 +179,7 @@ app.add_typer(semantic_model_app, name="semantic-model", rich_help_panel="Fabric
 
 report_app = typer.Typer(
     name="report",
-    help="Download, deploy, compare, and delete Fabric report items.",
+    help="Fabric report items.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -187,7 +187,7 @@ app.add_typer(report_app, name="report", rich_help_panel="Fabric")
 
 paginated_report_app = typer.Typer(
     name="paginated-report",
-    help="Download, deploy, compare, and delete Power BI paginated reports (.rdl).",
+    help="Power BI paginated reports (.rdl).",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -195,7 +195,7 @@ app.add_typer(paginated_report_app, name="paginated-report", rich_help_panel="Fa
 
 dataflow_gen1_app = typer.Typer(
     name="dataflow-gen1",
-    help="Download, create, compare, and delete Power BI Dataflow Gen1 items.",
+    help="Power BI Dataflow Gen1 items.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -203,7 +203,7 @@ app.add_typer(dataflow_gen1_app, name="dataflow-gen1", rich_help_panel="Fabric")
 
 pipeline_app = typer.Typer(
     name="pipeline",
-    help="Download, deploy, compare, and delete Fabric DataPipeline items.",
+    help="Fabric DataPipeline items.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -211,7 +211,7 @@ app.add_typer(pipeline_app, name="pipeline", rich_help_panel="Fabric")
 
 udf_app = typer.Typer(
     name="udf",
-    help="Download, deploy, compare, and delete Fabric User Data Functions.",
+    help="Fabric User Data Functions.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -219,7 +219,7 @@ app.add_typer(udf_app, name="udf", rich_help_panel="Fabric")
 
 setup_app = typer.Typer(
     name="setup",
-    help="Install, update, and manage the fabric-tools launcher on your PATH.",
+    help="Install, update, and manage the utility.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )

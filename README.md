@@ -63,13 +63,18 @@ Commands may print a one-line update notice on stderr at most once per local day
   - download, deploy (create/overwrite), compare, delete (soft delete; model left intact)
   - `--independent` / `-i`: report only (errors on thick `.pbix` deploy)
   - Overwrite confirms name shared-model consumers; delete confirms note the orphan model when known
+- Paginated reports (`paginated-report`)
+  - `.rdl` — Power BI Report Builder definition (Power BI API; not Fabric Items definition)
+  - download, deploy (create/overwrite), compare, delete
+  - Overwrite uses the existing remote report name (`--name` is create-only)
+  - Datasources/credentials are not synced; configure them in the service after deploy
 
 ## Flags
 
 | Flag | Alias | Purpose |
 |------|---------|---------|
 | `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated). Overwrite CSV: one workspace per `-t` (bare artifact ids inherit that workspace). Create CSV may list multiple workspaces. |
-| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, Gen1 `model.json`, DataPipeline `*.DataPipeline` folder, UDF `*.UserDataFunction` folder, `*.SemanticModel` folder, `*.Report` folder, or `.pbix` (repeatable or comma-separated). Optional on download: defaults to remote name + extension in the current folder. |
+| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, Gen1 `model.json`, DataPipeline `*.DataPipeline` folder, UDF `*.UserDataFunction` folder, `*.SemanticModel` folder, `*.Report` folder, `.pbix`, or paginated `.rdl` (repeatable or comma-separated). Optional on download: defaults to remote name + extension in the current folder. |
 | `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as `--target`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
@@ -167,6 +172,14 @@ fabric-tools report deploy -s -t <workspaceId>:<reportId> -f .\Sales.Report
 fabric-tools report compare -t <workspaceId>:<reportId> -f .\Sales.Report
 fabric-tools report delete -s -t <workspaceId>:<reportId>
 
+# Paginated report: download / create / overwrite / compare / delete
+fabric-tools paginated-report download -s -t <workspaceId>:<reportId> -f .\Sales.rdl
+fabric-tools paginated-report download -s -t <workspaceId>:<reportId>
+fabric-tools paginated-report deploy -s -t <workspaceId> -f .\Sales.rdl -n "Sales"
+fabric-tools paginated-report deploy -s -t <workspaceId>:<reportId> -f .\Sales.rdl
+fabric-tools paginated-report compare -t <workspaceId>:<reportId> -f .\Sales.rdl
+fabric-tools paginated-report delete -s -t <workspaceId>:<reportId>
+
 # Dry-run validate and write test.ftdep (no remote changes)
 fabric-tools notebook deploy -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
 
@@ -197,9 +210,10 @@ Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS ac
 broker, then falls back to browser or device-code auth.
 
 Notebooks, Dataflow Gen2, DataPipeline, User Data Functions, semantic models, and reports
-(folders) use the Fabric API token. Dataflow Gen1 and `.pbix` import/export use a Power BI API token
-(same sign-in / service principal; different audience). Report and semantic-model overwrite/delete
-confirms may also call Power BI to list reports bound to a model.
+(folders) use the Fabric API token. Dataflow Gen1, paginated reports (`.rdl`), and `.pbix`
+import/export use a Power BI API token (same sign-in / service principal; different audience).
+Report and semantic-model overwrite/delete confirms may also call Power BI to list reports
+bound to a model.
 
 User Data Function APIs do **not** support service principals — use interactive user sign-in for `udf` commands.
 
