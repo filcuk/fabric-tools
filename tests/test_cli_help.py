@@ -17,6 +17,7 @@ def test_root_help_lists_dataflow_gen1() -> None:
     assert "udf" in result.stdout
     assert "semantic-model" in result.stdout
     assert "report" in result.stdout
+    assert "paginated-report" in result.stdout
     assert "setup" in result.stdout
     assert "Local" in result.stdout
     assert "Fabric" in result.stdout
@@ -41,6 +42,7 @@ def test_root_help_orders_help_and_setup_first() -> None:
     notebook_idx = result.stdout.index("notebook")
     pipeline_idx = result.stdout.index("pipeline")
     report_idx = result.stdout.index("report")
+    paginated_report_idx = result.stdout.index("paginated-report")
     semantic_model_idx = result.stdout.index("semantic-model")
     udf_idx = result.stdout.index("udf")
     assert (
@@ -53,6 +55,7 @@ def test_root_help_orders_help_and_setup_first() -> None:
         < notebook_idx
         < pipeline_idx
         < report_idx
+        < paginated_report_idx
         < semantic_model_idx
         < udf_idx
     )
@@ -137,6 +140,14 @@ def test_report_help_lists_commands() -> None:
     for name in ("download", "deploy", "compare", "delete"):
         assert name in result.stdout
     assert "report" in result.stdout.lower()
+
+
+def test_paginated_report_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["paginated-report", "--help"])
+    assert result.exit_code == 0
+    for name in ("download", "deploy", "compare", "delete"):
+        assert name in result.stdout
+    assert "paginated" in result.stdout.lower() or ".rdl" in result.stdout.lower()
 
 
 def test_report_independent_on_download_deploy_compare_not_delete() -> None:

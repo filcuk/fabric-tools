@@ -13,6 +13,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_PAGINATED_REPORT,
     KIND_PIPELINE,
     KIND_REPORT,
     KIND_SEMANTIC_MODEL,
@@ -35,6 +36,7 @@ _TOOL_KIND = {
     "udf": KIND_UDF,
     "semantic-model": KIND_SEMANTIC_MODEL,
     "report": KIND_REPORT,
+    "paginated-report": KIND_PAGINATED_REPORT,
 }
 
 
@@ -44,6 +46,7 @@ def run_interactive_wizard() -> None:
         run_dataflow_command,
         run_dataflow_gen1_command,
         run_notebook_command,
+        run_paginated_report_command,
         run_pipeline_command,
         run_report_command,
         run_semantic_model_command,
@@ -63,6 +66,7 @@ def run_interactive_wizard() -> None:
             "udf",
             "semantic-model",
             "report",
+            "paginated-report",
         ],
         default="notebook",
     )
@@ -101,6 +105,9 @@ def run_interactive_wizard() -> None:
 
     if tool == "dataflow-gen1":
         file_prompt = "Enter file (model.json)"
+        origin_label = "Power BI origin (workspace:artifact)"
+    elif tool == "paginated-report":
+        file_prompt = "Enter file (.rdl)"
         origin_label = "Power BI origin (workspace:artifact)"
     elif tool == "dataflow":
         file_prompt = "Enter folder (*.Dataflow)"
@@ -347,6 +354,17 @@ def run_interactive_wizard() -> None:
             dry_run=dry_run,
             names=resolved_names,
             independent=independent,
+            on_success=on_success,
+        )
+    elif tool == "paginated-report":
+        run_paginated_report_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
             on_success=on_success,
         )
     else:

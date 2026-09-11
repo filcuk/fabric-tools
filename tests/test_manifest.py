@@ -18,6 +18,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_PAGINATED_REPORT,
     KIND_PIPELINE,
     KIND_REPORT,
     KIND_SEMANTIC_MODEL,
@@ -181,6 +182,25 @@ def test_dataflow_gen1_kind_round_trip(tmp_path: Path) -> None:
     )
     assert names == ["Sales"]
     assert work_items[0].file == model.resolve()
+
+
+def test_paginated_report_kind_round_trip(tmp_path: Path) -> None:
+    rdl = tmp_path / "Sales.rdl"
+    rdl.write_text("<Report />", encoding="utf-8")
+    items = [WorkItem(Target(WS, ITEM), rdl)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_PAGINATED_REPORT,
+        display_names=["Sales"],
+    )
+    path = save_manifest(tmp_path / "pr", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_PAGINATED_REPORT
+    work_items, names = work_items_from_manifest(
+        loaded, expected_kind=KIND_PAGINATED_REPORT
+    )
+    assert names == ["Sales"]
+    assert work_items[0].file == rdl.resolve()
 
 
 def test_dataflow_kind_round_trip(tmp_path: Path) -> None:

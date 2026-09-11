@@ -255,7 +255,7 @@ def _deploy_overwrite(
     assert item.target is not None and item.target.item_id is not None
     target = item.target
 
-    if display_name is not None:
+    if display_name:
         return OpResult(
             False,
             "paginated-report overwrite uses the existing remote report name; "

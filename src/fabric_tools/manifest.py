@@ -20,6 +20,7 @@ KIND_DATAFLOW_GEN1 = "dataflow-gen1"
 KIND_PIPELINE = "pipeline"
 KIND_UDF = "udf"
 KIND_REPORT = "report"
+KIND_PAGINATED_REPORT = "paginated-report"
 KIND_SEMANTIC_MODEL = "semantic-model"
 
 

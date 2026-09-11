@@ -9,6 +9,7 @@ from fabric_tools.confirm import (
     resolve_dataflow_download_files,
     resolve_dataflow_gen1_download_files,
     resolve_notebook_download_files,
+    resolve_paginated_report_download_files,
     resolve_pipeline_download_files,
 )
 from fabric_tools.parsing import Target, WorkItem
@@ -44,6 +45,15 @@ class FakePowerBiClient:
         return {"objectId": dataflow_id, "name": "My Dataflow"}
 
 
+class FakePaginatedReportPowerBiClient:
+    def get_report(self, group_id: str, report_id: str) -> dict[str, Any]:
+        return {
+            "id": report_id,
+            "name": "My Paginated",
+            "reportType": "PaginatedReport",
+        }
+
+
 def test_resolve_notebook_download_files_defaults() -> None:
     items = [
         WorkItem(Target(WS, A), None),
@@ -70,6 +80,15 @@ def test_resolve_dataflow_gen1_download_files_defaults() -> None:
         items,
     )
     assert resolved[0].file == Path("My Dataflow.json")
+
+
+def test_resolve_paginated_report_download_files_defaults() -> None:
+    items = [WorkItem(Target(WS, A), None)]
+    resolved = resolve_paginated_report_download_files(
+        FakePaginatedReportPowerBiClient(),  # type: ignore[arg-type]
+        items,
+    )
+    assert resolved[0].file == Path("My Paginated.rdl")
 
 
 def test_resolve_dataflow_download_files_defaults() -> None:

@@ -95,6 +95,31 @@ def dataflow_gen1_display_name(client: PowerBiClient, target: Target) -> str:
     return target.item_id
 
 
+def resolve_powerbi_paginated_report_name(client: PowerBiClient, target: Target) -> str:
+    if target.item_id is None:
+        return "(new paginated-report)"
+    try:
+        data = client.get_report(target.workspace_id, target.item_id)
+    except PowerBiApiError as exc:
+        return f"{target.item_id} (unavailable: {exc})"
+    name = data.get("name") or target.item_id
+    return f"{name} ({target.item_id})"
+
+
+def paginated_report_display_name(client: PowerBiClient, target: Target) -> str:
+    """Return Power BI paginated report name for a target (fallback: id)."""
+    if target.item_id is None:
+        return "PaginatedReport"
+    try:
+        data = client.get_report(target.workspace_id, target.item_id)
+    except PowerBiApiError:
+        return target.item_id
+    name = data.get("name") or data.get("displayName")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return target.item_id
+
+
 def dataflow_display_name(client: FabricClient, target: Target) -> str:
     """Return Fabric item display name for a Dataflow Gen2 target (fallback: id)."""
     if target.item_id is None:
@@ -151,6 +176,30 @@ def resolve_dataflow_gen1_download_files(
             for item in items
         ]
         paths = default_download_paths(names, extension=".json")
+    return [
+        WorkItem(item.target, path, origin=item.origin)
+        for item, path in zip(items, paths, strict=True)
+    ]
+
+
+def resolve_paginated_report_download_files(
+    client: PowerBiClient,
+    items: list[WorkItem],
+) -> list[WorkItem]:
+    """Fill missing download destinations from remote report names (``.rdl``)."""
+    if not items or all(item.file is not None for item in items):
+        return items
+    if any(item.file is not None for item in items):
+        raise ValueError("download work items must all omit --file or all provide it")
+
+    with busy("Resolving download paths..."):
+        names = [
+            paginated_report_display_name(client, item.target)
+            if item.target is not None
+            else "PaginatedReport"
+            for item in items
+        ]
+        paths = default_download_paths(names, extension=".rdl")
     return [
         WorkItem(item.target, path, origin=item.origin)
         for item, path in zip(items, paths, strict=True)
@@ -231,6 +280,34 @@ def confirm_download_overwrites_dataflow_gen1(
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_powerbi_dataflow_name(client, item.target)
+            workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
+            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
+def confirm_download_overwrites_paginated_report(
+    client: PowerBiClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm before overwriting existing local ``.rdl`` paths."""
+    if silent:
+        return
+    existing = [
+        item
+        for item in items
+        if item.target is not None and item.file is not None and _path_exists(item.file)
+    ]
+    if not existing:
+        return
+
+    lines = ["About to overwrite local path(s):"]
+    with busy("Resolving targets..."):
+        for item in existing:
+            assert item.target is not None and item.file is not None
+            remote = resolve_powerbi_paginated_report_name(client, item.target)
             workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
             lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
     lines.append("Are you sure?")
@@ -355,6 +432,63 @@ def confirm_deploy_create_dataflow_gen1(
     confirm_or_abort("\n".join(lines), silent=False)
 
 
+def confirm_deploy_actions_paginated_report(
+    client: PowerBiClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+    display_names: list[str] | None = None,
+) -> None:
+    """Confirm create or remote overwrite before paginated-report deploy."""
+    from fabric_tools.paginated_report.definition import display_name_from_path
+
+    if silent or not items:
+        return
+
+    first = items[0].target
+    if first is None:
+        return
+
+    if first.is_create:
+        lines = ["About to create paginated-report item(s):"]
+        with busy("Resolving targets..."):
+            for index, item in enumerate(items):
+                assert item.target is not None
+                workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
+                name: str | None = None
+                if (
+                    display_names
+                    and index < len(display_names)
+                    and display_names[index]
+                ):
+                    name = display_names[index]
+                if not name:
+                    if item.file is not None:
+                        name = display_name_from_path(item.file)
+                    elif item.origin is not None:
+                        name = resolve_powerbi_paginated_report_name(
+                            client, item.origin
+                        )
+                    else:
+                        name = "(unnamed)"
+                source = _source_phrase_paginated_report(client, item)
+                lines.append(f"  - '{name}' in {workspace}{source}")
+        lines.append("Are you sure?")
+        confirm_or_abort("\n".join(lines), silent=False)
+        return
+
+    lines = ["About to overwrite remote paginated-report item(s):"]
+    with busy("Resolving targets..."):
+        for item in items:
+            assert item.target is not None
+            workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
+            remote = resolve_powerbi_paginated_report_name(client, item.target)
+            source = _source_phrase_paginated_report(client, item, prefix=" with")
+            lines.append(f"  - {remote} in {workspace}{source}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
 def confirm_deploy_actions_dataflow(
     client: FabricClient,
     items: list[WorkItem],
@@ -445,6 +579,27 @@ def confirm_delete_dataflow_gen1(
             assert item.target is not None
             workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
             remote = resolve_powerbi_dataflow_name(client, item.target)
+            lines.append(f"  - {remote} in {workspace}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
+def confirm_delete_paginated_report(
+    client: PowerBiClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm delete of remote paginated-report items."""
+    if silent or not items:
+        return
+
+    lines = ["About to delete remote paginated-report item(s):"]
+    with busy("Resolving targets..."):
+        for item in items:
+            assert item.target is not None
+            workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
+            remote = resolve_powerbi_paginated_report_name(client, item.target)
             lines.append(f"  - {remote} in {workspace}")
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
@@ -1214,6 +1369,21 @@ def _source_phrase_powerbi(
         return f"{prefix} `{item.file}`"
     if item.origin is not None:
         origin_name = resolve_powerbi_dataflow_name(client, item.origin)
+        origin_ws = resolve_powerbi_group_name(client, item.origin.workspace_id)
+        return f"{prefix} origin {origin_name} in {origin_ws}"
+    return ""
+
+
+def _source_phrase_paginated_report(
+    client: PowerBiClient,
+    item: WorkItem,
+    *,
+    prefix: str = " from",
+) -> str:
+    if item.file is not None:
+        return f"{prefix} `{item.file}`"
+    if item.origin is not None:
+        origin_name = resolve_powerbi_paginated_report_name(client, item.origin)
         origin_ws = resolve_powerbi_group_name(client, item.origin.workspace_id)
         return f"{prefix} origin {origin_name} in {origin_ws}"
     return ""
