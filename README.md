@@ -36,6 +36,21 @@ Have you ever wanted to:
 > [!success]
 > Are you working with agents? Use `fabric-tools env` to set `FABRIC_TOOLS_READONLY=1` to block any destructive commands.
 
+## Example workflow
+
+```powershell
+# Find notebooks in project workspaces
+fabric-tools inspect workspace list -f 'projects'
+fabric-tools inspect item list -t <workspaceId> -t Notebook
+
+# Download a notebook from Fabric and save a deployment manifest
+fabric-tools notebook download -s -t <workspaceId>:<notebookId> -f .\etl.ipynb -m etl
+
+# Compare and deploy a local notebook vs the remote Fabric version using the manifest
+fabric-tools notebook compare -m etl
+fabric-tools notebook deploy -m etl
+```
+
 ## Support
 
 | Item|One-way|Two-way|Notes|
@@ -70,34 +85,9 @@ Have you ever wanted to:
 
 [^1]: Dataflow Gen1 don't support overwrite, and credentials must be handled separately.
 
-## Example workflow
-
-```powershell
-# Discover available workspaces
-fabric-tools inspect workspace list
-
-# List items in a workspace
-fabric-tools inspect item list -t <workspaceId>
-
-# Download a notebook from Fabric
-fabric-tools notebook download -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
-
-# Compare a local notebook vs the remote Fabric version
-fabric-tools notebook compare -t <workspaceId>:<notebookId> -f .\etl.ipynb
-
-# Upload a notebook from local file and create a deployment manifest for later re-use
-fabric-tools notebook deploy -s -t <workspaceId> -f .\etl.ipynb -n "ETL" -m etl
-
-# Upload a notebook using an existing manifest
-fabric-tools notebook deploy -s -m etl
-```
-
 ## Authentication
 
 By default, interactive Azure sign-in is used, with Windows attempting silent account login first and falling back to browser or device code if needed.
-
-> [!warning]
-> User Data Function APIs do **not** support service principals.
 
 For automation, set a service principal:
 
@@ -109,6 +99,9 @@ $env:AZURE_CLIENT_SECRET="..."
 # or use the built-in env manager:
 fabric-tools env -h
 ```
+
+> [!warning]
+> User Data Function APIs do **not** support service principals.
 
 ## Troubleshooting
 
