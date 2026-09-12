@@ -13,12 +13,16 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Error / failure | red | Typer `fg=RED` / Rich `"red"` | Exceptions, failed ops, dry-run failures |
 | Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"` | User cancel, notices, soft errors, partial env state |
 | Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare `identical`, enabled/set |
-| Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs (`workspaceId:itemId`), suggested commands, compare section headers |
-| Command option — long (help) | magenta | Typer Rich `STYLE_OPTION` | Long options in `--help` (e.g. `--target`) |
+| Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands, compare headers, **Usage** command path and `COMMAND` placeholder |
+| Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Option/argument placeholders in `--help` (e.g. `<PATH>`, `<DEST>`, `<manifest>`, **Usage** `[ARGS]...`) |
+| Command option — long (help) | magenta | Typer Rich `STYLE_OPTION` | Long options in `--help` (e.g. `--target`); **Usage** `[OPTIONS]` |
 | Command option — alias (help) | bright magenta (`#ff9cf5`) | Typer Rich `STYLE_SWITCH` | Short aliases in `--help` (e.g. `-t`). Truecolor so it stays distinct from magenta when ANSI bright magenta matches magenta. |
-| Muted hint | dim | Typer `dim=True` | Secondary prose before a cyan command hint (not `bright_black`) |
+| Muted hint | dim | Typer `dim=True` / Rich `"dim"` | Secondary prose; root help subtitle; **Usage:** label |
 | Secondary columns / keys | dim | Rich `"dim"` | Inspect list non-name columns; inspect get / setup status keys |
 | Table headers | blue | Rich `"blue"` | Inspect list header row |
+| Root help — Fabric panel | teal (`#8acfb3`) | Typer Rich `STYLE_COMMANDS_PANEL_BORDER` (patched) | Root `--help` Fabric panel title and frame only (`Local` stays dim) |
+| Root help — banner FABRIC | `#1d8e7a` | Rich truecolor | ASCII art ``FABRIC`` in root `--help` |
+| Root help — banner - / TOOLS | teal (`#8acfb3`) | Rich truecolor | ASCII art hyphen gap and ``TOOLS`` in root `--help` |
 | Primary text | default | no colour | Names, values, plain echoes, spinner messages, unified diffs |
 
 ### Aligned key / value and table layout
@@ -49,7 +53,11 @@ Install  C:\Users\...\fabric-tools\app
 
 ### Help theme
 
-At CLI startup, Typer Rich help styles are set so **long options** (`--target`) use magenta (`STYLE_OPTION`) and **short aliases** (`-t`) use bright magenta / `#ff9cf5` (`STYLE_SWITCH`). The option highlighter is also patched so `--long` flags are not mis-classified as short switches (Typer’s default patterns make both look identical).
+At CLI startup, Typer Rich help styles are set so **long options** (`--target`) use magenta (`STYLE_OPTION`), **short aliases** (`-t`) use bright magenta / `#ff9cf5` (`STYLE_SWITCH`), and **metavars** (`<PATH>`, `<DEST>`, `<manifest>`) use bright yellow (`STYLE_METAVAR`). The option highlighter is also patched so `--long` flags are not mis-classified as short switches (Typer’s default patterns make both look identical).
+
+**Usage** lines are highlighted the same way: dim `Usage:` label, cyan command path (`fabric-tools notebook …`) and `COMMAND` placeholder, magenta `[OPTIONS]` / `--flags`, bright yellow argument placeholders (`[ARGS]...`, `<…>`).
+
+On **root** `--help` only, the **Fabric** commands panel title and frame use teal (`#8acfb3`); the **Local** panel keeps the default dim border. The ASCII banner colours ``FABRIC`` as `#1d8e7a` and the hyphen gap plus ``TOOLS`` as `#8acfb3`. The subtitle under the banner is **dim**. Subcommand help is unchanged.
 
 ### Visual swatch
 

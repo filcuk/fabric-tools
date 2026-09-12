@@ -21,6 +21,7 @@ from fabric_tools.colours import (
     STYLE_OK,
     STYLE_WARN,
     apply_help_theme,
+    print_banner,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
@@ -73,13 +74,6 @@ _MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
     "Alone: load targets/files/origins. With a successful run or dry-run: write/update the manifest."
 )
-
-_BANNER = r"""
- _____     _       _         _____         _     
-|   __|___| |_ ___|_|___ ___|_   _|___ ___| |___ 
-|   __| .'| . |  _| |  _|___| | | | . | . | |_ -|
-|__|  |__,|___|_| |_|___|     |_| |___|___|_|___|
-"""
 
 
 def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
@@ -186,11 +180,8 @@ class _BannerGroup(TyperGroup):
         return params
 
     def format_help(self, ctx, formatter) -> None:
-        typer.echo(_BANNER)
-        subtitle = (self.help or "").strip()
-        if subtitle:
-            typer.echo(subtitle)
-            typer.echo()
+        subtitle = (self.help or "").strip() or None
+        print_banner(subtitle=subtitle)
         saved_help = self.help
         self.help = None
         try:
