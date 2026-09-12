@@ -261,8 +261,9 @@ def definition_to_diff_text(
     include_schedules: bool = False,
 ) -> str:
     """Stable multi-file text used for unified diffs of a Fabric definition."""
+    # Load all parts; payloads_to_diff_text applies the compare whitelist.
     return payloads_to_diff_text(
-        part_payloads(definition, include_schedules=include_schedules),
+        part_payloads(definition, include_schedules=True),
         include_schedules=include_schedules,
     )
 
@@ -273,8 +274,9 @@ def folder_to_diff_text(
     include_schedules: bool = False,
 ) -> str:
     """Stable multi-file text used for unified diffs of a local pipeline folder."""
+    # Load all packable parts; payloads_to_diff_text applies the compare whitelist.
     return payloads_to_diff_text(
-        folder_payloads(path, include_schedules=include_schedules),
+        folder_payloads(path, include_schedules=True),
         include_schedules=include_schedules,
     )
 
@@ -286,7 +288,8 @@ def payloads_to_diff_text(
 ) -> str:
     """Render compare-relevant part payloads as a deterministic multi-section text blob.
 
-    Excludes ``.platform`` (logicalId differs across workspaces).
+    Excludes ``.platform`` (logicalId differs across workspaces). Whitelists
+    ``pipeline-content.json`` and optionally ``.schedules``.
     """
     chunks: list[str] = []
     for name in _diff_part_names(include_schedules=include_schedules):
@@ -315,7 +318,8 @@ def _normalize_part_text(name: str, payload: bytes) -> str:
     except UnicodeError as exc:
         raise DefinitionError(f"Invalid UTF-8 in part '{name}': {exc}") from exc
     lower = name.lower()
-    if lower.endswith(".json") or lower in (PLATFORM_PART, SCHEDULES_PART):
+    # .schedules has no .json suffix but is JSON; .platform is excluded from diffs.
+    if lower.endswith(".json") or lower == SCHEDULES_PART:
         try:
             data = json.loads(text)
         except json.JSONDecodeError:

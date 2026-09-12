@@ -12,6 +12,8 @@ from fabric_tools.pipeline.definition import (
     DefinitionError,
     definition_has_platform,
     definition_to_diff_text,
+    definition_with_remote_schedules,
+    definition_without_schedules,
     detect_pipeline_path,
     display_name_from_path,
     folder_to_diff_text,
@@ -246,8 +248,6 @@ def test_unpack_include_schedules(tmp_path: Path) -> None:
 
 
 def test_definition_without_schedules() -> None:
-    from fabric_tools.pipeline.definition import definition_without_schedules
-
     content = json.dumps(_sample_content()).encode("utf-8")
     definition = {
         "parts": [
@@ -269,8 +269,6 @@ def test_definition_without_schedules() -> None:
 
 
 def test_definition_with_remote_schedules() -> None:
-    from fabric_tools.pipeline.definition import definition_with_remote_schedules
-
     content = json.dumps(_sample_content()).encode("utf-8")
     source = {
         "parts": [
@@ -375,13 +373,6 @@ def test_part_payloads_rejects_invalid_base64() -> None:
                 ]
             }
         )
-
-
-def test_normalize_part_text_rejects_non_utf8() -> None:
-    from fabric_tools.pipeline.definition import _normalize_part_text
-
-    with pytest.raises(DefinitionError, match="UTF-8"):
-        _normalize_part_text("pipeline-content.json", b"\xff\xfe not utf-8")
 
 
 def test_definition_to_diff_text_rejects_non_utf8_payload() -> None:
