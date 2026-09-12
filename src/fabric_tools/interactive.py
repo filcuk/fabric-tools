@@ -268,6 +268,19 @@ def run_interactive_wizard() -> None:
         )
         typer.echo(f"  independent: {independent}")
 
+    include_schedules = False
+    if tool == "pipeline" and mode in {
+        CommandMode.DOWNLOAD,
+        CommandMode.DEPLOY,
+        CommandMode.COMPARE,
+    }:
+        include_schedules = _confirm(
+            "Include schedules (.schedules)? "
+            "Default is pipeline-only (overwrite preserves remote schedules).",
+            default=False,
+        )
+        typer.echo(f"  include-schedules: {include_schedules}")
+
     if not _confirm("Proceed?", default=True):
         typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(code=EXIT_USER)
@@ -320,6 +333,7 @@ def run_interactive_wizard() -> None:
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
+            include_schedules=include_schedules,
             on_success=on_success,
         )
     elif tool == "udf":

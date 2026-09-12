@@ -325,7 +325,8 @@ def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter([False, False, True, True])
+    # another target? destination paths? silent? include-schedules? proceed?
+    confirms = iter([False, False, True, False, True])
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -353,7 +354,53 @@ def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DOWNLOAD
     assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"]["include_schedules"] is False
     assert captured["kwargs"]["on_success"] is not None
+
+
+def test_interactive_pipeline_deploy_include_schedules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selects = iter(["pipeline", "deploy", "execute", "file"])
+    texts = iter(
+        [
+            r".\ETL.DataPipeline",
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    # another pair? silent? include-schedules? proceed?
+    confirms = iter([False, False, True, True])
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+    monkeypatch.setattr(
+        "questionary.confirm",
+        lambda *a, **k: _Ask(next(confirms)),
+    )
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_pipeline_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DEPLOY
+    assert captured["kwargs"]["include_schedules"] is True
+    assert captured["kwargs"]["file_values"] == [r".\ETL.DataPipeline"]
+    assert captured["kwargs"]["target_values"] == [
+        "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222"
+    ]
 
 
 def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:
