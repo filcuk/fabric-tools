@@ -10,6 +10,7 @@ import typer
 from typer.core import TyperGroup
 
 from fabric_tools import __version__
+from fabric_tools.auth import AuthError
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
@@ -86,6 +87,21 @@ def _enforce_readonly_setup(action: str) -> None:
     except ReadOnlyError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
+
+
+def _fail_auth(exc: AuthError) -> None:
+    """Print a short auth failure and exit (never returns)."""
+    color = typer.colors.YELLOW if exc.canceled else typer.colors.RED
+    typer.secho(str(exc), fg=color, err=True)
+    raise typer.Exit(code=EXIT_USER) from exc
+
+
+def _authenticate_client(client: object) -> None:
+    """Run ``ensure_authenticated`` with a clean CLI exit on ``AuthError``."""
+    try:
+        client.ensure_authenticated()  # type: ignore[attr-defined]
+    except AuthError as exc:
+        _fail_auth(exc)
 
 
 def _install_description_before_usage() -> None:
@@ -2535,7 +2551,7 @@ def run_notebook_command(
             if has_targets or has_origins:
                 with busy("Authenticating..."):
                     client = FabricClient()
-                    client.ensure_authenticated()
+                    _authenticate_client(client)
             with busy("Checking..."):
                 results = run_dry_run(
                     mode,
@@ -2546,6 +2562,8 @@ def run_notebook_command(
                     has_origins=has_origins,
                     cell_indices=cell_indices,
                 )
+        except AuthError as exc:
+            _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001 - surface auth/client failures cleanly
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -2594,7 +2612,7 @@ def run_notebook_command(
 
     with busy("Authenticating..."):
         client = FabricClient()
-        client.ensure_authenticated()
+        _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_notebook_download_files(client, items)
@@ -2699,6 +2717,8 @@ def run_notebook_command(
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
+    except AuthError as exc:
+        _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
@@ -2763,7 +2783,7 @@ def run_dataflow_command(
             if has_targets or has_origins:
                 with busy("Authenticating..."):
                     client = FabricClient()
-                    client.ensure_authenticated()
+                    _authenticate_client(client)
             with busy("Checking..."):
                 results = run_dry_run_dataflow(
                     mode,
@@ -2773,6 +2793,8 @@ def run_dataflow_command(
                     has_files=has_files,
                     has_origins=has_origins,
                 )
+        except AuthError as exc:
+            _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -2821,7 +2843,7 @@ def run_dataflow_command(
 
     with busy("Authenticating..."):
         client = FabricClient()
-        client.ensure_authenticated()
+        _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_dataflow_download_files(client, items)
@@ -2920,6 +2942,8 @@ def run_dataflow_command(
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
+    except AuthError as exc:
+        _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
@@ -3012,7 +3036,7 @@ def run_semantic_model_command(
             if has_targets or has_origins:
                 with busy("Authenticating..."):
                     client = FabricClient()
-                    client.ensure_authenticated()
+                    _authenticate_client(client)
             with busy("Checking..."):
                 results = run_dry_run_semantic_model(
                     mode,
@@ -3022,6 +3046,8 @@ def run_semantic_model_command(
                     has_files=has_files,
                     has_origins=has_origins,
                 )
+        except AuthError as exc:
+            _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -3070,7 +3096,7 @@ def run_semantic_model_command(
 
     with busy("Authenticating..."):
         client = FabricClient()
-        client.ensure_authenticated()
+        _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_semantic_model_download_files(client, items)
@@ -3169,6 +3195,8 @@ def run_semantic_model_command(
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
+    except AuthError as exc:
+        _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
@@ -3252,7 +3280,7 @@ def run_report_command(
             if has_targets or has_origins:
                 with busy("Authenticating..."):
                     client = FabricClient()
-                    client.ensure_authenticated()
+                    _authenticate_client(client)
             with busy("Checking..."):
                 results = run_dry_run_report(
                     mode,
@@ -3262,6 +3290,8 @@ def run_report_command(
                     has_files=has_files,
                     has_origins=has_origins,
                 )
+        except AuthError as exc:
+            _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -3311,7 +3341,7 @@ def run_report_command(
 
     with busy("Authenticating..."):
         client = FabricClient()
-        client.ensure_authenticated()
+        _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_report_download_files(client, items)
@@ -3431,6 +3461,8 @@ def run_report_command(
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
+    except AuthError as exc:
+        _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
@@ -3498,7 +3530,7 @@ def run_dataflow_gen1_command(
             if has_targets or has_origins:
                 with busy("Authenticating..."):
                     client = PowerBiClient()
-                    client.ensure_authenticated()
+                    _authenticate_client(client)
             with busy("Checking..."):
                 results = run_dry_run_dataflow_gen1(
                     mode,
@@ -3508,6 +3540,8 @@ def run_dataflow_gen1_command(
                     has_files=has_files,
                     has_origins=has_origins,
                 )
+        except AuthError as exc:
+            _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -3556,7 +3590,7 @@ def run_dataflow_gen1_command(
 
     with busy("Authenticating..."):
         client = PowerBiClient()
-        client.ensure_authenticated()
+        _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_dataflow_gen1_download_files(client, items)
@@ -3655,6 +3689,8 @@ def run_dataflow_gen1_command(
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
+    except AuthError as exc:
+        _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
@@ -3724,7 +3760,7 @@ def run_paginated_report_command(
             if has_targets or has_origins:
                 with busy("Authenticating..."):
                     client = PowerBiClient()
-                    client.ensure_authenticated()
+                    _authenticate_client(client)
             with busy("Checking..."):
                 results = run_dry_run_paginated_report(
                     mode,
@@ -3734,6 +3770,8 @@ def run_paginated_report_command(
                     has_files=has_files,
                     has_origins=has_origins,
                 )
+        except AuthError as exc:
+            _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -3782,7 +3820,7 @@ def run_paginated_report_command(
 
     with busy("Authenticating..."):
         client = PowerBiClient()
-        client.ensure_authenticated()
+        _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_paginated_report_download_files(client, items)
@@ -3881,6 +3919,8 @@ def run_paginated_report_command(
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
+    except AuthError as exc:
+        _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
@@ -3946,7 +3986,7 @@ def run_pipeline_command(
             if has_targets or has_origins:
                 with busy("Authenticating..."):
                     client = FabricClient()
-                    client.ensure_authenticated()
+                    _authenticate_client(client)
             with busy("Checking..."):
                 results = run_dry_run_pipeline(
                     mode,
@@ -3956,6 +3996,8 @@ def run_pipeline_command(
                     has_files=has_files,
                     has_origins=has_origins,
                 )
+        except AuthError as exc:
+            _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -4004,7 +4046,7 @@ def run_pipeline_command(
 
     with busy("Authenticating..."):
         client = FabricClient()
-        client.ensure_authenticated()
+        _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_pipeline_download_files(client, items)
@@ -4109,6 +4151,8 @@ def run_pipeline_command(
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
+    except AuthError as exc:
+        _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
@@ -4183,7 +4227,7 @@ def run_udf_command(
             if has_targets or has_origins:
                 with busy("Authenticating..."):
                     client = FabricClient()
-                    client.ensure_authenticated()
+                    _authenticate_client(client)
             with busy("Checking..."):
                 results = run_dry_run_udf(
                     mode,
@@ -4193,6 +4237,8 @@ def run_udf_command(
                     has_files=has_files,
                     has_origins=has_origins,
                 )
+        except AuthError as exc:
+            _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -4241,7 +4287,7 @@ def run_udf_command(
 
     with busy("Authenticating..."):
         client = FabricClient()
-        client.ensure_authenticated()
+        _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_udf_download_files(client, items)
@@ -4340,6 +4386,8 @@ def run_udf_command(
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
+    except AuthError as exc:
+        _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc

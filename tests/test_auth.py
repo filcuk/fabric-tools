@@ -136,14 +136,18 @@ def test_timed_credential_returns_token() -> None:
 
 
 def test_timed_credential_propagates_error() -> None:
+    from azure.identity import CredentialUnavailableError
+
     inner = MagicMock()
-    inner.get_token.side_effect = ClientAuthenticationError("nope")
+    inner.get_token.side_effect = CredentialUnavailableError(message="nope")
     wrapped = auth._TimedCredential(inner, timeout=1.0, label="test")
-    with pytest.raises(ClientAuthenticationError, match="nope"):
+    with pytest.raises(CredentialUnavailableError, match="nope"):
         wrapped.get_token("scope")
 
 
 def test_timed_credential_times_out() -> None:
+    from azure.identity import CredentialUnavailableError
+
     inner = MagicMock()
 
     def hang(*_args, **_kwargs):
@@ -152,9 +156,60 @@ def test_timed_credential_times_out() -> None:
     inner.get_token.side_effect = hang
     wrapped = auth._TimedCredential(inner, timeout=0.05, label="Windows sign-in prompt")
     with pytest.raises(
-        ClientAuthenticationError, match="trying another sign-in method"
+        CredentialUnavailableError, match="trying another sign-in method"
     ):
         wrapped.get_token("scope")
+
+
+def test_chain_continue_converts_hard_failures() -> None:
+    from azure.identity import CredentialUnavailableError
+
+    inner = MagicMock()
+    inner.get_token.side_effect = ClientAuthenticationError(
+        "User canceled the flow. Status: Response_Status.Status_UserCanceled"
+    )
+    wrapped = auth._ChainContinueCredential(inner)
+    with pytest.raises(CredentialUnavailableError, match="User canceled"):
+        wrapped.get_token("scope")
+
+
+def test_chain_continue_passes_unavailable() -> None:
+    from azure.identity import CredentialUnavailableError
+
+    inner = MagicMock()
+    inner.get_token.side_effect = CredentialUnavailableError(message="missing env")
+    wrapped = auth._ChainContinueCredential(inner)
+    with pytest.raises(CredentialUnavailableError, match="missing env"):
+        wrapped.get_token("scope")
+
+
+def test_auth_error_from_user_cancel() -> None:
+    err = auth.auth_error_from_exception(
+        ClientAuthenticationError(
+            "ChainedTokenCredential failed...\n"
+            "_PersistingAuthRecordCredential: User canceled the flow. "
+            "Status: Response_Status.Status_UserCanceled"
+        )
+    )
+    assert err.canceled is True
+    assert str(err) == "Sign-in was canceled."
+
+
+def test_auth_error_from_generic_failure() -> None:
+    err = auth.auth_error_from_exception(
+        ClientAuthenticationError("ChainedTokenCredential failed to retrieve a token")
+    )
+    assert err.canceled is False
+    assert "Authentication failed" in str(err)
+
+
+def test_get_access_token_raises_auth_error() -> None:
+    cred = MagicMock()
+    cred.get_token.side_effect = ClientAuthenticationError(
+        "User canceled the flow. Status_UserCanceled"
+    )
+    with pytest.raises(auth.AuthError, match="Sign-in was canceled"):
+        auth.get_access_token(cred)
 
 
 def test_broker_interactive_unreliable_in_vscode(monkeypatch) -> None:
@@ -189,12 +244,15 @@ def test_create_credential_skips_interactive_broker_in_ide(monkeypatch) -> None:
     )
     cred = auth.create_credential()
     assert isinstance(cred, ChainedTokenCredential)
-    timed = [
-        c._inner
-        for c in cred.credentials
-        if isinstance(c, auth._AnnouncingCredential)
-        and isinstance(c._inner, auth._TimedCredential)
-    ]
+    timed = []
+    for c in cred.credentials:
+        if not isinstance(c, auth._AnnouncingCredential):
+            continue
+        inner = c._inner
+        if isinstance(inner, auth._ChainContinueCredential):
+            inner = inner._inner
+        if isinstance(inner, auth._TimedCredential):
+            timed.append(inner)
     assert len(timed) == 1
     assert timed[0]._timeout == auth._SILENT_BROKER_TIMEOUT_SECONDS
 
@@ -208,12 +266,15 @@ def test_create_credential_includes_timed_interactive_broker(monkeypatch) -> Non
         lambda *, interactive=True: MagicMock(),
     )
     cred = auth.create_credential()
-    timeouts = [
-        c._inner._timeout
-        for c in cred.credentials
-        if isinstance(c, auth._AnnouncingCredential)
-        and isinstance(c._inner, auth._TimedCredential)
-    ]
+    timeouts = []
+    for c in cred.credentials:
+        if not isinstance(c, auth._AnnouncingCredential):
+            continue
+        inner = c._inner
+        if isinstance(inner, auth._ChainContinueCredential):
+            inner = inner._inner
+        if isinstance(inner, auth._TimedCredential):
+            timeouts.append(inner._timeout)
     assert timeouts == [
         auth._SILENT_BROKER_TIMEOUT_SECONDS,
         auth._INTERACTIVE_BROKER_TIMEOUT_SECONDS,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
@@ -23,6 +24,24 @@ _SILENT_BROKER_TIMEOUT_SECONDS = 10.0
 _INTERACTIVE_BROKER_TIMEOUT_SECONDS = 45.0
 
 TokenProvider = Callable[[], str]
+
+_AZURE_IDENTITY_LOG = logging.getLogger("azure.identity")
+_CANCEL_MARKERS = (
+    "user canceled",
+    "user cancelled",
+    "usercanceled",
+    "status_usercanceled",
+    "authentication_canceled",
+    "auth_canceled",
+)
+
+
+class AuthError(RuntimeError):
+    """User-facing authentication failure (short message for the CLI)."""
+
+    def __init__(self, message: str, *, canceled: bool = False) -> None:
+        super().__init__(message)
+        self.canceled = canceled
 
 
 def _auth_data_dir() -> Path:
@@ -110,6 +129,35 @@ def _close_inner(inner: object) -> None:
         close()
 
 
+def _quiet_azure_identity_logging() -> None:
+    """Avoid dumping long ChainedTokenCredential histories to stderr."""
+    _AZURE_IDENTITY_LOG.setLevel(logging.CRITICAL)
+
+
+def _short_error_text(exc: BaseException) -> str:
+    text = str(exc).strip() or exc.__class__.__name__
+    first = text.splitlines()[0].strip()
+    if len(first) > 200:
+        return first[:197] + "..."
+    return first
+
+
+def _looks_canceled(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in _CANCEL_MARKERS)
+
+
+def auth_error_from_exception(exc: BaseException) -> AuthError:
+    """Map an Azure Identity failure to a short CLI message."""
+    text = str(exc)
+    if _looks_canceled(text):
+        return AuthError("Sign-in was canceled.", canceled=True)
+    return AuthError(
+        "Authentication failed. Complete sign-in when prompted, or set "
+        "AZURE_TENANT_ID, AZURE_CLIENT_ID, and AZURE_CLIENT_SECRET."
+    )
+
+
 class _PersistingAuthRecordCredential:
     """Wrap a credential and save ``AuthenticationRecord`` after a successful token."""
 
@@ -150,6 +198,30 @@ class _AnnouncingCredential:
         _close_inner(self._inner)
 
 
+class _ChainContinueCredential:
+    """Turn hard auth failures into ``CredentialUnavailableError`` so the chain continues.
+
+    ``ChainedTokenCredential`` stops on any non-unavailable exception (e.g. user cancel),
+    which would skip browser / device-code fallbacks.
+    """
+
+    def __init__(self, inner: TokenCredential) -> None:
+        self._inner = inner
+
+    def get_token(self, *scopes: str, **kwargs) -> AccessToken:
+        from azure.identity import CredentialUnavailableError
+
+        try:
+            return self._inner.get_token(*scopes, **kwargs)
+        except CredentialUnavailableError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - must not break the credential chain
+            raise CredentialUnavailableError(message=_short_error_text(exc)) from exc
+
+    def close(self) -> None:
+        _close_inner(self._inner)
+
+
 class _TimedCredential:
     """Fail a hanging ``get_token`` so ``ChainedTokenCredential`` can try the next."""
 
@@ -159,7 +231,7 @@ class _TimedCredential:
         self._label = label
 
     def get_token(self, *scopes: str, **kwargs) -> AccessToken:
-        from azure.core.exceptions import ClientAuthenticationError
+        from azure.identity import CredentialUnavailableError
 
         holder: dict[str, Any] = {}
 
@@ -178,9 +250,11 @@ class _TimedCredential:
         thread.join(self._timeout)
         if thread.is_alive():
             seconds = int(self._timeout)
-            raise ClientAuthenticationError(
-                f"{self._label} did not complete within {seconds} seconds; "
-                "trying another sign-in method."
+            raise CredentialUnavailableError(
+                message=(
+                    f"{self._label} did not complete within {seconds} seconds; "
+                    "trying another sign-in method."
+                )
             )
         error = holder.get("error")
         if error is not None:
@@ -234,6 +308,9 @@ def create_credential() -> TokenCredential:
     work account (same broker Teams/Office use) can be reused. An interactive WAM
     prompt is skipped in IDE / non-TTY sessions (where it often never appears) and
     otherwise time-capped so browser and device-code auth can run.
+
+    Hard failures (including user cancel) are converted so the chain continues to the
+    next method instead of aborting early.
     """
     from azure.identity import (
         ChainedTokenCredential,
@@ -242,16 +319,20 @@ def create_credential() -> TokenCredential:
         InteractiveBrowserCredential,
     )
 
+    _quiet_azure_identity_logging()
+
     credentials: list[TokenCredential] = [EnvironmentCredential()]
 
     silent_broker = _broker_credential(interactive=False)
     if silent_broker is not None:
         credentials.append(
             _AnnouncingCredential(
-                _TimedCredential(
-                    silent_broker,
-                    timeout=_SILENT_BROKER_TIMEOUT_SECONDS,
-                    label="Windows account sign-in",
+                _ChainContinueCredential(
+                    _TimedCredential(
+                        silent_broker,
+                        timeout=_SILENT_BROKER_TIMEOUT_SECONDS,
+                        label="Windows account sign-in",
+                    )
                 ),
                 "Authenticating (Windows account)...",
             )
@@ -262,10 +343,12 @@ def create_credential() -> TokenCredential:
         if interactive_broker is not None:
             credentials.append(
                 _AnnouncingCredential(
-                    _TimedCredential(
-                        interactive_broker,
-                        timeout=_INTERACTIVE_BROKER_TIMEOUT_SECONDS,
-                        label="Windows sign-in prompt",
+                    _ChainContinueCredential(
+                        _TimedCredential(
+                            interactive_broker,
+                            timeout=_INTERACTIVE_BROKER_TIMEOUT_SECONDS,
+                            label="Windows sign-in prompt",
+                        )
                     ),
                     "Authenticating (Windows)... check the taskbar or another "
                     "monitor if no dialog appears",
@@ -275,18 +358,22 @@ def create_credential() -> TokenCredential:
     user_kwargs = _user_credential_kwargs()
     credentials.append(
         _AnnouncingCredential(
-            _PersistingAuthRecordCredential(
-                InteractiveBrowserCredential(**user_kwargs)
+            _ChainContinueCredential(
+                _PersistingAuthRecordCredential(
+                    InteractiveBrowserCredential(**user_kwargs)
+                )
             ),
             "Authenticating (browser)... a sign-in window should open",
         )
     )
     credentials.append(
         _AnnouncingCredential(
-            _PersistingAuthRecordCredential(
-                DeviceCodeCredential(
-                    **user_kwargs,
-                    prompt_callback=_device_code_prompt,
+            _ChainContinueCredential(
+                _PersistingAuthRecordCredential(
+                    DeviceCodeCredential(
+                        **user_kwargs,
+                        prompt_callback=_device_code_prompt,
+                    )
                 )
             ),
             "Authenticating (device code)...",
@@ -301,8 +388,14 @@ def get_access_token(
     scope: str = FABRIC_SCOPE,
 ) -> AccessToken:
     """Acquire an access token for the given API scope (Fabric by default)."""
+    from azure.core.exceptions import ClientAuthenticationError
+
+    _quiet_azure_identity_logging()
     cred = credential or create_credential()
-    return cred.get_token(scope)
+    try:
+        return cred.get_token(scope)
+    except ClientAuthenticationError as exc:
+        raise auth_error_from_exception(exc) from None
 
 
 def token_provider(
