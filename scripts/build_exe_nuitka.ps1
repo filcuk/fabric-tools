@@ -3,6 +3,7 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\build_exe_nuitka.ps1
 #   powershell -ExecutionPolicy Bypass -File .\scripts\build_exe_nuitka.ps1 -StandaloneOnly
 #
+# Prefers Python 3.12 when available (MinGW works; 3.13+ requires MSVC).
 # Outputs under dist\nuitka\:
 #   fabric-tools.dist\fabric-tools.exe  (standalone — fast layout / install source)
 #   fabric-tools.exe                    (onefile — portable download)
@@ -19,9 +20,18 @@ Set-Location $RepoRoot
 
 $Python = "python"
 $PythonArgs = @()
+# Prefer 3.12 for Nuitka: --mingw64 is rejected on 3.13+.
 if (Get-Command py -ErrorAction SilentlyContinue) {
     $Python = "py"
-    $PythonArgs = @("-3")
+    $Py312 = & py -3.12 -c "import sys; print(sys.version)" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $Py312) {
+        $PythonArgs = @("-3.12")
+        Write-Host "Using Python 3.12 for Nuitka (MinGW-compatible)."
+    }
+    else {
+        $PythonArgs = @("-3")
+        Write-Host "Using default Python 3.x for Nuitka (3.13+ needs MSVC)."
+    }
 }
 
 Write-Host "Installing project with build extras (includes Nuitka)..."
@@ -61,11 +71,16 @@ print('\n'.join(nuitka_command(Path(r'$RepoRoot'), mode='$Mode', output_dir=Path
 
 Invoke-NuitkaBuild -Mode "standalone"
 
-$StandaloneDir = Join-Path $OutputDir "fabric-tools.dist"
-$StandaloneExe = Join-Path $StandaloneDir "fabric-tools.exe"
-if (-not (Test-Path $StandaloneExe)) {
-    throw "Expected standalone output not found: $StandaloneExe"
+# Prefer --output-folder-name=fabric-tools; fall back to entry-script stem (older Nuitka).
+$StandaloneCandidates = @(
+    (Join-Path $OutputDir "fabric-tools.dist\fabric-tools.exe"),
+    (Join-Path $OutputDir "nuitka_entry.dist\fabric-tools.exe")
+)
+$StandaloneExe = $StandaloneCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $StandaloneExe) {
+    throw "Expected standalone output not found under $OutputDir (tried fabric-tools.dist and nuitka_entry.dist)"
 }
+$StandaloneDir = Split-Path -Parent $StandaloneExe
 
 if (-not $SkipSmoke) {
     Write-Host "Smoke-testing standalone --help..."

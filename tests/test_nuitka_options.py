@@ -14,9 +14,11 @@ if str(_PACKAGING) not in sys.path:
 
 from nuitka_options import (  # noqa: E402
     EXE_NAME,
+    compiler_args,
     entry_script,
     nuitka_command,
     shared_nuitka_args,
+    windows_file_version,
 )
 
 
@@ -29,18 +31,38 @@ def test_entry_script_exists(project_root: Path) -> None:
     assert entry_script(project_root).is_file()
 
 
+def test_compiler_args_by_python_version() -> None:
+    assert compiler_args(version_info=(3, 12)) == ["--mingw64"]
+    assert compiler_args(version_info=(3, 13)) == ["--msvc=latest"]
+    assert compiler_args(version_info=(3, 14)) == ["--msvc=latest"]
+
+
+def test_windows_file_version_normalization() -> None:
+    assert windows_file_version("0.3.0") == "0.3.0.0"
+    assert windows_file_version("1.2.3.4") == "1.2.3.4"
+    assert windows_file_version("0.3.0-dev") == "0.3.0.0"
+
+
 def test_shared_nuitka_args_include_core_flags(project_root: Path) -> None:
-    args = shared_nuitka_args(project_root)
+    args = shared_nuitka_args(project_root, version_info=(3, 12))
     assert f"--output-filename={EXE_NAME}" in args
     assert "--mingw64" in args
+    assert "--msvc=latest" not in args
     assert "--assume-yes-for-downloads" in args
+    assert "--file-version=0.3.0.0" in args
+    assert "--product-version=0.3.0.0" in args
     assert "--include-package=fabric_tools" in args
+    assert "--output-folder-name=fabric-tools" in args
     assert "--include-package=azure.identity" in args
     assert "--include-package-data=certifi" in args
     assert "--nofollow-import-to=*.tests" in args
     icon = project_root / "res" / "app.ico"
     if icon.is_file():
         assert f"--windows-icon-from-ico={icon}" in args
+
+    msvc_args = shared_nuitka_args(project_root, version_info=(3, 14))
+    assert "--msvc=latest" in msvc_args
+    assert "--mingw64" not in msvc_args
 
 
 def test_nuitka_command_standalone_and_onefile(
