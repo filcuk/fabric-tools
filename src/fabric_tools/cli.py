@@ -147,6 +147,7 @@ class _BannerGroup(TyperGroup):
         "setup",
         "manifest",
         "env",
+        "inspect",
         "dataflow-gen1",
         "dataflow",
         "notebook",
@@ -260,6 +261,28 @@ udf_app = typer.Typer(
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(udf_app, name="udf", rich_help_panel="Fabric")
+
+inspect_app = typer.Typer(
+    name="inspect",
+    help="List and inspect Fabric workspaces and items.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+inspect_workspace_app = typer.Typer(
+    name="workspace",
+    help="List or get Fabric workspaces.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+inspect_item_app = typer.Typer(
+    name="item",
+    help="List or get Fabric items in a workspace.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+inspect_app.add_typer(inspect_workspace_app, name="workspace")
+inspect_app.add_typer(inspect_item_app, name="item")
+app.add_typer(inspect_app, name="inspect", rich_help_panel="Fabric")
 
 setup_app = typer.Typer(
     name="setup",
@@ -508,6 +531,176 @@ def manifest_move(
         f"Moved local manifest file {source} to {dest}",
         fg=typer.colors.GREEN,
     )
+    raise typer.Exit(code=EXIT_OK)
+
+
+@inspect_workspace_app.command("list")
+def inspect_workspace_list(
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="Case-insensitive substring filter on workspace display name.",
+    ),
+    item_type: str | None = typer.Option(
+        None,
+        "--item",
+        "-i",
+        help="Workspace type filter (Personal, Workspace, AdminWorkspace).",
+    ),
+) -> None:
+    """List accessible Fabric workspaces (one line each)."""
+    from fabric_tools.client import FabricApiError, FabricClient
+    from fabric_tools.inspect_cmd import InspectError, list_workspace_lines
+    from fabric_tools.status import busy
+
+    try:
+        with busy("Listing workspaces..."):
+            client = FabricClient()
+            _authenticate_client(client)
+            lines = list_workspace_lines(
+                client,
+                name_filter=name_filter,
+                type_filter=item_type,
+            )
+    except InspectError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except FabricApiError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+
+    if not lines:
+        typer.echo("No workspaces matched.")
+    else:
+        for line in lines:
+            typer.echo(line)
+    raise typer.Exit(code=EXIT_OK)
+
+
+@inspect_workspace_app.command("get")
+def inspect_workspace_get(
+    target: str = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="Workspace GUID.",
+    ),
+) -> None:
+    """Show detailed information for one Fabric workspace."""
+    from fabric_tools.client import FabricApiError, FabricClient
+    from fabric_tools.inspect_cmd import (
+        InspectError,
+        get_workspace_detail,
+        parse_workspace_get_target,
+    )
+    from fabric_tools.status import busy
+
+    try:
+        parsed = parse_workspace_get_target(target)
+        with busy("Getting workspace..."):
+            client = FabricClient()
+            _authenticate_client(client)
+            detail = get_workspace_detail(client, parsed)
+    except InspectError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except FabricApiError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+
+    typer.echo(detail)
+    raise typer.Exit(code=EXIT_OK)
+
+
+@inspect_item_app.command("list")
+def inspect_item_list(
+    target: str = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="Workspace GUID whose items to list.",
+    ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="Case-insensitive substring filter on item display name.",
+    ),
+    item_type: str | None = typer.Option(
+        None,
+        "--item",
+        "-i",
+        help="Fabric item type filter (Notebook, Dataflow, Report, …).",
+    ),
+) -> None:
+    """List Fabric items in a workspace (one line each)."""
+    from fabric_tools.client import FabricApiError, FabricClient
+    from fabric_tools.inspect_cmd import (
+        InspectError,
+        list_item_lines,
+        parse_item_list_target,
+    )
+    from fabric_tools.status import busy
+
+    try:
+        parsed = parse_item_list_target(target)
+        with busy("Listing items..."):
+            client = FabricClient()
+            _authenticate_client(client)
+            lines = list_item_lines(
+                client,
+                parsed,
+                name_filter=name_filter,
+                type_filter=item_type,
+            )
+    except InspectError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except FabricApiError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+
+    if not lines:
+        typer.echo("No items matched.")
+    else:
+        for line in lines:
+            typer.echo(line)
+    raise typer.Exit(code=EXIT_OK)
+
+
+@inspect_item_app.command("get")
+def inspect_item_get(
+    target: str = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="Workspace and item as workspaceId:itemId.",
+    ),
+) -> None:
+    """Show detailed information for one Fabric item."""
+    from fabric_tools.client import FabricApiError, FabricClient
+    from fabric_tools.inspect_cmd import (
+        InspectError,
+        get_item_detail,
+        parse_item_get_target,
+    )
+    from fabric_tools.status import busy
+
+    try:
+        parsed = parse_item_get_target(target)
+        with busy("Getting item..."):
+            client = FabricClient()
+            _authenticate_client(client)
+            detail = get_item_detail(client, parsed)
+    except InspectError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except FabricApiError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+
+    typer.echo(detail)
     raise typer.Exit(code=EXIT_OK)
 
 
