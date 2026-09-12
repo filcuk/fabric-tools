@@ -236,8 +236,12 @@ fabric-tools setup update -s
 
 ## Authentication
 
-Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
-broker, then falls back to browser or device-code auth.
+Interactive Azure sign-in by default. On Windows, Fabric Tools first tries a silent OS
+account broker (same work account Teams/Office use). An interactive Windows sign-in
+prompt is skipped in IDE / non-TTY terminals (where it often never appears) and otherwise
+limited to 45 seconds so the CLI can fall through to browser, then device-code auth.
+While waiting, the status line names the current method — check the taskbar if a Windows
+dialog is hidden.
 
 Notebooks, Dataflow Gen2, DataPipeline, User Data Functions, semantic models, and reports
 (folders) use the Fabric API token. Dataflow Gen1, paginated reports (`.rdl`), and `.pbix`
@@ -256,6 +260,10 @@ $env:AZURE_CLIENT_SECRET="..."
 ```
 
 ### Troubleshooting
+
+If `Authenticating...` never finishes in Cursor / VS Code, the Windows account prompt is
+probably not visible. The CLI should move on to browser sign-in after a short wait; you
+can also run the same command in Windows Terminal. To drop a bad cached login:
 
 ```powershell
 # Remove bad cached auth record

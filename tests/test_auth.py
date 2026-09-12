@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from azure.core.credentials import AccessToken
+from azure.core.exceptions import ClientAuthenticationError
 from azure.identity import AuthenticationRecord, ChainedTokenCredential
 
 from fabric_tools import auth
@@ -83,12 +86,13 @@ def test_token_provider_defaults_to_fabric_scope() -> None:
 
 def test_create_credential_chain_includes_environment(monkeypatch) -> None:
     monkeypatch.setattr(auth, "load_authentication_record", lambda: None)
-    monkeypatch.setattr(auth, "_broker_credential", lambda: None)
+    monkeypatch.setattr(auth, "_broker_credential", lambda *, interactive=True: None)
     cred = auth.create_credential()
     assert isinstance(cred, ChainedTokenCredential)
 
 
 def test_broker_credential_when_available(monkeypatch) -> None:
+    monkeypatch.setattr(auth.os, "name", "nt")
     monkeypatch.setattr(auth, "load_authentication_record", lambda: None)
     mock_cred = MagicMock()
     mock_cls = MagicMock(return_value=mock_cred)
@@ -101,5 +105,134 @@ def test_broker_credential_when_available(monkeypatch) -> None:
     mock_cls.assert_called_once()
     kwargs = mock_cls.call_args.kwargs
     assert kwargs["use_default_broker_account"] is True
+    assert "disable_automatic_authentication" not in kwargs
     assert "cache_persistence_options" in kwargs
     assert "parent_window_handle" in kwargs
+
+
+def test_broker_credential_silent_disables_interactive(monkeypatch) -> None:
+    monkeypatch.setattr(auth.os, "name", "nt")
+    monkeypatch.setattr(auth, "load_authentication_record", lambda: None)
+    mock_cls = MagicMock(return_value=MagicMock())
+    with patch(
+        "azure.identity.broker.InteractiveBrowserBrokerCredential",
+        mock_cls,
+    ):
+        result = auth._broker_credential(interactive=False)
+    assert isinstance(result, auth._PersistingAuthRecordCredential)
+    assert mock_cls.call_args.kwargs["disable_automatic_authentication"] is True
+
+
+def test_broker_credential_skipped_off_windows(monkeypatch) -> None:
+    monkeypatch.setattr(auth.os, "name", "posix")
+    assert auth._broker_credential() is None
+
+
+def test_timed_credential_returns_token() -> None:
+    inner = MagicMock()
+    inner.get_token.return_value = AccessToken("tok", 9999999999)
+    wrapped = auth._TimedCredential(inner, timeout=1.0, label="test")
+    assert wrapped.get_token("scope").token == "tok"
+
+
+def test_timed_credential_propagates_error() -> None:
+    inner = MagicMock()
+    inner.get_token.side_effect = ClientAuthenticationError("nope")
+    wrapped = auth._TimedCredential(inner, timeout=1.0, label="test")
+    with pytest.raises(ClientAuthenticationError, match="nope"):
+        wrapped.get_token("scope")
+
+
+def test_timed_credential_times_out() -> None:
+    inner = MagicMock()
+
+    def hang(*_args, **_kwargs):
+        time.sleep(5)
+
+    inner.get_token.side_effect = hang
+    wrapped = auth._TimedCredential(inner, timeout=0.05, label="Windows sign-in prompt")
+    with pytest.raises(
+        ClientAuthenticationError, match="trying another sign-in method"
+    ):
+        wrapped.get_token("scope")
+
+
+def test_broker_interactive_unreliable_in_vscode(monkeypatch) -> None:
+    monkeypatch.setenv("TERM_PROGRAM", "vscode")
+    monkeypatch.delenv("VSCODE_INJECTION", raising=False)
+    monkeypatch.setattr(auth, "_stderr_is_tty", lambda: True)
+    assert auth._broker_interactive_unreliable() is True
+
+
+def test_broker_interactive_unreliable_non_tty(monkeypatch) -> None:
+    monkeypatch.delenv("TERM_PROGRAM", raising=False)
+    monkeypatch.delenv("VSCODE_INJECTION", raising=False)
+    monkeypatch.setattr(auth, "_stderr_is_tty", lambda: False)
+    assert auth._broker_interactive_unreliable() is True
+
+
+def test_broker_interactive_ok_on_console(monkeypatch) -> None:
+    monkeypatch.delenv("TERM_PROGRAM", raising=False)
+    monkeypatch.delenv("VSCODE_INJECTION", raising=False)
+    monkeypatch.setattr(auth, "_stderr_is_tty", lambda: True)
+    assert auth._broker_interactive_unreliable() is False
+
+
+def test_create_credential_skips_interactive_broker_in_ide(monkeypatch) -> None:
+    monkeypatch.setattr(auth, "load_authentication_record", lambda: None)
+    monkeypatch.setattr(auth, "_broker_interactive_unreliable", lambda: True)
+    silent = MagicMock()
+    monkeypatch.setattr(
+        auth,
+        "_broker_credential",
+        lambda *, interactive=True: silent if not interactive else MagicMock(),
+    )
+    cred = auth.create_credential()
+    assert isinstance(cred, ChainedTokenCredential)
+    timed = [
+        c._inner
+        for c in cred.credentials
+        if isinstance(c, auth._AnnouncingCredential)
+        and isinstance(c._inner, auth._TimedCredential)
+    ]
+    assert len(timed) == 1
+    assert timed[0]._timeout == auth._SILENT_BROKER_TIMEOUT_SECONDS
+
+
+def test_create_credential_includes_timed_interactive_broker(monkeypatch) -> None:
+    monkeypatch.setattr(auth, "load_authentication_record", lambda: None)
+    monkeypatch.setattr(auth, "_broker_interactive_unreliable", lambda: False)
+    monkeypatch.setattr(
+        auth,
+        "_broker_credential",
+        lambda *, interactive=True: MagicMock(),
+    )
+    cred = auth.create_credential()
+    timeouts = [
+        c._inner._timeout
+        for c in cred.credentials
+        if isinstance(c, auth._AnnouncingCredential)
+        and isinstance(c._inner, auth._TimedCredential)
+    ]
+    assert timeouts == [
+        auth._SILENT_BROKER_TIMEOUT_SECONDS,
+        auth._INTERACTIVE_BROKER_TIMEOUT_SECONDS,
+    ]
+
+
+def test_announcing_credential_updates_status(monkeypatch) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(auth, "_announce", messages.append)
+    inner = MagicMock()
+    inner.get_token.return_value = AccessToken("tok", 9999999999)
+    wrapped = auth._AnnouncingCredential(inner, "Authenticating (browser)...")
+    assert wrapped.get_token("scope").token == "tok"
+    assert messages == ["Authenticating (browser)..."]
+
+
+def test_device_code_prompt_announces_code(monkeypatch) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(auth, "_announce", messages.append)
+    auth._device_code_prompt("https://microsoft.com/devicelogin", "ABCD1234", None)
+    assert "ABCD1234" in messages[0]
+    assert "https://microsoft.com/devicelogin" in messages[0]
