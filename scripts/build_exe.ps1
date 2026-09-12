@@ -24,6 +24,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "pip install failed with exit code $LASTEXITCODE"
 }
 
+$BuildTimer = [System.Diagnostics.Stopwatch]::StartNew()
+
 Write-Host "Building onedir staging (bootloader + _internal)..."
 & $Python @PythonArgs -m PyInstaller --noconfirm --clean "packaging\fabric-tools.spec"
 if ($LASTEXITCODE -ne 0) {
@@ -62,6 +64,9 @@ $StaleInternal = Join-Path $DistDir "_internal"
 if (Test-Path $StaleInternal) {
     Remove-Item -LiteralPath $StaleInternal -Recurse -Force
 }
+
+$BuildTimer.Stop()
+Write-Host ("Build duration: {0:hh\:mm\:ss\.fff} ({1:N1}s)" -f $BuildTimer.Elapsed, $BuildTimer.Elapsed.TotalSeconds)
 
 Write-Host "Smoke-testing onefile --help..."
 & $ExePath --help

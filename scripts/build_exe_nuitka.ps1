@@ -69,6 +69,8 @@ print('\n'.join(nuitka_command(Path(r'$RepoRoot'), mode='$Mode', output_dir=Path
     }
 }
 
+$BuildTimer = [System.Diagnostics.Stopwatch]::StartNew()
+
 Invoke-NuitkaBuild -Mode "standalone"
 
 # Prefer --output-folder-name=fabric-tools; fall back to entry-script stem (older Nuitka).
@@ -80,16 +82,8 @@ $StandaloneExe = $StandaloneCandidates | Where-Object { Test-Path $_ } | Select-
 if (-not $StandaloneExe) {
     throw "Expected standalone output not found under $OutputDir (tried fabric-tools.dist and nuitka_entry.dist)"
 }
-$StandaloneDir = Split-Path -Parent $StandaloneExe
 
-if (-not $SkipSmoke) {
-    Write-Host "Smoke-testing standalone --help..."
-    & $StandaloneExe --help
-    if ($LASTEXITCODE -ne 0) {
-        throw "Nuitka standalone --help failed with exit code $LASTEXITCODE"
-    }
-}
-
+$OnefileExe = $null
 if (-not $StandaloneOnly) {
     Invoke-NuitkaBuild -Mode "onefile"
 
@@ -97,8 +91,19 @@ if (-not $StandaloneOnly) {
     if (-not (Test-Path $OnefileExe)) {
         throw "Expected onefile output not found: $OnefileExe"
     }
+}
 
-    if (-not $SkipSmoke) {
+$BuildTimer.Stop()
+Write-Host ("Build duration: {0:hh\:mm\:ss\.fff} ({1:N1}s)" -f $BuildTimer.Elapsed, $BuildTimer.Elapsed.TotalSeconds)
+
+if (-not $SkipSmoke) {
+    Write-Host "Smoke-testing standalone --help..."
+    & $StandaloneExe --help
+    if ($LASTEXITCODE -ne 0) {
+        throw "Nuitka standalone --help failed with exit code $LASTEXITCODE"
+    }
+
+    if ($null -ne $OnefileExe) {
         Write-Host "Smoke-testing onefile --help..."
         & $OnefileExe --help
         if ($LASTEXITCODE -ne 0) {
@@ -110,8 +115,8 @@ if (-not $StandaloneOnly) {
 Write-Host ""
 Write-Host "Nuitka build succeeded."
 Write-Host "  Standalone: $StandaloneExe"
-if (-not $StandaloneOnly) {
-    Write-Host "  Onefile:    $(Join-Path $OutputDir 'fabric-tools.exe')"
+if ($null -ne $OnefileExe) {
+    Write-Host "  Onefile:    $OnefileExe"
 }
 Write-Host "PyInstaller baseline remains: scripts\build_exe.ps1 -> dist\fabric-tools.exe"
 Write-Host "Next: scripts\bench_startup.ps1 (after step 3) to compare cold starts."
