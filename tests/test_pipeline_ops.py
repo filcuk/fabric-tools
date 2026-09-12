@@ -398,3 +398,65 @@ def test_deploy_overwrite_from_origin_preserves_target_schedules() -> None:
     # Origin getDefinition + target preserve getDefinition
     get_calls = [c for c in client.calls if str(c[1]).endswith("/getDefinition")]
     assert len(get_calls) == 2
+
+
+def test_download_missing_remote(tmp_path: Path) -> None:
+    # Non-empty map so FakeClient does not fall back to default PL definition.
+    client = FakeClient(definitions_by_item={ORIGIN: _definition(wait_seconds=1)})
+    dest = tmp_path / "out.DataPipeline"
+    item = WorkItem(Target(WS, PL), dest)
+    result = download_pipeline(client, item)  # type: ignore[arg-type]
+    assert not result.ok
+    assert "download failed" in result.message
+
+
+def test_deploy_source_bad_folder(tmp_path: Path) -> None:
+    client = FakeClient()
+    bad = tmp_path / "not-a-pipeline.json"
+    bad.write_text("{}", encoding="utf-8")
+    item = WorkItem(Target(WS, PL), bad)
+    result = deploy_pipeline(client, item)  # type: ignore[arg-type]
+    assert not result.ok
+    assert "deploy source failed" in result.message
+
+
+def test_deploy_overwrite_preserves_when_target_missing_schedules(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient(
+        definitions_by_item={PL: _definition(wait_seconds=10, with_schedules=False)}
+    )
+    src = _write_local_pipeline(tmp_path / "ETL.DataPipeline", with_schedules=True)
+    item = WorkItem(Target(WS, PL), src)
+    result = deploy_pipeline(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert "preserved remote schedules" not in result.message
+    assert client.last_update_definition is not None
+    paths = {
+        part["path"] for part in client.last_update_definition["definition"]["parts"]
+    }
+    assert ".schedules" not in paths
+
+
+def test_get_pipeline_definition_accepts_bare_parts() -> None:
+    from fabric_tools.pipeline.ops import get_pipeline_definition
+
+    class BarePartsClient(FakeClient):
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict[str, Any] | None = None,
+            json: Any = None,
+            wait: bool = True,
+        ) -> Any:
+            self.calls.append((method, path, params, json))
+            if method == "POST" and path.endswith("/getDefinition"):
+                return _definition(wait_seconds=10)
+            raise AssertionError(f"Unexpected call {method} {path}")
+
+    client = BarePartsClient()
+    definition = get_pipeline_definition(client, WS, PL)  # type: ignore[arg-type]
+    assert "parts" in definition
+    assert any(p["path"] == "pipeline-content.json" for p in definition["parts"])

@@ -221,3 +221,45 @@ def test_compare_include_schedules_identical(tmp_path: Path) -> None:
     assert result.ok
     assert result.identical
     assert result.diff_text == ""
+
+
+def test_compare_missing_local_folder(tmp_path: Path) -> None:
+    client = FakeClient({PL: _definition(wait_seconds=10)})
+    item = WorkItem(Target(WS, PL), tmp_path / "missing.DataPipeline")
+    result = compare_pipeline(client, item)  # type: ignore[arg-type]
+    assert not result.ok
+    assert result.error is not None
+
+
+def test_compare_missing_remote(tmp_path: Path) -> None:
+    folder = _write_folder(tmp_path / "ETL.DataPipeline", wait_seconds=10)
+    client = FakeClient({})
+    item = WorkItem(Target(WS, PL), folder)
+    result = compare_pipeline(client, item)  # type: ignore[arg-type]
+    assert not result.ok
+    assert result.error is not None
+    assert "failed to fetch" in result.error
+
+
+def test_compare_non_utf8_remote_payload(tmp_path: Path) -> None:
+    folder = _write_folder(tmp_path / "ETL.DataPipeline", wait_seconds=10)
+    bad = {
+        "parts": [
+            _part("pipeline-content.json", b"\xff\xfe"),
+        ]
+    }
+    client = FakeClient({PL: bad})
+    item = WorkItem(Target(WS, PL), folder)
+    result = compare_pipeline(client, item)  # type: ignore[arg-type]
+    assert not result.ok
+    assert result.error is not None
+    assert "UTF-8" in result.error
+
+
+def test_compare_requires_target_item() -> None:
+    client = FakeClient({})
+    item = WorkItem(Target(WS), None)
+    result = compare_pipeline(client, item)  # type: ignore[arg-type]
+    assert not result.ok
+    assert result.error is not None
+    assert "workspace:artifact" in result.error

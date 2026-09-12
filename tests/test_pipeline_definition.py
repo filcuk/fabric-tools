@@ -338,3 +338,61 @@ def test_diff_text_include_schedules(tmp_path: Path) -> None:
     assert "=== .schedules ===" in definition_to_diff_text(
         definition, include_schedules=True
     )
+
+
+def test_unpack_rejects_empty_parts() -> None:
+    with pytest.raises(DefinitionError, match="no parts"):
+        unpack_definition({"parts": []}, "unused.DataPipeline")
+
+
+def test_unpack_rejects_wrong_payload_type() -> None:
+    content = json.dumps(_sample_content()).encode("utf-8")
+    with pytest.raises(DefinitionError, match="payloadType"):
+        unpack_definition(
+            {
+                "parts": [
+                    {
+                        "path": "pipeline-content.json",
+                        "payload": base64.b64encode(content).decode("ascii"),
+                        "payloadType": "InlineText",
+                    }
+                ]
+            },
+            "unused.DataPipeline",
+        )
+
+
+def test_part_payloads_rejects_invalid_base64() -> None:
+    with pytest.raises(DefinitionError, match="base64"):
+        part_payloads(
+            {
+                "parts": [
+                    {
+                        "path": "pipeline-content.json",
+                        "payload": "abc",  # incorrect padding
+                        "payloadType": "InlineBase64",
+                    }
+                ]
+            }
+        )
+
+
+def test_normalize_part_text_rejects_non_utf8() -> None:
+    from fabric_tools.pipeline.definition import _normalize_part_text
+
+    with pytest.raises(DefinitionError, match="UTF-8"):
+        _normalize_part_text("pipeline-content.json", b"\xff\xfe not utf-8")
+
+
+def test_definition_to_diff_text_rejects_non_utf8_payload() -> None:
+    definition = {
+        "parts": [
+            {
+                "path": "pipeline-content.json",
+                "payload": base64.b64encode(b"\xff\xfe").decode("ascii"),
+                "payloadType": "InlineBase64",
+            }
+        ]
+    }
+    with pytest.raises(DefinitionError, match="UTF-8"):
+        definition_to_diff_text(definition)

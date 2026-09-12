@@ -62,7 +62,6 @@ def test_root_help_orders_help_and_setup_first() -> None:
         assert name in result.stdout
 
 
-
 def test_setup_help_lists_update() -> None:
     result = CliRunner().invoke(app, ["setup", "--help"])
     assert result.exit_code == 0
@@ -116,6 +115,17 @@ def test_pipeline_help_lists_commands() -> None:
     for name in ("download", "deploy", "compare", "delete"):
         assert name in result.stdout
     assert "DataPipeline" in result.stdout
+
+
+def test_pipeline_include_schedules_on_download_deploy_compare_not_delete() -> None:
+    for cmd in ("download", "deploy", "compare"):
+        result = CliRunner().invoke(app, ["pipeline", cmd, "--help"])
+        assert result.exit_code == 0
+        assert "--include-schedules" in result.stdout
+        assert "-i" in result.stdout
+    delete = CliRunner().invoke(app, ["pipeline", "delete", "--help"])
+    assert delete.exit_code == 0
+    assert "--include-schedules" not in delete.stdout
 
 
 def test_semantic_model_help_lists_commands() -> None:

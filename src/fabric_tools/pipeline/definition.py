@@ -310,7 +310,10 @@ def _diff_part_names(*, include_schedules: bool) -> tuple[str, ...]:
 
 
 def _normalize_part_text(name: str, payload: bytes) -> str:
-    text = payload.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    try:
+        text = payload.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    except UnicodeError as exc:
+        raise DefinitionError(f"Invalid UTF-8 in part '{name}': {exc}") from exc
     lower = name.lower()
     if lower.endswith(".json") or lower in (PLATFORM_PART, SCHEDULES_PART):
         try:
