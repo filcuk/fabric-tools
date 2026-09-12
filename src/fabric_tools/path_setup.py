@@ -96,8 +96,23 @@ def frozen_app_root() -> Path | None:
     if compiled is not None:
         containing = getattr(compiled, "containing_dir", None)
         if containing:
-            return Path(containing)
+            return Path(os.path.expanduser(str(containing))).resolve()
     return frozen_onedir_root()
+
+
+def _has_nuitka_runtime_siblings(directory: Path) -> bool:
+    """True when a Nuitka standalone/extract folder has native runtime files beside the exe."""
+    try:
+        if (directory / "_ctypes.pyd").is_file():
+            return True
+        return any(
+            child.is_file()
+            and child.suffix.lower() == ".dll"
+            and child.name.lower().startswith("python3")
+            for child in directory.iterdir()
+        )
+    except OSError:
+        return False
 
 
 def is_portable_onefile() -> bool:
@@ -109,8 +124,31 @@ def is_portable_onefile() -> bool:
         if root is None:
             return False
         argv0_dir = Path(sys.argv[0]).resolve().parent
-        return argv0_dir != root.resolve()
+        if argv0_dir == root:
+            return False
+        # Onefile: payload extract has runtime DLLs; the bootstrap exe directory does not.
+        return _has_nuitka_runtime_siblings(root) and not _has_nuitka_runtime_siblings(
+            argv0_dir
+        )
     return meipass_dir() is not None and frozen_onedir_root() is None
+
+
+def format_nuitka_orphan_exe_error() -> str | None:
+    """Error when a Nuitka exe was copied out of its ``.dist`` folder without siblings."""
+    if _nuitka_compiled() is None:
+        return None
+    argv0_dir = Path(sys.argv[0]).resolve().parent
+    if _has_nuitka_runtime_siblings(argv0_dir):
+        return None
+    root = frozen_app_root()
+    if root is not None and _has_nuitka_runtime_siblings(root):
+        return None
+    return (
+        "This Nuitka fabric-tools.exe is missing sibling runtime files "
+        "(python3*.dll / _ctypes.pyd). Run it from inside the standalone "
+        ".dist folder (or run setup install from there). "
+        "A lone copied .exe will not work."
+    )
 
 
 def format_install_speed_notice() -> str | None:

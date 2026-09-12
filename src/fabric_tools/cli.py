@@ -5585,4 +5585,12 @@ def run() -> None:
 
     # Unquoted ``-t a, b, c`` is shell-split; rejoin before Typer/Click parses.
     sys.argv = [sys.argv[0], *rejoin_spaced_csv_argv(sys.argv[1:])]
+
+    from fabric_tools.path_setup import format_nuitka_orphan_exe_error
+
+    orphan = format_nuitka_orphan_exe_error()
+    if orphan:
+        typer.secho(orphan, fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER)
+
     app(prog_name="fabric-tools")

@@ -13,6 +13,7 @@ from fabric_tools.path_setup import (
     INTERNAL_DIR_NAME,
     ONEDIR_BOOTLOADER_DIR,
     PathSetupError,
+    _has_nuitka_runtime_siblings,
     _install_from_onefile_meipass,
     _install_frozen_tree,
     _install_nuitka_tree,
@@ -22,6 +23,7 @@ from fabric_tools.path_setup import (
     _split_path,
     _write_deferred_install_helper,
     format_install_speed_notice,
+    format_nuitka_orphan_exe_error,
     frozen_app_root,
     is_frozen,
     is_portable_onefile,
@@ -299,14 +301,12 @@ def test_is_portable_onefile_true_for_nuitka_onefile(
     portable = tmp_path / "download"
     extract.mkdir()
     portable.mkdir()
+    (extract / "python312.dll").write_bytes(b"dll")
+    (extract / "_ctypes.pyd").write_bytes(b"pyd")
     monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
     monkeypatch.setattr(
         "fabric_tools.path_setup._nuitka_compiled",
         lambda: SimpleNamespace(containing_dir=str(extract)),
-    )
-    monkeypatch.setattr(
-        "fabric_tools.path_setup.frozen_app_root",
-        lambda: extract,
     )
     monkeypatch.setattr(
         "sys.argv",
@@ -321,14 +321,11 @@ def test_is_portable_onefile_false_for_nuitka_standalone(
 ) -> None:
     app = tmp_path / "fabric-tools.dist"
     app.mkdir()
+    (app / "python312.dll").write_bytes(b"dll")
     monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
     monkeypatch.setattr(
         "fabric_tools.path_setup._nuitka_compiled",
         lambda: SimpleNamespace(containing_dir=str(app)),
-    )
-    monkeypatch.setattr(
-        "fabric_tools.path_setup.frozen_app_root",
-        lambda: app,
     )
     monkeypatch.setattr(
         "sys.argv",
@@ -336,6 +333,38 @@ def test_is_portable_onefile_false_for_nuitka_standalone(
     )
     assert is_portable_onefile() is False
     assert format_install_speed_notice() is None
+
+
+def test_format_nuitka_orphan_exe_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    orphan_dir = tmp_path / "orphan"
+    orphan_dir.mkdir()
+    (orphan_dir / EXE_NAME).write_bytes(b"exe")
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._nuitka_compiled",
+        lambda: SimpleNamespace(containing_dir=str(orphan_dir)),
+    )
+    monkeypatch.setattr("sys.argv", [str(orphan_dir / EXE_NAME)])
+    err = format_nuitka_orphan_exe_error()
+    assert err is not None
+    assert ".dist" in err
+
+
+def test_format_nuitka_orphan_exe_error_none_when_siblings_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    app = tmp_path / "fabric-tools.dist"
+    app.mkdir()
+    (app / EXE_NAME).write_bytes(b"exe")
+    (app / "python312.dll").write_bytes(b"dll")
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._nuitka_compiled",
+        lambda: SimpleNamespace(containing_dir=str(app)),
+    )
+    monkeypatch.setattr("sys.argv", [str(app / EXE_NAME)])
+    assert format_nuitka_orphan_exe_error() is None
+    assert _has_nuitka_runtime_siblings(app) is True
 
 
 def test_perform_setup_update_requires_frozen(monkeypatch: pytest.MonkeyPatch) -> None:
