@@ -106,6 +106,7 @@ def test_inspect_item_help_lists_flag_synopses() -> None:
 def test_env_help_lists_argument_synopses() -> None:
     result = CliRunner().invoke(app, ["env", "--help"])
     assert result.exit_code == 0
+    assert "list" in result.stdout
     assert "<NAME> <VALUE>" in result.stdout
     assert "<NAME>" in result.stdout
 

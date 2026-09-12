@@ -119,15 +119,24 @@ def test_format_set_confirmation_hides_secret() -> None:
     assert "value hidden" in text
 
 
-def test_cli_env_command(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_env_list(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(READONLY_ENV, "true")
     monkeypatch.delenv("AZURE_CLIENT_SECRET", raising=False)
-    result = CliRunner().invoke(app, ["env"])
+    result = CliRunner().invoke(app, ["env", "list"])
     assert result.exit_code == EXIT_OK
     assert READONLY_ENV in result.stdout
     assert "enabled" in result.stdout
     assert "Effective:" in result.stdout
     assert "read-only=" in result.stdout
+
+
+def test_cli_env_bare_shows_help() -> None:
+    result = CliRunner().invoke(app, ["env"])
+    assert result.exit_code != 0
+    output = result.stdout + (result.stderr or "")
+    assert "list" in output
+    assert "set" in output
+    assert "unset" in output
 
 
 def test_cli_env_set(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -183,8 +192,9 @@ def test_root_help_lists_env() -> None:
     assert "env" in result.stdout
 
 
-def test_env_help_lists_set_unset() -> None:
+def test_env_help_lists_list_set_unset() -> None:
     result = CliRunner().invoke(app, ["env", "--help"])
     assert result.exit_code == 0
+    assert "list" in result.stdout
     assert "set" in result.stdout
     assert "unset" in result.stdout

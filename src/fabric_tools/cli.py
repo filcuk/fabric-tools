@@ -302,9 +302,8 @@ app.add_typer(setup_app, name="setup", rich_help_panel="Local")
 
 env_app = typer.Typer(
     name="env",
-    help="Show or change supported environment variables.",
-    invoke_without_command=True,
-    no_args_is_help=False,
+    help="List or change supported environment variables.",
+    no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(env_app, name="env", rich_help_panel="Local")
@@ -350,11 +349,9 @@ def _start_bg_update_check(ctx: typer.Context) -> None:
     start_background_update_check()
 
 
-@env_app.callback(invoke_without_command=True)
-def env_main(ctx: typer.Context) -> None:
+@env_app.command("list", short_help="Show catalogued variables and current values.")
+def env_list() -> None:
     """Show supported environment variables and their current values."""
-    if ctx.invoked_subcommand is not None:
-        return
     from fabric_tools.env_info import print_env_report
 
     print_env_report()

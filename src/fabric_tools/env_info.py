@@ -38,7 +38,7 @@ class EnvVarStatus:
     kind: EnvKind
 
 
-# Keep in sync with README / AGENTS; used by ``fabric-tools env``.
+# Keep in sync with README / AGENTS; used by ``fabric-tools env list``.
 ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec(
         READONLY_ENV,

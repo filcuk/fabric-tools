@@ -36,7 +36,7 @@ Set `$env:FABRIC_TOOLS_READONLY=1` to refuse deploy, delete, and mutating `setup
 List or change supported environment variables (Windows user environment for set/unset):
 
 ```powershell
-fabric-tools env
+fabric-tools env list
 fabric-tools env set FABRIC_TOOLS_READONLY 1
 fabric-tools env set AZURE_TENANT_ID <guid>
 fabric-tools env unset AZURE_CLIENT_SECRET
