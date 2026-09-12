@@ -328,6 +328,24 @@ manifest_app = typer.Typer(
 )
 app.add_typer(manifest_app, name="manifest", rich_help_panel="Local")
 
+debug_app = typer.Typer(
+    name="debug",
+    help="Internal debug helpers.",
+    no_args_is_help=True,
+    hidden=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(debug_app, name="debug", hidden=True)
+
+
+@debug_app.command("color", help="Print the CLI colour palette swatch.")
+def debug_color_cmd() -> None:
+    """Show each palette colour with its usage role (see DESIGN.md)."""
+    from fabric_tools.colours import print_color_swatch
+
+    print_color_swatch()
+    raise typer.Exit(code=EXIT_OK)
+
 
 def _flush_update_notice(ctx: typer.Context) -> None:
     """Print a background update notice on stderr, if one is ready."""

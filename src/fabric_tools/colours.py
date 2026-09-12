@@ -73,3 +73,19 @@ def apply_help_theme() -> None:
 
     rich_utils.STYLE_OPTION = HELP_STYLE_OPTION
     rich_utils.STYLE_SWITCH = HELP_STYLE_SWITCH
+
+
+def print_color_swatch() -> None:
+    """Print a two-column palette demo (``fabric-tools debug color``)."""
+    from rich.console import Console
+    from rich.text import Text
+
+    gap = "  "
+    name_w = max(len(row.name) for row in PALETTE_ROWS)
+    console = Console()
+    for row in PALETTE_ROWS:
+        line = Text()
+        line.append(f"{row.name:<{name_w}}", style=row.style)
+        line.append(gap)
+        line.append(row.usage)
+        console.print(line)
