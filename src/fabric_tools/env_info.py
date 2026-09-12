@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
+from fabric_tools.colours import STYLE_DIM, STYLE_OK, env_status_style
 from fabric_tools.readonly import READONLY_ENV, is_readonly_enabled
 from fabric_tools.update_check import DISABLE_UPDATE_CHECK_ENV
 
@@ -115,14 +116,6 @@ def collect_env_statuses() -> list[EnvVarStatus]:
     return [_resolve_status(spec) for spec in ENV_VAR_SPECS]
 
 
-def _status_style(status: str) -> str:
-    if status in {"enabled", "set"}:
-        return "green"
-    if status == "set (not enabled)":
-        return "yellow"
-    return "cyan"
-
-
 def print_env_report() -> None:
     """Print supported env vars and current values (plain lines, light color)."""
     from rich.console import Console
@@ -139,7 +132,7 @@ def print_env_report() -> None:
     for row in rows:
         line = Text()
         line.append(f"{row.name:<{name_w}}  {row.value:<{value_w}}  ")
-        line.append(f"{row.status:<{status_w}}", style=_status_style(row.status))
+        line.append(f"{row.status:<{status_w}}", style=env_status_style(row.status))
         line.append(f"  {row.description}")
         console.print(line)
 
@@ -148,12 +141,12 @@ def print_env_report() -> None:
     summary = Text("\nEffective: read-only=")
     summary.append(
         "on" if readonly else "off",
-        style="green" if readonly else "cyan",
+        style=STYLE_OK if readonly else STYLE_DIM,
     )
     summary.append("; service principal=")
     summary.append(
         "configured" if sp else "not configured",
-        style="green" if sp else "cyan",
+        style=STYLE_OK if sp else STYLE_DIM,
     )
     console.print(summary)
 

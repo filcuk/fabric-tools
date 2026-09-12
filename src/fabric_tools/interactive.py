@@ -11,6 +11,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from questionary import Choice, Style
 
+from fabric_tools.colours import FG_OK, FG_WARN
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
@@ -95,7 +96,7 @@ def run_interactive_wizard() -> None:
             _run_step(step, answers)
         except _Back:
             if idx == 0:
-                typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
+                typer.secho("Aborted by user.", fg=FG_WARN, err=True)
                 raise typer.Exit(code=EXIT_USER) from None
             idx -= 1
             while True:
@@ -103,7 +104,7 @@ def run_interactive_wizard() -> None:
                 if _STEPS[idx] == "source" and not _needs_source_step(answers):
                     if idx == 0:
                         typer.secho(
-                            "Aborted by user.", fg=typer.colors.YELLOW, err=True
+                            "Aborted by user.", fg=FG_WARN, err=True
                         )
                         raise typer.Exit(code=EXIT_USER) from None
                     idx -= 1
@@ -281,9 +282,9 @@ def prompt_save_manifest(
         )
         path = save_manifest(stem, built)
     except ManifestError as exc:
-        typer.secho(f"manifest not written: {exc}", fg=typer.colors.YELLOW, err=True)
+        typer.secho(f"manifest not written: {exc}", fg=FG_WARN, err=True)
         return
-    typer.secho(f"Wrote manifest: {path}", fg=typer.colors.GREEN)
+    typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
 
 
 def _needs_source_step(answers: dict[str, Any]) -> bool:
@@ -382,7 +383,7 @@ def _run_step(step: str, answers: dict[str, Any]) -> None:
 
     if step == "proceed":
         if not _confirm("Proceed?", default=True):
-            typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
+            typer.secho("Aborted by user.", fg=FG_WARN, err=True)
             raise typer.Exit(code=EXIT_USER)
         return
 

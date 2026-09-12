@@ -5,14 +5,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from fabric_tools.colours import STYLE_DIM, STYLE_HEADER
 from fabric_tools.parsing import ParseError, Target, parse_target_values
 
 if TYPE_CHECKING:
     from fabric_tools.client import FabricClient
 
 _COL_GAP = "  "
-_DIM_STYLE = "dim"
-_HEADER_STYLE = "bold cyan"
 _WORKSPACE_DETAIL_KEYS = (
     "id",
     "displayName",
@@ -276,7 +275,7 @@ def _print_detail(row: dict[str, Any], keys: tuple[str, ...]) -> None:
     console = Console()
     for key, value in pairs:
         line = Text()
-        line.append(f"{key:<{key_w}}", style=_DIM_STYLE)
+        line.append(f"{key:<{key_w}}", style=STYLE_DIM)
         line.append(_COL_GAP)
         line.append(value)
         console.print(line)
@@ -322,7 +321,7 @@ def _print_table(
     for i, cell in enumerate(_pad_row(headers, widths)):
         if i:
             header_line.append(_COL_GAP)
-        header_line.append(cell, style=_HEADER_STYLE)
+        header_line.append(cell, style=STYLE_HEADER)
     console.print(header_line)
 
     for row in rows:
@@ -332,5 +331,5 @@ def _print_table(
             if i:
                 line.append(_COL_GAP)
             # Column 0 (NAME) default; remaining columns dim (id/target/type/…).
-            line.append(cell, style=_DIM_STYLE if i > 0 else None)
+            line.append(cell, style=STYLE_DIM if i > 0 else None)
         console.print(line)

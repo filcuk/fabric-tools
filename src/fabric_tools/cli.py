@@ -11,7 +11,17 @@ from typer.core import TyperGroup
 
 from fabric_tools import __version__
 from fabric_tools.auth import AuthError
-from fabric_tools.colours import apply_help_theme
+from fabric_tools.colours import (
+    FG_ERROR,
+    FG_ID,
+    FG_OK,
+    FG_WARN,
+    STYLE_DIM,
+    STYLE_ERROR,
+    STYLE_OK,
+    STYLE_WARN,
+    apply_help_theme,
+)
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
@@ -77,7 +87,7 @@ def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
     try:
         ensure_command_allowed(mode, dry_run=dry_run)
     except ReadOnlyError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
 
@@ -86,13 +96,13 @@ def _enforce_readonly_setup(action: str) -> None:
     try:
         ensure_setup_mutation_allowed(action)
     except ReadOnlyError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
 
 def _fail_auth(exc: AuthError) -> None:
     """Print a short auth failure and exit (never returns)."""
-    color = typer.colors.YELLOW if exc.canceled else typer.colors.RED
+    color = FG_WARN if exc.canceled else FG_ERROR
     typer.secho(str(exc), fg=color, err=True)
     raise typer.Exit(code=EXIT_USER) from exc
 
@@ -327,7 +337,7 @@ def _flush_update_notice(ctx: typer.Context) -> None:
 
     notice = consume_update_notice()
     if notice:
-        typer.secho(notice, fg=typer.colors.YELLOW, err=True)
+        typer.secho(notice, fg=FG_WARN, err=True)
 
 
 def _start_bg_update_check(ctx: typer.Context) -> None:
@@ -363,10 +373,10 @@ def env_set(
     try:
         spec = set_user_env(name, value)
     except EnvError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    typer.secho(format_set_confirmation(spec, value), fg=typer.colors.GREEN)
+    typer.secho(format_set_confirmation(spec, value), fg=FG_OK)
     raise typer.Exit(code=EXIT_OK)
 
 
@@ -387,10 +397,10 @@ def env_unset(
     try:
         spec = unset_user_env(name)
     except EnvError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    typer.secho(format_unset_confirmation(spec), fg=typer.colors.GREEN)
+    typer.secho(format_unset_confirmation(spec), fg=FG_OK)
     raise typer.Exit(code=EXIT_OK)
 
 
@@ -417,7 +427,7 @@ def manifest_inspect(
     try:
         target = resolve_inspect_target(manifest)
     except ManifestError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if target.is_dir():
@@ -427,7 +437,7 @@ def manifest_inspect(
     try:
         loaded = load_manifest(target)
     except ManifestError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     typer.echo(format_inspect(loaded, path=target))
     raise typer.Exit(code=EXIT_OK)
@@ -439,7 +449,7 @@ def manifest_list() -> None:
     try:
         paths = list_manifest_paths()
     except ManifestError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if not paths:
@@ -482,13 +492,13 @@ def manifest_delete(
         )
         delete_manifest_file(path)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except ManifestError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    typer.secho(f"Deleted local manifest file {path}", fg=typer.colors.GREEN)
+    typer.secho(f"Deleted local manifest file {path}", fg=FG_OK)
     raise typer.Exit(code=EXIT_OK)
 
 
@@ -532,15 +542,15 @@ def manifest_move(
         confirm_or_abort(message, silent=silent)
         move_manifest_file(source, dest)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except ManifestError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     typer.secho(
         f"Moved local manifest file {source} to {dest}",
-        fg=typer.colors.GREEN,
+        fg=FG_OK,
     )
     raise typer.Exit(code=EXIT_OK)
 
@@ -582,10 +592,10 @@ def inspect_workspace_list(
                 type_filter=item_type,
             )
     except InspectError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
 
     if not rows:
@@ -624,10 +634,10 @@ def inspect_workspace_get(
             _authenticate_client(client)
             row = get_workspace_detail(client, parsed)
     except InspectError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
 
     print_workspace_detail(row)
@@ -680,10 +690,10 @@ def inspect_item_list(
                 type_filter=item_type,
             )
     except InspectError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
 
     if not rows:
@@ -722,10 +732,10 @@ def inspect_item_get(
             _authenticate_client(client)
             row = get_item_detail(client, parsed)
     except InspectError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
 
     print_item_detail(row)
@@ -737,7 +747,7 @@ def _inspect_manifest_dir(directory: Path | None) -> None:
     try:
         paths = list_manifest_paths(directory)
     except ManifestError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if not paths:
@@ -751,7 +761,7 @@ def _inspect_manifest_dir(directory: Path | None) -> None:
         try:
             loaded = load_manifest(path)
         except ManifestError as exc:
-            typer.secho(f"{path.name}  error: {exc}", fg=typer.colors.YELLOW, err=True)
+            typer.secho(f"{path.name}  error: {exc}", fg=FG_WARN, err=True)
             continue
         typer.echo(format_inspect_line(loaded, path=path))
 
@@ -795,7 +805,7 @@ def main(
             typer.secho(
                 "Do not combine --interactive with a subcommand. "
                 "Use: fabric-tools --interactive",
-                fg=typer.colors.RED,
+                fg=FG_ERROR,
                 err=True,
             )
             raise typer.Exit(code=EXIT_USER)
@@ -862,10 +872,10 @@ def setup_install() -> None:
     try:
         result = install_to_user_path()
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    typer.secho(f"Installed launcher: {result['launcher']}", fg=typer.colors.GREEN)
+    typer.secho(f"Installed launcher: {result['launcher']}", fg=FG_OK)
     typer.echo(f"Install directory: {result['install_dir']}")
     layout = result.get("layout")
     if layout == "onefile":
@@ -876,7 +886,7 @@ def setup_install() -> None:
         typer.echo("Installed onedir build (exe + _internal).")
     if result["path_added"]:
         typer.secho(
-            "Registered install directory on your user PATH.", fg=typer.colors.GREEN
+            "Registered install directory on your user PATH.", fg=FG_OK
         )
     elif result["already_on_path"]:
         typer.echo("Install directory was already on your user PATH.")
@@ -910,12 +920,12 @@ def setup_uninstall(
     try:
         result = uninstall_from_user_path(delete_files=not keep_files)
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if result["removed_from_path"]:
         typer.secho(
-            "Removed install directory from your user PATH.", fg=typer.colors.GREEN
+            "Removed install directory from your user PATH.", fg=FG_OK
         )
     else:
         typer.echo("Install directory was not present on your user PATH.")
@@ -928,55 +938,69 @@ def setup_uninstall(
 @setup_app.command("status")
 def setup_status_cmd() -> None:
     """Show whether fabric-tools is installed and registered."""
+    from rich.console import Console
+    from rich.text import Text
+
     from fabric_tools.path_setup import PathSetupError, path_status
 
     try:
         status = path_status()
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    def label(name: str) -> str:
-        # Align values under an invisible column after the longest label ("Install:").
-        return f"{name}:".ljust(8) + " "
+    # Same key/value layout as inspect get: dim keys, no colon, two-space gap.
+    _gap = "  "
+    keys = ("Status", "Install", "PATH", "Cache")
+    key_w = max(len(k) for k in keys)
+    console = Console()
+
+    def print_row(key: str, value: str, *, value_style: str | None = None) -> None:
+        line = Text()
+        line.append(f"{key:<{key_w}}", style=STYLE_DIM)
+        line.append(_gap)
+        line.append(value, style=value_style)
+        console.print(line)
 
     state = str(status["install_state"])
     if state == "installed":
-        state_color = typer.colors.GREEN
+        state_style = STYLE_OK
     elif state == "incomplete":
-        state_color = typer.colors.YELLOW
+        state_style = STYLE_WARN
     else:
-        state_color = typer.colors.RED
+        state_style = STYLE_ERROR
 
-    typer.echo(label("Status"), nl=False)
-    typer.secho(state, fg=state_color)
-    typer.echo(f"{label('Install')}{status['install_dir']}")
+    print_row("Status", state, value_style=state_style)
+    print_row("Install", str(status["install_dir"]))
 
-    typer.echo(label("PATH"), nl=False)
+    path_line = Text()
+    path_line.append(f"{'PATH':<{key_w}}", style=STYLE_DIM)
+    path_line.append(_gap)
     if status["bin_dir_on_user_path"]:
+        path_line.append("registered", style=STYLE_OK)
         which = str(status["which_fabric_tools"] or "")
-        typer.secho("registered", fg=typer.colors.GREEN, nl=False)
         if which:
-            typer.echo(f" → {which}")
+            path_line.append(f" → {which}")
         else:
-            typer.echo(" (open a new terminal if 'fabric-tools' is not found)")
+            path_line.append(" (open a new terminal if 'fabric-tools' is not found)")
     else:
-        typer.secho("not registered", fg=typer.colors.RED)
+        path_line.append("not registered", style=STYLE_ERROR)
+    console.print(path_line)
 
     cache_present = bool(status["cache_present"])
-    typer.echo(label("Cache"), nl=False)
-    typer.secho(
+    print_row(
+        "Cache",
         "yes" if cache_present else "no",
-        fg=typer.colors.YELLOW if cache_present else typer.colors.GREEN,
+        value_style=STYLE_WARN if cache_present else STYLE_OK,
     )
     if state == "installed" and cache_present:
         typer.echo()
         typer.secho(
             "Cache is only used for portable one-file runs. Clear with: ",
-            fg=typer.colors.BRIGHT_BLACK,
+            dim=True,
             nl=False,
         )
-        typer.secho("fabric-tools setup clean", fg=typer.colors.CYAN)
+        typer.secho("fabric-tools setup clean", fg=FG_ID)
     raise typer.Exit(code=EXIT_OK)
 
 
@@ -989,11 +1013,11 @@ def setup_clean() -> None:
     try:
         result = clean_onefile_caches()
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if result["cleaned"]:
-        typer.secho("Removed onefile extract cache.", fg=typer.colors.GREEN)
+        typer.secho("Removed onefile extract cache.", fg=FG_OK)
     elif result["scheduled"]:
         typer.echo("Scheduled onefile extract cache cleanup after this process exits.")
     else:
@@ -1028,7 +1052,7 @@ def setup_update(
             with busy("Checking for updates..."):
                 result = check_for_update()
         except UpdateCheckError as exc:
-            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            typer.secho(str(exc), fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_API) from exc
 
         typer.echo(f"Current version: {result.current}")
@@ -1037,7 +1061,7 @@ def setup_update(
             latest_label += " [pre-release]"
         typer.echo(f"Latest release:  {latest_label}")
         if result.update_available:
-            typer.secho("A newer release is available.", fg=typer.colors.GREEN)
+            typer.secho("A newer release is available.", fg=FG_OK)
             if result.release_url:
                 typer.echo(result.release_url)
             raise typer.Exit(code=EXIT_USER)
@@ -1052,13 +1076,13 @@ def setup_update(
     try:
         result = perform_setup_update(silent=silent)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except UpdateCheckError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
 
     if result.get("up_to_date"):
@@ -1068,7 +1092,7 @@ def setup_update(
 
     typer.secho(
         "Update scheduled — this process will exit; install continues in the background.",
-        fg=typer.colors.GREEN,
+        fg=FG_OK,
     )
     if result.get("exe_path"):
         typer.echo(f"Downloaded: {result['exe_path']}")
@@ -2820,7 +2844,7 @@ def run_notebook_command(
         )
         validate_cells_usage(mode, items, cell_indices, dry_run=dry_run)
     except (ParseError, ManifestError, CellSelectionError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if dry_run:
@@ -2843,7 +2867,7 @@ def run_notebook_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001 - surface auth/client failures cleanly
-            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_API) from exc
         finally:
             if client is not None:
@@ -2851,7 +2875,7 @@ def run_notebook_command(
 
         failed = False
         for result in results:
-            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            color = FG_OK if result.ok else FG_ERROR
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
@@ -2863,7 +2887,7 @@ def run_notebook_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                typer.secho(str(exc), fg=FG_ERROR, err=True)
                 raise typer.Exit(code=EXIT_USER) from exc
             _write_manifest_after_success(
                 manifest,
@@ -2885,7 +2909,7 @@ def run_notebook_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     with busy("Authenticating..."):
@@ -2937,7 +2961,7 @@ def run_notebook_command(
                 ):
                     typer.secho(
                         f"GUID: {result.workspace_id}:{result.item_id}",
-                        fg=typer.colors.CYAN,
+                        fg=FG_ID,
                     )
             _write_manifest_after_success(
                 manifest,
@@ -2988,17 +3012,17 @@ def run_notebook_command(
             )
             _exit_from_op_results(op_results)
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
@@ -3052,7 +3076,7 @@ def run_dataflow_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if dry_run:
@@ -3074,7 +3098,7 @@ def run_dataflow_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_API) from exc
         finally:
             if client is not None:
@@ -3082,7 +3106,7 @@ def run_dataflow_command(
 
         failed = False
         for result in results:
-            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            color = FG_OK if result.ok else FG_ERROR
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
@@ -3094,7 +3118,7 @@ def run_dataflow_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                typer.secho(str(exc), fg=FG_ERROR, err=True)
                 raise typer.Exit(code=EXIT_USER) from exc
             _write_manifest_after_success(
                 manifest,
@@ -3116,7 +3140,7 @@ def run_dataflow_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     with busy("Authenticating..."):
@@ -3166,7 +3190,7 @@ def run_dataflow_command(
                 ):
                     typer.secho(
                         f"GUID: {result.workspace_id}:{result.item_id}",
-                        fg=typer.colors.CYAN,
+                        fg=FG_ID,
                     )
             _write_manifest_after_success(
                 manifest,
@@ -3213,17 +3237,17 @@ def run_dataflow_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
@@ -3271,7 +3295,7 @@ def run_semantic_model_command(
         typer.secho(
             "--independent / -i is only valid on semantic-model deploy "
             "(delete always follows service cascade).",
-            fg=typer.colors.RED,
+            fg=FG_ERROR,
             err=True,
         )
         raise typer.Exit(code=EXIT_USER)
@@ -3289,7 +3313,7 @@ def run_semantic_model_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if mode is CommandMode.DEPLOY and any(
@@ -3299,7 +3323,7 @@ def run_semantic_model_command(
             "semantic-model deploy from .pbix is not supported yet "
             "(folder *.SemanticModel only; PBIX skipReport via --independent "
             "comes with report support).",
-            fg=typer.colors.RED,
+            fg=FG_ERROR,
             err=True,
         )
         raise typer.Exit(code=EXIT_USER)
@@ -3327,7 +3351,7 @@ def run_semantic_model_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_API) from exc
         finally:
             if client is not None:
@@ -3335,7 +3359,7 @@ def run_semantic_model_command(
 
         failed = False
         for result in results:
-            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            color = FG_OK if result.ok else FG_ERROR
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
@@ -3347,7 +3371,7 @@ def run_semantic_model_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                typer.secho(str(exc), fg=FG_ERROR, err=True)
                 raise typer.Exit(code=EXIT_USER) from exc
             _write_manifest_after_success(
                 manifest,
@@ -3369,7 +3393,7 @@ def run_semantic_model_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     with busy("Authenticating..."):
@@ -3419,7 +3443,7 @@ def run_semantic_model_command(
                 ):
                     typer.secho(
                         f"GUID: {result.workspace_id}:{result.item_id}",
-                        fg=typer.colors.CYAN,
+                        fg=FG_ID,
                     )
             _write_manifest_after_success(
                 manifest,
@@ -3466,17 +3490,17 @@ def run_semantic_model_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
@@ -3531,7 +3555,7 @@ def run_report_command(
         typer.secho(
             "--independent / -i is not used on report delete "
             "(delete always removes the report only).",
-            fg=typer.colors.RED,
+            fg=FG_ERROR,
             err=True,
         )
         raise typer.Exit(code=EXIT_USER)
@@ -3549,7 +3573,7 @@ def run_report_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if dry_run:
@@ -3571,7 +3595,7 @@ def run_report_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_API) from exc
         finally:
             if client is not None:
@@ -3579,7 +3603,7 @@ def run_report_command(
 
         failed = False
         for result in results:
-            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            color = FG_OK if result.ok else FG_ERROR
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
@@ -3591,7 +3615,7 @@ def run_report_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                typer.secho(str(exc), fg=FG_ERROR, err=True)
                 raise typer.Exit(code=EXIT_USER) from exc
             _write_manifest_after_success(
                 manifest,
@@ -3614,7 +3638,7 @@ def run_report_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     with busy("Authenticating..."):
@@ -3677,13 +3701,13 @@ def run_report_command(
                 ):
                     typer.secho(
                         f"GUID: {result.workspace_id}:{result.item_id}",
-                        fg=typer.colors.CYAN,
+                        fg=FG_ID,
                     )
                     sm = getattr(result, "semantic_model_id", None)
                     if sm:
                         typer.secho(
                             f"semanticModelId: {sm}",
-                            fg=typer.colors.CYAN,
+                            fg=FG_ID,
                         )
             _write_manifest_after_success(
                 manifest,
@@ -3732,17 +3756,17 @@ def run_report_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
@@ -3799,7 +3823,7 @@ def run_dataflow_gen1_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if dry_run:
@@ -3821,7 +3845,7 @@ def run_dataflow_gen1_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_API) from exc
         finally:
             if client is not None:
@@ -3829,7 +3853,7 @@ def run_dataflow_gen1_command(
 
         failed = False
         for result in results:
-            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            color = FG_OK if result.ok else FG_ERROR
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
@@ -3841,7 +3865,7 @@ def run_dataflow_gen1_command(
                     else None
                 )
             except (ParseError, DataflowDefinitionError) as exc:
-                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                typer.secho(str(exc), fg=FG_ERROR, err=True)
                 raise typer.Exit(code=EXIT_USER) from exc
             _write_manifest_after_success(
                 manifest,
@@ -3863,7 +3887,7 @@ def run_dataflow_gen1_command(
             else None
         )
     except (ParseError, DataflowDefinitionError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     with busy("Authenticating..."):
@@ -3913,7 +3937,7 @@ def run_dataflow_gen1_command(
                 ):
                     typer.secho(
                         f"GUID: {result.workspace_id}:{result.item_id}",
-                        fg=typer.colors.CYAN,
+                        fg=FG_ID,
                     )
             _write_manifest_after_success(
                 manifest,
@@ -3960,17 +3984,17 @@ def run_dataflow_gen1_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
@@ -4029,7 +4053,7 @@ def run_paginated_report_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if dry_run:
@@ -4051,7 +4075,7 @@ def run_paginated_report_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_API) from exc
         finally:
             if client is not None:
@@ -4059,7 +4083,7 @@ def run_paginated_report_command(
 
         failed = False
         for result in results:
-            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            color = FG_OK if result.ok else FG_ERROR
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
@@ -4071,7 +4095,7 @@ def run_paginated_report_command(
                     else None
                 )
             except (ParseError, PaginatedReportDefinitionError) as exc:
-                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                typer.secho(str(exc), fg=FG_ERROR, err=True)
                 raise typer.Exit(code=EXIT_USER) from exc
             _write_manifest_after_success(
                 manifest,
@@ -4093,7 +4117,7 @@ def run_paginated_report_command(
             else None
         )
     except (ParseError, PaginatedReportDefinitionError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     with busy("Authenticating..."):
@@ -4143,7 +4167,7 @@ def run_paginated_report_command(
                 ):
                     typer.secho(
                         f"GUID: {result.workspace_id}:{result.item_id}",
-                        fg=typer.colors.CYAN,
+                        fg=FG_ID,
                     )
             _write_manifest_after_success(
                 manifest,
@@ -4190,17 +4214,17 @@ def run_paginated_report_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
@@ -4255,7 +4279,7 @@ def run_pipeline_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if dry_run:
@@ -4277,7 +4301,7 @@ def run_pipeline_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_API) from exc
         finally:
             if client is not None:
@@ -4285,7 +4309,7 @@ def run_pipeline_command(
 
         failed = False
         for result in results:
-            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            color = FG_OK if result.ok else FG_ERROR
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
@@ -4297,7 +4321,7 @@ def run_pipeline_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                typer.secho(str(exc), fg=FG_ERROR, err=True)
                 raise typer.Exit(code=EXIT_USER) from exc
             _write_manifest_after_success(
                 manifest,
@@ -4319,7 +4343,7 @@ def run_pipeline_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     with busy("Authenticating..."):
@@ -4373,7 +4397,7 @@ def run_pipeline_command(
                 ):
                     typer.secho(
                         f"GUID: {result.workspace_id}:{result.item_id}",
-                        fg=typer.colors.CYAN,
+                        fg=FG_ID,
                     )
             _write_manifest_after_success(
                 manifest,
@@ -4422,17 +4446,17 @@ def run_pipeline_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
@@ -4480,7 +4504,7 @@ def run_udf_command(
     try:
         check_udf_user_auth()
     except UdfAuthError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     try:
@@ -4496,7 +4520,7 @@ def run_udf_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     if dry_run:
@@ -4518,7 +4542,7 @@ def run_udf_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_API) from exc
         finally:
             if client is not None:
@@ -4526,7 +4550,7 @@ def run_udf_command(
 
         failed = False
         for result in results:
-            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            color = FG_OK if result.ok else FG_ERROR
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
@@ -4538,7 +4562,7 @@ def run_udf_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                typer.secho(str(exc), fg=FG_ERROR, err=True)
                 raise typer.Exit(code=EXIT_USER) from exc
             _write_manifest_after_success(
                 manifest,
@@ -4560,7 +4584,7 @@ def run_udf_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
     with busy("Authenticating..."):
@@ -4610,7 +4634,7 @@ def run_udf_command(
                 ):
                     typer.secho(
                         f"GUID: {result.workspace_id}:{result.item_id}",
-                        fg=typer.colors.CYAN,
+                        fg=FG_ID,
                     )
             _write_manifest_after_success(
                 manifest,
@@ -4657,17 +4681,17 @@ def run_udf_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
             raise typer.Exit(code=EXIT_USER)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        typer.secho(str(exc), fg=FG_WARN, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
@@ -5545,14 +5569,14 @@ def _write_manifest_after_success(
         )
         path = save_manifest(manifest, built)
     except ManifestError as exc:
-        typer.secho(f"manifest not written: {exc}", fg=typer.colors.YELLOW, err=True)
+        typer.secho(f"manifest not written: {exc}", fg=FG_WARN, err=True)
         return
-    typer.secho(f"Wrote manifest: {path}", fg=typer.colors.GREEN)
+    typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
 
 
 def _print_op_results(results: list[OpResult]) -> None:
     for result in results:
-        color = typer.colors.GREEN if result.ok else typer.colors.RED
+        color = FG_OK if result.ok else FG_ERROR
         typer.secho(result.message, fg=color, err=not result.ok)
 
 
@@ -5564,19 +5588,19 @@ def _exit_from_op_results(results: list[OpResult]) -> None:
 
 def _print_compare_results(results: list[CompareResult]) -> None:
     for result in results:
-        typer.secho(result.header, fg=typer.colors.CYAN, bold=True)
+        typer.secho(result.header, fg=FG_ID, bold=True)
         if result.error:
-            typer.secho(result.error, fg=typer.colors.RED, err=True)
+            typer.secho(result.error, fg=FG_ERROR, err=True)
             continue
         if result.identical:
-            typer.secho("identical", fg=typer.colors.GREEN)
+            typer.secho("identical", fg=FG_OK)
         else:
-            typer.secho("differences found", fg=typer.colors.YELLOW)
+            typer.secho("differences found", fg=FG_WARN)
             if result.diff_text:
                 typer.echo(result.diff_text.rstrip())
         messages = getattr(result, "messages", None) or []
         for message in messages:
-            typer.secho(message, fg=typer.colors.YELLOW)
+            typer.secho(message, fg=FG_WARN)
         typer.echo("")
 
 
@@ -5633,7 +5657,7 @@ def run() -> None:
 
     orphan = format_nuitka_orphan_exe_error()
     if orphan:
-        typer.secho(orphan, fg=typer.colors.RED, err=True)
+        typer.secho(orphan, fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER)
 
     app(prog_name="fabric-tools")
