@@ -879,10 +879,13 @@ def setup_install() -> None:
 
     typer.secho(f"Installed launcher: {result['launcher']}", fg=typer.colors.GREEN)
     typer.echo(f"Install directory: {result['install_dir']}")
-    if result.get("layout") == "onefile":
-        typer.echo(
-            "Unpacked one-file build into a fast onedir install (exe + _internal)."
-        )
+    layout = result.get("layout")
+    if layout == "onefile":
+        typer.echo("Unpacked one-file build into a fast installed app tree.")
+    elif layout == "standalone":
+        typer.echo("Installed standalone app tree.")
+    elif layout == "onedir":
+        typer.echo("Installed onedir build (exe + _internal).")
     if result["path_added"]:
         typer.secho(
             "Registered install directory on your user PATH.", fg=typer.colors.GREEN
@@ -945,6 +948,7 @@ def setup_status_cmd() -> None:
     typer.echo(f"Exe present:       {status['exe_present']}")
     typer.echo(f"Cmd present:       {status['cmd_present']}")
     typer.echo(f"_internal present: {status['internal_present']}")
+    typer.echo(f"Runtime present:   {status['runtime_present']}")
     typer.echo(f"On user PATH:      {status['bin_dir_on_user_path']}")
     typer.echo(f"Running frozen exe: {status['frozen']}")
     which = status["which_fabric_tools"]

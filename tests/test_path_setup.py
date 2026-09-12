@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,12 +15,17 @@ from fabric_tools.path_setup import (
     PathSetupError,
     _install_from_onefile_meipass,
     _install_frozen_tree,
+    _install_nuitka_tree,
     _join_path,
     _normalize_dir,
+    _runtime_present,
     _split_path,
     _write_deferred_install_helper,
     format_install_speed_notice,
+    frozen_app_root,
+    is_frozen,
     is_portable_onefile,
+    path_status,
     perform_setup_update,
 )
 from fabric_tools.update_check import UpdateCheckResult
@@ -116,12 +122,135 @@ def test_install_from_onefile_requires_bootloader(tmp_path: Path) -> None:
         _install_from_onefile_meipass(meipass, tmp_path / "app")
 
 
+def test_install_nuitka_tree_copies_full_dist(tmp_path: Path) -> None:
+    source = tmp_path / "fabric-tools.dist"
+    dest = tmp_path / "app"
+    source.mkdir()
+    (source / EXE_NAME).write_bytes(b"exe")
+    (source / "python311.dll").write_bytes(b"dll")
+    (source / "helper.pyd").write_bytes(b"pyd")
+    nested = source / "certifi"
+    nested.mkdir()
+    (nested / "cacert.pem").write_text("pem", encoding="utf-8")
+
+    _install_nuitka_tree(source, dest)
+
+    assert (dest / EXE_NAME).read_bytes() == b"exe"
+    assert (dest / "python311.dll").read_bytes() == b"dll"
+    assert (dest / "helper.pyd").read_bytes() == b"pyd"
+    assert (dest / "certifi" / "cacert.pem").read_text(encoding="utf-8") == "pem"
+
+
+def test_install_nuitka_tree_replaces_previous_contents(tmp_path: Path) -> None:
+    source = tmp_path / "fabric-tools.dist"
+    dest = tmp_path / "app"
+    source.mkdir()
+    dest.mkdir()
+    (source / EXE_NAME).write_bytes(b"new")
+    (source / "new.dll").write_bytes(b"1")
+    (dest / EXE_NAME).write_bytes(b"old")
+    (dest / "old.dll").write_bytes(b"0")
+    (dest / INTERNAL_DIR_NAME).mkdir()
+    (dest / INTERNAL_DIR_NAME / "stale").write_bytes(b"x")
+
+    _install_nuitka_tree(source, dest)
+
+    assert (dest / EXE_NAME).read_bytes() == b"new"
+    assert (dest / "new.dll").is_file()
+    assert not (dest / "old.dll").exists()
+    assert not (dest / INTERNAL_DIR_NAME).exists()
+
+
+def test_install_nuitka_tree_same_path_is_noop(tmp_path: Path) -> None:
+    root = tmp_path / "app"
+    root.mkdir()
+    (root / EXE_NAME).write_bytes(b"exe")
+    (root / "runtime.dll").write_bytes(b"dll")
+    _install_nuitka_tree(root, root)
+    assert (root / EXE_NAME).read_bytes() == b"exe"
+    assert (root / "runtime.dll").is_file()
+
+
+def test_install_nuitka_tree_rejects_missing_exe(tmp_path: Path) -> None:
+    source = tmp_path / "fabric-tools.dist"
+    source.mkdir()
+    (source / "runtime.dll").write_bytes(b"dll")
+    with pytest.raises(PathSetupError, match="Incomplete Nuitka"):
+        _install_nuitka_tree(source, tmp_path / "app")
+
+
+def test_runtime_present_pyinstaller_and_nuitka(tmp_path: Path) -> None:
+    pyi = tmp_path / "pyi"
+    pyi.mkdir()
+    (pyi / EXE_NAME).write_bytes(b"exe")
+    (pyi / INTERNAL_DIR_NAME).mkdir()
+    assert _runtime_present(pyi) is True
+
+    nuitka = tmp_path / "nuitka"
+    nuitka.mkdir()
+    (nuitka / EXE_NAME).write_bytes(b"exe")
+    (nuitka / "python311.dll").write_bytes(b"dll")
+    assert _runtime_present(nuitka) is True
+
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    (bare / EXE_NAME).write_bytes(b"exe")
+    assert _runtime_present(bare) is False
+
+
+def test_path_status_reports_runtime_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / EXE_NAME).write_bytes(b"exe")
+    (app / "python311.dll").write_bytes(b"dll")
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._user_path_contains",
+        lambda _directory: False,
+    )
+    monkeypatch.setattr("fabric_tools.path_setup.shutil.which", lambda _name: None)
+    status = path_status(install_dir=app)
+    assert status["exe_present"] is True
+    assert status["internal_present"] is False
+    assert status["runtime_present"] is True
+
+
 def test_write_deferred_install_helper(tmp_path: Path) -> None:
     helper = tmp_path / APPLY_UPDATE_HELPER_NAME
     _write_deferred_install_helper(helper)
     text = helper.read_text(encoding="utf-8")
     assert "tasklist" in text
     assert "setup install" in text
+
+
+def test_is_frozen_detects_nuitka_compiled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "sys.frozen",
+        False,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._nuitka_compiled",
+        lambda: SimpleNamespace(containing_dir=r"C:\extract"),
+    )
+    assert is_frozen() is True
+
+
+def test_frozen_app_root_prefers_nuitka(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    extract = tmp_path / "extract"
+    extract.mkdir()
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._nuitka_compiled",
+        lambda: SimpleNamespace(containing_dir=str(extract)),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.frozen_onedir_root",
+        lambda: tmp_path / "pyi-app",
+    )
+    assert frozen_app_root() == extract
 
 
 def test_is_portable_onefile_false_when_not_frozen(
@@ -132,10 +261,11 @@ def test_is_portable_onefile_false_when_not_frozen(
     assert format_install_speed_notice() is None
 
 
-def test_is_portable_onefile_true_for_onefile_layout(
+def test_is_portable_onefile_true_for_pyinstaller_onefile(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr("fabric_tools.path_setup._nuitka_compiled", lambda: None)
     monkeypatch.setattr(
         "fabric_tools.path_setup.meipass_dir", lambda: tmp_path / "_MEI123"
     )
@@ -147,15 +277,62 @@ def test_is_portable_onefile_true_for_onefile_layout(
     assert "setup install" in notice
 
 
-def test_is_portable_onefile_false_for_onedir_layout(
+def test_is_portable_onefile_false_for_pyinstaller_onedir(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr("fabric_tools.path_setup._nuitka_compiled", lambda: None)
     monkeypatch.setattr(
         "fabric_tools.path_setup.meipass_dir", lambda: tmp_path / "_internal"
     )
     monkeypatch.setattr(
         "fabric_tools.path_setup.frozen_onedir_root", lambda: tmp_path / "app"
+    )
+    assert is_portable_onefile() is False
+    assert format_install_speed_notice() is None
+
+
+def test_is_portable_onefile_true_for_nuitka_onefile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    extract = tmp_path / "onefile_extract"
+    portable = tmp_path / "download"
+    extract.mkdir()
+    portable.mkdir()
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._nuitka_compiled",
+        lambda: SimpleNamespace(containing_dir=str(extract)),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.frozen_app_root",
+        lambda: extract,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [str(portable / EXE_NAME), "-h"],
+    )
+    assert is_portable_onefile() is True
+    assert format_install_speed_notice() is not None
+
+
+def test_is_portable_onefile_false_for_nuitka_standalone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    app = tmp_path / "fabric-tools.dist"
+    app.mkdir()
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._nuitka_compiled",
+        lambda: SimpleNamespace(containing_dir=str(app)),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.frozen_app_root",
+        lambda: app,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [str(app / EXE_NAME), "-h"],
     )
     assert is_portable_onefile() is False
     assert format_install_speed_notice() is None

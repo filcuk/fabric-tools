@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 INSTALL_DIR_NAME = "fabric-tools"
 APP_DIR_NAME = "app"
@@ -23,8 +24,28 @@ class PathSetupError(RuntimeError):
     """PATH registration failed."""
 
 
+def _nuitka_compiled() -> Any | None:
+    """Return Nuitka ``__compiled__`` from ``__main__`` or ``fabric_tools``, if present."""
+    for name in ("__main__", "fabric_tools"):
+        mod = sys.modules.get(name)
+        if mod is None and name == "fabric_tools":
+            try:
+                import fabric_tools as mod
+            except ImportError:
+                continue
+        if mod is None:
+            continue
+        compiled = getattr(mod, "__compiled__", None)
+        if compiled is not None:
+            return compiled
+    return None
+
+
 def is_frozen() -> bool:
-    return bool(getattr(sys, "frozen", False))
+    """True for PyInstaller (``sys.frozen``) or Nuitka (``__compiled__``) builds."""
+    if bool(getattr(sys, "frozen", False)):
+        return True
+    return _nuitka_compiled() is not None
 
 
 def install_root() -> Path:
@@ -62,16 +83,34 @@ def meipass_dir() -> Path | None:
 
 
 def frozen_onedir_root() -> Path | None:
-    """Parent of ``_internal`` when running an already-unpacked onedir build."""
+    """Parent of ``_internal`` when running an already-unpacked PyInstaller onedir build."""
     root = Path(sys.executable).resolve().parent
     if (root / INTERNAL_DIR_NAME).is_dir():
         return root
     return None
 
 
+def frozen_app_root() -> Path | None:
+    """Directory containing the frozen app payload (Nuitka or PyInstaller onedir)."""
+    compiled = _nuitka_compiled()
+    if compiled is not None:
+        containing = getattr(compiled, "containing_dir", None)
+        if containing:
+            return Path(containing)
+    return frozen_onedir_root()
+
+
 def is_portable_onefile() -> bool:
-    """True when running a PyInstaller one-file build (extracts to temp each launch)."""
-    return is_frozen() and meipass_dir() is not None and frozen_onedir_root() is None
+    """True when running a one-file build that extracts on each launch."""
+    if not is_frozen():
+        return False
+    if _nuitka_compiled() is not None:
+        root = frozen_app_root()
+        if root is None:
+            return False
+        argv0_dir = Path(sys.argv[0]).resolve().parent
+        return argv0_dir != root.resolve()
+    return meipass_dir() is not None and frozen_onedir_root() is None
 
 
 def format_install_speed_notice() -> str | None:
@@ -87,9 +126,12 @@ def format_install_speed_notice() -> str | None:
 def install_to_user_path(*, install_dir: Path | None = None) -> dict[str, str | bool]:
     """Copy/shim this tool into a stable folder and ensure that folder is on user PATH.
 
-    Frozen onefile builds unpack ``sys._MEIPASS`` into an onedir tree under the install
-    directory (using the embedded onedir bootloader). Onedir / already-installed builds
-    copy the existing ``exe`` + ``_internal`` tree.
+    Frozen layouts:
+
+    - Nuitka standalone / onefile extract: copy the full payload directory.
+    - PyInstaller onefile: unpack ``sys._MEIPASS`` into ``exe`` + ``_internal`` (embedded
+      onedir bootloader).
+    - PyInstaller onedir / already-installed: copy ``exe`` + ``_internal``.
     """
     if os.name != "nt":
         raise PathSetupError(
@@ -175,6 +217,7 @@ def path_status(*, install_dir: Path | None = None) -> dict[str, str | bool]:
         "exe_present": exe.is_file(),
         "cmd_present": cmd.is_file(),
         "internal_present": internal.is_dir(),
+        "runtime_present": _runtime_present(target_dir),
         "bin_dir_on_user_path": on_path,
         "which_fabric_tools": which or "",
         "frozen": is_frozen(),
@@ -326,6 +369,15 @@ def remove_user_path_entry(directory: str) -> bool:
 
 
 def _install_frozen_app(target_dir: Path) -> str:
+    if _nuitka_compiled() is not None:
+        root = frozen_app_root()
+        if root is None:
+            raise PathSetupError(
+                "Nuitka build has no __compiled__.containing_dir; cannot install."
+            )
+        _install_nuitka_tree(root, target_dir)
+        return "onefile" if is_portable_onefile() else "standalone"
+
     onedir_root = frozen_onedir_root()
     if onedir_root is not None:
         _install_frozen_tree(onedir_root, target_dir)
@@ -337,12 +389,41 @@ def _install_frozen_app(target_dir: Path) -> str:
         return "onefile"
 
     raise PathSetupError(
-        "Frozen executable has neither a sibling _internal folder nor a PyInstaller "
-        "_MEIPASS extract dir; cannot install."
+        "Frozen executable has neither a Nuitka payload directory, a sibling "
+        "_internal folder, nor a PyInstaller _MEIPASS extract dir; cannot install."
     )
 
 
+def _install_nuitka_tree(source_root: Path, target_dir: Path) -> None:
+    """Copy a Nuitka standalone / onefile-extract tree into the install directory."""
+    source_root = source_root.resolve()
+    target_dir = target_dir.resolve()
+    source_exe = source_root / EXE_NAME
+    if not source_exe.is_file():
+        raise PathSetupError(
+            f"Incomplete Nuitka layout at {source_root} (need {EXE_NAME})."
+        )
+
+    if source_root == target_dir:
+        return
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    _clear_directory_contents(target_dir)
+    for item in source_root.iterdir():
+        dest = target_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest)
+        else:
+            shutil.copy2(item, dest)
+
+    if not (target_dir / EXE_NAME).is_file():
+        raise PathSetupError(
+            f"Nuitka install failed: missing {EXE_NAME} in {target_dir}"
+        )
+
+
 def _install_frozen_tree(source_root: Path, target_dir: Path) -> None:
+    """Copy a PyInstaller onedir tree (exe + _internal) into the install directory."""
     source_root = source_root.resolve()
     target_dir = target_dir.resolve()
     if source_root == target_dir:
@@ -369,7 +450,7 @@ def _install_frozen_tree(source_root: Path, target_dir: Path) -> None:
 
 
 def _install_from_onefile_meipass(meipass: Path, target_dir: Path) -> None:
-    """Unpack a running onefile build into an onedir install tree."""
+    """Unpack a running PyInstaller onefile build into an onedir install tree."""
     bootloader = meipass / ONEDIR_BOOTLOADER_DIR / EXE_NAME
     if not bootloader.is_file():
         raise PathSetupError(
@@ -396,27 +477,56 @@ def _install_from_onefile_meipass(meipass: Path, target_dir: Path) -> None:
     shutil.copy2(bootloader, target_dir / EXE_NAME)
 
 
+def _runtime_present(target_dir: Path) -> bool:
+    """True when an installed frozen runtime looks complete enough to run."""
+    if not installed_exe_path(target_dir).is_file():
+        return False
+    if (target_dir / INTERNAL_DIR_NAME).is_dir():
+        return True
+    # Nuitka standalone: exe plus sibling native modules / DLLs.
+    try:
+        return any(
+            child.is_file()
+            and child.name.lower() != EXE_NAME.lower()
+            and child.suffix.lower() in {".dll", ".pyd", ".so"}
+            for child in target_dir.iterdir()
+        )
+    except OSError:
+        return False
+
+
+def _clear_directory_contents(directory: Path) -> list[str]:
+    deleted: list[str] = []
+    if not directory.exists():
+        return deleted
+    for child in directory.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+        deleted.append(str(child))
+    return deleted
+
+
 def _remove_frozen_tree(target_dir: Path) -> None:
-    exe = installed_exe_path(target_dir)
-    if exe.exists():
-        exe.unlink()
-    internal = target_dir / INTERNAL_DIR_NAME
-    if internal.exists():
-        shutil.rmtree(internal)
+    """Remove frozen install artifacts, keeping a python ``.cmd`` shim if present."""
+    if not target_dir.exists():
+        return
+    keep = installed_cmd_path(target_dir).resolve()
+    for child in list(target_dir.iterdir()):
+        if child.resolve() == keep:
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
 
 
 def _delete_install_tree(target_dir: Path) -> list[str]:
     deleted: list[str] = []
     if not target_dir.exists():
         return deleted
-    for path in (installed_exe_path(target_dir), installed_cmd_path(target_dir)):
-        if path.exists():
-            path.unlink()
-            deleted.append(str(path))
-    internal = target_dir / INTERNAL_DIR_NAME
-    if internal.exists():
-        shutil.rmtree(internal)
-        deleted.append(str(internal))
+    deleted.extend(_clear_directory_contents(target_dir))
     try:
         target_dir.rmdir()
         deleted.append(str(target_dir))
