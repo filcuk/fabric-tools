@@ -35,9 +35,9 @@ def test_root_help_orders_help_and_setup_first() -> None:
     local_idx = result.stdout.index("─ Local")
     fabric_idx = result.stdout.index("─ Fabric")
     setup_idx = result.stdout.index("setup")
-    inspect_idx = result.stdout.index("inspect")
+    manifest_idx = result.stdout.index("manifest")
     env_idx = result.stdout.index("env")
-    assert local_idx < setup_idx < inspect_idx < env_idx < fabric_idx
+    assert local_idx < setup_idx < manifest_idx < env_idx < fabric_idx
 
     # Command order comes from _BannerGroup.list_commands (not fragile substring scans:
     # "report" is a suffix of "paginated-report", "dataflow" of "dataflow-gen1", etc.).
@@ -46,7 +46,7 @@ def test_root_help_orders_help_and_setup_first() -> None:
     names = get_command(app).list_commands(None)
     expected = [
         "setup",
-        "inspect",
+        "manifest",
         "env",
         "dataflow-gen1",
         "dataflow",
@@ -67,6 +67,13 @@ def test_setup_help_lists_update() -> None:
     assert result.exit_code == 0
     assert "update" in result.stdout
     assert "install" in result.stdout
+
+
+def test_manifest_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["manifest", "--help"])
+    assert result.exit_code == 0
+    for name in ("inspect", "list", "delete", "move"):
+        assert name in result.stdout
 
 
 def test_help_puts_description_before_usage() -> None:

@@ -475,7 +475,7 @@ def test_cli_background_notice_from_cache(
     )
     reset_background_update_check()
 
-    result = CliRunner().invoke(app, ["inspect"])
+    result = CliRunner().invoke(app, ["manifest", "list"])
     assert result.exit_code == EXIT_OK
     assert "Update available" in result.output
     assert "0.3.0" in result.output

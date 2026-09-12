@@ -124,3 +124,23 @@ def test_cli_readonly_allows_setup_status(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv(READONLY_ENV, "1")
     result = CliRunner().invoke(app, ["setup", "status"])
     assert READONLY_ENV not in (result.stderr or result.output)
+
+
+def test_cli_readonly_allows_manifest_delete(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from fabric_tools.manifest import manifest_from_work_items, save_manifest
+    from fabric_tools.parsing import Target, WorkItem
+
+    monkeypatch.setenv(READONLY_ENV, "1")
+    monkeypatch.chdir(tmp_path)
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    save_manifest(
+        tmp_path / "demo",
+        manifest_from_work_items([WorkItem(Target(WS, ITEM), nb)]),
+    )
+    result = CliRunner().invoke(app, ["manifest", "delete", "-s", "-m", "demo"])
+    assert result.exit_code == 0
+    assert READONLY_ENV not in (result.stderr or result.output)
+    assert not (tmp_path / "demo.ftdep").exists()

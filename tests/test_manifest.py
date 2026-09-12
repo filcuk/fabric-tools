@@ -1,4 +1,4 @@
-"""Tests for deployment manifest (.ftdep) helpers and CLI inspect."""
+"""Tests for deployment manifest (.ftdep) helpers and CLI manifest commands."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from fabric_tools.manifest import (
     DeploymentManifest,
     ManifestEntry,
     ManifestError,
+    delete_manifest_file,
     delete_targets_from_manifest,
     format_inspect,
     format_inspect_line,
@@ -33,6 +34,8 @@ from fabric_tools.manifest import (
     list_manifest_paths,
     load_manifest,
     manifest_from_work_items,
+    move_manifest_file,
+    resolve_inspect_target,
     resolve_manifest_path,
     save_manifest,
     work_items_from_manifest,
@@ -469,21 +472,52 @@ def test_dry_run_skips_manifest_on_failure(
     assert not (tmp_path / "setup.ftdep").exists()
 
 
-def test_inspect_cli(tmp_path: Path) -> None:
-    nb = tmp_path / "etl.ipynb"
-    nb.write_text("{}", encoding="utf-8")
-    save_manifest(
-        tmp_path / "demo",
+def _save_simple_manifest(directory: Path, stem: str) -> Path:
+    nb = directory / "etl.ipynb"
+    if not nb.exists():
+        nb.write_text("{}", encoding="utf-8")
+    return save_manifest(
+        directory / stem,
         manifest_from_work_items([WorkItem(Target(WS, ITEM), nb)]),
     )
+
+
+def test_resolve_inspect_target_directory(tmp_path: Path) -> None:
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    assert resolve_inspect_target(jobs) == jobs
+    assert resolve_inspect_target(str(jobs)) == jobs
+
+
+def test_resolve_inspect_target_stem(tmp_path: Path) -> None:
+    assert resolve_inspect_target(tmp_path / "demo").name == "demo.ftdep"
+
+
+def test_delete_manifest_file(tmp_path: Path) -> None:
+    path = _save_simple_manifest(tmp_path, "demo")
+    deleted = delete_manifest_file(path)
+    assert deleted == path
+    assert not path.exists()
+
+
+def test_move_manifest_file_creates_parents(tmp_path: Path) -> None:
+    source = _save_simple_manifest(tmp_path, "demo")
+    dest = tmp_path / "subdir" / "renamed.ftdep"
+    move_manifest_file(source, dest)
+    assert not source.exists()
+    assert dest.is_file()
+
+
+def test_inspect_cli(tmp_path: Path) -> None:
+    _save_simple_manifest(tmp_path, "demo")
     runner = CliRunner()
-    result = runner.invoke(app, ["inspect", "-m", str(tmp_path / "demo")])
+    result = runner.invoke(app, ["manifest", "inspect", "-m", str(tmp_path / "demo")])
     assert result.exit_code == 0
     assert "kind: notebook" in result.stdout
     assert "entries: 1" in result.stdout
 
 
-def test_inspect_list_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_inspect_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     nb = tmp_path / "etl.ipynb"
     nb.write_text("{}", encoding="utf-8")
     save_manifest(
@@ -503,27 +537,166 @@ def test_inspect_list_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.chdir(tmp_path)
 
     runner = CliRunner()
-    result = runner.invoke(app, ["inspect"])
+    result = runner.invoke(app, ["manifest", "inspect"])
     assert result.exit_code == 0
     assert "alpha.ftdep  kind=notebook  schemaVersion=1  entries=1" in result.stdout
     assert "beta.ftdep  kind=notebook  schemaVersion=1  entries=2" in result.stdout
     assert "broken.ftdep  error:" in result.stderr
 
 
-def test_inspect_list_cwd_empty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_inspect_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _save_simple_manifest(tmp_path, "cwd_only")
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    _save_simple_manifest(jobs, "alpha")
+    runner = CliRunner()
+    result = runner.invoke(app, ["manifest", "inspect", "-m", str(jobs)])
+    assert result.exit_code == 0
+    assert "alpha.ftdep  kind=notebook  schemaVersion=1  entries=1" in result.stdout
+    assert "cwd_only" not in result.stdout
+
+
+def test_inspect_folder_empty(tmp_path: Path) -> None:
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    runner = CliRunner()
+    result = runner.invoke(app, ["manifest", "inspect", "-m", str(jobs)])
+    assert result.exit_code == 0
+    assert "No .ftdep manifests" in result.stdout
+    assert "jobs" in result.stdout
+
+
+def test_inspect_cwd_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    result = runner.invoke(app, ["inspect"])
+    result = runner.invoke(app, ["manifest", "inspect"])
     assert result.exit_code == 0
     assert "No .ftdep manifests" in result.stdout
 
 
 def test_inspect_missing_manifest() -> None:
     runner = CliRunner()
-    result = runner.invoke(app, ["inspect", "-m", "does-not-exist-xyz"])
+    result = runner.invoke(app, ["manifest", "inspect", "-m", "does-not-exist-xyz"])
     assert result.exit_code == 1
+
+
+def test_list_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _save_simple_manifest(tmp_path, "alpha")
+    (tmp_path / "broken.ftdep").write_text("{not-json", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["manifest", "list"])
+    assert result.exit_code == 0
+    assert "alpha.ftdep" in result.stdout
+    assert "broken.ftdep" in result.stdout
+    assert "kind=" not in result.stdout
+
+
+def test_list_cwd_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["manifest", "list"])
+    assert result.exit_code == 0
+    assert "No .ftdep manifests" in result.stdout
+
+
+def test_manifest_delete_silent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _save_simple_manifest(tmp_path, "demo")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["manifest", "delete", "-s", "-m", "demo"])
+    assert result.exit_code == 0
+    assert not path.exists()
+    assert "Deleted local manifest file" in result.stdout
+
+
+def test_manifest_delete_confirm_decline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _save_simple_manifest(tmp_path, "demo")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["manifest", "delete", "-m", "demo"], input="n\n")
+    assert result.exit_code == 1
+    assert path.exists()
+
+
+def test_manifest_delete_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["manifest", "delete", "-s", "-m", "missing"])
+    assert result.exit_code == 1
+    assert "manifest not found" in result.output
+
+
+def test_manifest_move_silent_dest_stem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _save_simple_manifest(tmp_path, "demo")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["manifest", "move", "-s", "-m", "demo", "subdir/renamed"],
+    )
+    assert result.exit_code == 0
+    assert not source.exists()
+    dest = tmp_path / "subdir" / "renamed.ftdep"
+    assert dest.is_file()
+    assert "Moved local manifest file" in result.stdout
+
+
+def test_manifest_move_overwrite_silent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    source = save_manifest(
+        tmp_path / "alpha",
+        manifest_from_work_items([WorkItem(Target(WS, ITEM), nb)]),
+    )
+    dest = save_manifest(
+        tmp_path / "beta",
+        manifest_from_work_items([WorkItem(Target(WS, ITEM2), nb)]),
+    )
+    source_text = source.read_text(encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["manifest", "move", "-s", "-m", "alpha", "beta"])
+    assert result.exit_code == 0
+    assert not source.exists()
+    assert dest.read_text(encoding="utf-8") == source_text
+    assert ITEM in dest.read_text(encoding="utf-8")
+    assert ITEM2 not in dest.read_text(encoding="utf-8")
+
+
+def test_manifest_move_confirm_decline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _save_simple_manifest(tmp_path, "demo")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["manifest", "move", "-m", "demo", "other"],
+        input="n\n",
+    )
+    assert result.exit_code == 1
+    assert source.exists()
+    assert not (tmp_path / "other.ftdep").exists()
+
+
+def test_manifest_move_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["manifest", "move", "-s", "-m", "missing", "dest"])
+    assert result.exit_code == 1
+    assert "manifest not found" in result.output
 
 
 def test_origin_manifest_v2_round_trip(tmp_path: Path) -> None:

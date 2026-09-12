@@ -31,7 +31,7 @@ fabric-tools setup uninstall
 
 Commands may print a one-line update notice on stderr at most once per local day when a newer GitHub release exists. Disable with `$env:FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`.
 
-Set `$env:FABRIC_TOOLS_READONLY=1` to refuse deploy, delete, and mutating `setup` actions (install / update / uninstall). Download, compare, inspect, `--dry-run`, `setup status`, and `setup update --check` still work. Useful for agents.
+Set `$env:FABRIC_TOOLS_READONLY=1` to refuse deploy, delete, and mutating `setup` actions (install / update / uninstall). Download, compare, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, and `setup update --check` still work. Useful for agents.
 
 List or change supported environment variables (Windows user environment for set/unset):
 
@@ -210,10 +210,20 @@ fabric-tools notebook deploy -s -t <workspaceId> -f .\etl.ipynb -n "ETL" -m test
 fabric-tools notebook compare -m test
 
 # Show what a manifest contains (no Fabric API calls)
-fabric-tools inspect -m test
+fabric-tools manifest inspect -m test
 
-# List all manifests in the current folder
-fabric-tools inspect
+# One-line summaries for all manifests in the current folder
+fabric-tools manifest inspect
+
+# One-line summaries for manifests in a folder
+fabric-tools manifest inspect -m .\jobs
+
+# Filenames only
+fabric-tools manifest list
+
+# Delete or move a local .ftdep (not a Fabric item)
+fabric-tools manifest delete -s -m test
+fabric-tools manifest move -s -m test subdir\test1
 
 # Check GitHub Releases for a newer fabric-tools version
 fabric-tools setup update --check

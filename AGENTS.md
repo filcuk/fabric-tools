@@ -11,7 +11,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` + `report` + `paginated-report` groups, `env` (show/set/unset), `inspect`, `setup`
+  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` + `report` + `paginated-report` groups, `env` (show/set/unset), `manifest` (inspect/list/delete/move), `setup`
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `semantic-model` \| `report` \| `paginated-report`)
   - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; onefile unpacks to onedir under `%LOCALAPPDATA%\fabric-tools\app`; `setup update` downloads release exe and deferred-installs)
@@ -57,10 +57,10 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Files: `--file` paired 1:1 with targets, or one file broadcast to N targets (deploy/download). Download may omit `--file` (defaults to remote display name + `.ipynb` / `.Dataflow` / `.json` / `.DataPipeline` / `.UserDataFunction` / `.rdl` in the current folder).
 - Origins: `--origin` / `-o` `<workspaceId>:<artifactId>` for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as targets; deploy may broadcast one origin to N targets; compare is 1:1)
 - Delete: `--target` workspace:artifact only (no `--file`/`--origin`); optional `-m` load when entries have `itemId` (manifest not rewritten after delete)
-- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Schema v1 = file sources; v2 adds origin fields. Top-level `inspect` lists `.ftdep` in cwd; `inspect -m` shows one. Interactive may offer save after execute or dry-run.
+- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Schema v1 = file sources; v2 adds origin fields. `manifest inspect` one-line summaries in cwd; `manifest inspect -m` dumps one file, or one-line summaries when `-m` is a folder; `manifest list` filenames only; `manifest delete` / `move` local `.ftdep` files (confirm unless `-s`). Interactive may offer save after execute or dry-run.
 - Flags: `--silent`, `--dry-run`
 - Auth: interactive default; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` (not supported for `udf`)
-- Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute and `setup install` / `setup update` (install) / `setup uninstall`. Allows download, compare, inspect, `--dry-run`, `setup status`, `setup update --check`. `--silent` does not override.
+- Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute and `setup install` / `setup update` (install) / `setup uninstall`. Allows download, compare, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, `setup update --check`. `--silent` does not override.
 - Env report: `fabric-tools env` lists supported env vars (`FABRIC_TOOLS_*`, `AZURE_*`) and current process values (`AZURE_CLIENT_SECRET` redacted). `env set` / `env unset` persist catalogued names in the Windows user environment (new terminal needed for other shells; secret values never echoed). Allowed under read-only.
 - Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only. Portable one-file runs warn on stderr to install for up to ~20× faster startup (skipped under `setup install` / `setup update`).
 
