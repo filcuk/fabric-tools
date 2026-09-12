@@ -197,6 +197,7 @@ app = typer.Typer(
     help="CLI for working with Microsoft Fabric artifacts.",
     no_args_is_help=False,
     invoke_without_command=True,
+    add_completion=False,
     cls=_BannerGroup,
     context_settings=_HELP_CONTEXT,
 )

@@ -30,6 +30,8 @@ def test_root_help_orders_help_and_setup_first() -> None:
     version_idx = result.stdout.index("--version")
     interactive_idx = result.stdout.index("--interactive")
     assert help_idx < version_idx < interactive_idx
+    assert "--install-completion" not in result.stdout
+    assert "--show-completion" not in result.stdout
 
     # Panel titles use a leading box edge; avoid matching "Fabric" in the subtitle.
     local_idx = result.stdout.index("─ Local")
