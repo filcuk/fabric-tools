@@ -280,8 +280,16 @@ inspect_item_app = typer.Typer(
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
-inspect_app.add_typer(inspect_workspace_app, name="workspace")
-inspect_app.add_typer(inspect_item_app, name="item")
+inspect_app.add_typer(
+    inspect_workspace_app,
+    name="workspace",
+    short_help="list | get -t <workspaceId>",
+)
+inspect_app.add_typer(
+    inspect_item_app,
+    name="item",
+    short_help="list -t <workspaceId> | get -t <workspaceId:itemId>",
+)
 app.add_typer(inspect_app, name="inspect", rich_help_panel="Fabric")
 
 setup_app = typer.Typer(
@@ -353,7 +361,10 @@ def env_main(ctx: typer.Context) -> None:
     raise typer.Exit(code=EXIT_OK)
 
 
-@env_app.command("set")
+@env_app.command(
+    "set",
+    short_help="<NAME> <VALUE>  Set a catalogued user-environment variable.",
+)
 def env_set(
     name: str = typer.Argument(help="Variable name (from the supported catalog)."),
     value: str = typer.Argument(help="Value to store in the user environment."),
@@ -371,7 +382,10 @@ def env_set(
     raise typer.Exit(code=EXIT_OK)
 
 
-@env_app.command("unset")
+@env_app.command(
+    "unset",
+    short_help="<NAME>  Remove a catalogued user-environment variable.",
+)
 def env_unset(
     name: str = typer.Argument(help="Variable name (from the supported catalog)."),
 ) -> None:
@@ -392,7 +406,10 @@ def env_unset(
     raise typer.Exit(code=EXIT_OK)
 
 
-@manifest_app.command("inspect")
+@manifest_app.command(
+    "inspect",
+    short_help="[-m <PATH>]  Summaries for a folder, or dump one manifest.",
+)
 def manifest_inspect(
     manifest: str | None = typer.Option(
         None,
@@ -446,7 +463,10 @@ def manifest_list() -> None:
     raise typer.Exit(code=EXIT_OK)
 
 
-@manifest_app.command("delete")
+@manifest_app.command(
+    "delete",
+    short_help="-m <manifest>  Delete a local .ftdep file.",
+)
 def manifest_delete(
     manifest: str = typer.Option(
         ...,
@@ -484,7 +504,10 @@ def manifest_delete(
     raise typer.Exit(code=EXIT_OK)
 
 
-@manifest_app.command("move")
+@manifest_app.command(
+    "move",
+    short_help="-m <manifest> <DEST>  Move or rename a local .ftdep file.",
+)
 def manifest_move(
     destination: str = typer.Argument(
         help="Destination stem or path (.ftdep). Parent folders are created.",
@@ -534,7 +557,10 @@ def manifest_move(
     raise typer.Exit(code=EXIT_OK)
 
 
-@inspect_workspace_app.command("list")
+@inspect_workspace_app.command(
+    "list",
+    short_help="[-f <FILTER>] [-i <TYPE>]  List accessible Fabric workspaces.",
+)
 def inspect_workspace_list(
     name_filter: str | None = typer.Option(
         None,
@@ -578,7 +604,10 @@ def inspect_workspace_list(
     raise typer.Exit(code=EXIT_OK)
 
 
-@inspect_workspace_app.command("get")
+@inspect_workspace_app.command(
+    "get",
+    short_help="-t <workspaceId>  Show detailed information for one workspace.",
+)
 def inspect_workspace_get(
     target: str = typer.Option(
         ...,
@@ -613,7 +642,10 @@ def inspect_workspace_get(
     raise typer.Exit(code=EXIT_OK)
 
 
-@inspect_item_app.command("list")
+@inspect_item_app.command(
+    "list",
+    short_help="-t <workspaceId> [-f <FILTER>] [-i <TYPE>]  List items in a workspace.",
+)
 def inspect_item_list(
     target: str = typer.Option(
         ...,
@@ -669,7 +701,10 @@ def inspect_item_list(
     raise typer.Exit(code=EXIT_OK)
 
 
-@inspect_item_app.command("get")
+@inspect_item_app.command(
+    "get",
+    short_help="-t <workspaceId:itemId>  Show detailed information for one item.",
+)
 def inspect_item_get(
     target: str = typer.Option(
         ...,
@@ -865,7 +900,10 @@ def setup_install() -> None:
     raise typer.Exit(code=EXIT_OK)
 
 
-@setup_app.command("uninstall")
+@setup_app.command(
+    "uninstall",
+    short_help="[--keep-files]  Remove registration (and files by default).",
+)
 def setup_uninstall(
     keep_files: bool = typer.Option(
         False,
@@ -919,7 +957,10 @@ def setup_status_cmd() -> None:
     raise typer.Exit(code=EXIT_OK)
 
 
-@setup_app.command("update")
+@setup_app.command(
+    "update",
+    short_help="[-c] [-s]  Check for a newer release, or download and install it.",
+)
 def setup_update(
     check: bool = typer.Option(
         False,

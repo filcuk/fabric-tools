@@ -48,6 +48,7 @@ def test_root_help_orders_help_and_setup_first() -> None:
         "setup",
         "manifest",
         "env",
+        "inspect",
         "dataflow-gen1",
         "dataflow",
         "notebook",
@@ -67,6 +68,8 @@ def test_setup_help_lists_update() -> None:
     assert result.exit_code == 0
     assert "update" in result.stdout
     assert "install" in result.stdout
+    assert "[-c] [-s]" in result.stdout
+    assert "[--keep-files]" in result.stdout
 
 
 def test_manifest_help_lists_commands() -> None:
@@ -74,6 +77,37 @@ def test_manifest_help_lists_commands() -> None:
     assert result.exit_code == 0
     for name in ("inspect", "list", "delete", "move"):
         assert name in result.stdout
+    assert "[-m <PATH>]" in result.stdout
+    assert "-m <manifest>" in result.stdout
+    assert "-m <manifest> <DEST>" in result.stdout
+
+
+def test_inspect_help_lists_workspace_and_item_synopses() -> None:
+    result = CliRunner().invoke(app, ["inspect", "--help"])
+    assert result.exit_code == 0
+    assert "list | get -t <workspaceId>" in result.stdout
+    assert "list -t <workspaceId> | get -t <workspaceId:itemId>" in result.stdout
+
+
+def test_inspect_workspace_help_lists_flag_synopses() -> None:
+    result = CliRunner().invoke(app, ["inspect", "workspace", "--help"])
+    assert result.exit_code == 0
+    assert "[-f <FILTER>] [-i <TYPE>]" in result.stdout
+    assert "-t <workspaceId>" in result.stdout
+
+
+def test_inspect_item_help_lists_flag_synopses() -> None:
+    result = CliRunner().invoke(app, ["inspect", "item", "--help"])
+    assert result.exit_code == 0
+    assert "-t <workspaceId> [-f <FILTER>] [-i <TYPE>]" in result.stdout
+    assert "-t <workspaceId:itemId>" in result.stdout
+
+
+def test_env_help_lists_argument_synopses() -> None:
+    result = CliRunner().invoke(app, ["env", "--help"])
+    assert result.exit_code == 0
+    assert "<NAME> <VALUE>" in result.stdout
+    assert "<NAME>" in result.stdout
 
 
 def test_help_puts_description_before_usage() -> None:
