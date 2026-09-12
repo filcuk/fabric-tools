@@ -1,6 +1,6 @@
 # Development
 
-Contributor guide for `fabric-tools`. End-user CLI usage lives in [README.md](README.md). Agent-oriented project notes live in [AGENTS.md](AGENTS.md).
+Contributor guide for `fabric-tools`. End-user CLI usage lives in [README.md](README.md). Agent-oriented project notes live in [AGENTS.md](AGENTS.md). CLI colour and layout design live in [DESIGN.md](DESIGN.md).
 
 ## Requirements
 

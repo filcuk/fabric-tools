@@ -2,7 +2,7 @@
 
 Guidance for AI agents and contributors working on this repository.
 
-Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md](DEVELOPMENT.md). End-user CLI docs are in [README.md](README.md).
+Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md](DEVELOPMENT.md). End-user CLI docs are in [README.md](README.md). CLI colour and layout design is in [DESIGN.md](DESIGN.md).
 
 ## Project goal
 
@@ -11,9 +11,10 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` + `report` + `paginated-report` + `inspect` groups, `env` (list/set/unset), `manifest` (inspect/list/delete/move), `setup`
+  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` + `report` + `paginated-report` + `inspect` groups, `env` (list/set/unset), `manifest` (inspect/list/delete/move), `setup`, hidden `debug` (`debug color` palette swatch)
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `semantic-model` \| `report` \| `paginated-report`)
+  - `colours.py` — CLI colour roles, help theme, `debug color` swatch (see [DESIGN.md](DESIGN.md))
   - `inspect_cmd.py` — Fabric workspace/item list/get helpers (filters, formatters, `--target` shapes)
   - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; Nuitka onefile extracts under `%LOCALAPPDATA%\fabric-tools\cache`, install copies to `app\`; `setup update` downloads release exe and deferred-installs)
   - `update_check.py` — GitHub Releases check (`setup update --check`); once-per-day background notice; release asset download
@@ -46,6 +47,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Python 3.11+, `src/` layout, Hatchling build
 - CLI framework: Typer; HTTP: httpx; auth: azure-identity (+ azure-identity-broker on Windows WAM)
 - Prefer small, focused modules over large catch-all files
+- CLI colours / aligned tables: use `fabric_tools.colours` roles; do not invent new colours without updating [DESIGN.md](DESIGN.md)
 - Lint/format with Ruff (`ruff check` / `ruff format`; config in `pyproject.toml`)
 - Do not commit secrets, `.env`, or built `dist/` / `build/` artifacts
 - Plan execution: complete one plan step, stop for user review/commit, wait for `continue`
@@ -63,7 +65,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Auth: interactive default; Windows WAM silent reuse, then interactive WAM (skipped in IDE/non-TTY, otherwise 45s timeout) then browser then device code; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` (not supported for `udf`)
 - Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute and `setup install` / `setup update` (install) / `setup uninstall` / `setup clean`. Allows download, compare, `inspect`, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, `setup update --check`. `--silent` does not override.
 - Env report: `fabric-tools env list` lists supported env vars (`FABRIC_TOOLS_*`, `AZURE_*`) and current process values (`AZURE_CLIENT_SECRET` redacted). `env set` / `env unset` persist catalogued names in the Windows user environment (new terminal needed for other shells; secret values never echoed). Allowed under read-only.
-- Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup clean` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only. Release builds use Nuitka onefile (`scripts/build_exe.ps1`).
+- Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup clean` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only. Release builds use Nuitka onefile (`scripts/build_exe.ps1`). `setup status` uses the same key/value layout as inspect get (dim right-aligned keys, no colons; see [DESIGN.md](DESIGN.md)).
 
 ### Inspect (`inspect`)
 
@@ -71,7 +73,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - `--target` / `-t`: workspace GUID for workspace get / item list; `workspaceId:itemId` for item get
 - `--filter` / `-f`: case-insensitive `displayName` substring (inspect-scoped; not `--file`)
 - `--item` / `-i`: Fabric type filter — workspace types (`Personal`, `Workspace`, `AdminWorkspace`) or item types (`Notebook`, `Dataflow`, …); inspect-scoped (not root `--interactive`)
-- List: aligned columns with header row (Rich: name default, other columns dim; headers blue). Workspace: `NAME ID TYPE CAPACITY DOMAIN`. Item: `NAME TARGET TYPE` (`TARGET` = `workspaceId:itemId`). Get: aligned key/value columns (dim keys, default values)
+- List: aligned columns with header row (Rich: name default, other columns dim; headers blue). Workspace: `NAME ID TYPE CAPACITY DOMAIN`. Item: `NAME TARGET TYPE` (`TARGET` = `workspaceId:itemId`). Get: aligned key/value columns (dim **right-aligned** keys, left-aligned default values; no colons)
 - Item list passes `--item` to the Fabric `type` query param; name filter is client-side
 - Scope is what the signed-in principal can access (Personal / My workspace included for user auth; typically not for service principal)
 
@@ -167,6 +169,7 @@ py -3 -m fabric_tools dataflow-gen1 --help
 py -3 -m fabric_tools pipeline --help
 py -3 -m fabric_tools udf --help
 py -3 -m fabric_tools setup --help
+py -3 -m fabric_tools debug color
 py -3 -m ruff check .
 py -3 -m ruff format --check .
 py -3 -m pytest
