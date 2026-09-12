@@ -10,6 +10,7 @@ from fabric_tools.parsing import WorkItem
 from fabric_tools.pipeline.definition import (
     DefinitionError,
     definition_has_platform,
+    definition_with_remote_schedules,
     definition_without_schedules,
     detect_pipeline_path,
     display_name_from_path,
@@ -33,7 +34,7 @@ def download_pipeline(
     client: FabricClient,
     item: WorkItem,
     *,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
 ) -> OpResult:
     """Download one remote DataPipeline definition to a local folder."""
     if item.target is None or item.target.item_id is None:
@@ -48,7 +49,9 @@ def download_pipeline(
         definition = get_pipeline_definition(
             client, target.workspace_id, target.item_id
         )
-        written = unpack_definition(definition, dest, ignore_schedules=ignore_schedules)
+        written = unpack_definition(
+            definition, dest, include_schedules=include_schedules
+        )
     except (FabricApiError, DefinitionError, OSError) as exc:
         return OpResult(
             False,
@@ -71,9 +74,14 @@ def deploy_pipeline(
     *,
     display_name: str | None = None,
     origin_definition_cache: dict[str, dict[str, Any]] | None = None,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
 ) -> OpResult:
-    """Create or overwrite one DataPipeline from a local folder or Fabric origin."""
+    """Create or overwrite one DataPipeline from a local folder or Fabric origin.
+
+    By default omits source ``.schedules``. On overwrite, reattaches the target's
+    existing ``.schedules`` so remote schedules stay untouched. Pass
+    ``include_schedules=True`` to sync schedules from the source instead.
+    """
     if item.target is None:
         return OpResult(False, "deploy requires a --target")
     if item.file is None and item.origin is None:
@@ -88,7 +96,7 @@ def deploy_pipeline(
             client,
             item,
             origin_definition_cache=origin_definition_cache,
-            ignore_schedules=ignore_schedules,
+            include_schedules=include_schedules,
         )
     except (FabricApiError, DefinitionError) as exc:
         return OpResult(
@@ -136,7 +144,15 @@ def deploy_pipeline(
         )
 
     assert target.item_id is not None
+    preserved = False
     try:
+        if not include_schedules:
+            remote_definition = get_pipeline_definition(
+                client, target.workspace_id, target.item_id
+            )
+            definition, preserved = definition_with_remote_schedules(
+                definition, remote_definition
+            )
         update_pipeline_definition(
             client,
             target.workspace_id,
@@ -144,16 +160,17 @@ def deploy_pipeline(
             definition=definition,
             update_metadata=definition_has_platform(definition),
         )
-    except FabricApiError as exc:
+    except (FabricApiError, DefinitionError) as exc:
         return OpResult(
             False,
             f"overwrite failed {target.label()} from {source_label}: {exc}",
             target.workspace_id,
             target.item_id,
         )
+    suffix = " (preserved remote schedules)" if preserved else ""
     return OpResult(
         True,
-        f"updated {target.label()} from {source_label}",
+        f"updated {target.label()} from {source_label}{suffix}",
         target.workspace_id,
         target.item_id,
     )
@@ -243,7 +260,7 @@ def run_download_batch(
     client: FabricClient,
     items: list[WorkItem],
     *,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
 ) -> list[OpResult]:
     results: list[OpResult] = []
     for item in items:
@@ -254,7 +271,7 @@ def run_download_batch(
         else:
             update_status("Downloading pipeline...")
         results.append(
-            download_pipeline(client, item, ignore_schedules=ignore_schedules)
+            download_pipeline(client, item, include_schedules=include_schedules)
         )
     return results
 
@@ -264,7 +281,7 @@ def run_deploy_batch(
     items: list[WorkItem],
     *,
     display_names: list[str] | None = None,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
 ) -> list[OpResult]:
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
@@ -290,7 +307,7 @@ def run_deploy_batch(
                 item,
                 display_name=name,
                 origin_definition_cache=origin_cache,
-                ignore_schedules=ignore_schedules,
+                include_schedules=include_schedules,
             )
         )
     return results
@@ -313,11 +330,11 @@ def _resolve_source_definition(
     item: WorkItem,
     *,
     origin_definition_cache: dict[str, dict[str, Any]] | None,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
 ) -> tuple[dict[str, Any], str]:
     if item.file is not None:
         return (
-            pack_definition(item.file, ignore_schedules=ignore_schedules),
+            pack_definition(item.file, include_schedules=include_schedules),
             str(item.file),
         )
 
@@ -333,7 +350,7 @@ def _resolve_source_definition(
         )
         if origin_definition_cache is not None:
             origin_definition_cache[cache_key] = definition
-    if ignore_schedules:
+    if not include_schedules:
         definition = definition_without_schedules(definition)
     return definition, label
 

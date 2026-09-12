@@ -1938,12 +1938,12 @@ def pipeline_download(
         "-d",
         help="(optional) Validate targets and/or files only; do not download.",
     ),
-    ignore_schedules: bool = typer.Option(
+    include_schedules: bool = typer.Option(
         False,
-        "--ignore-schedules",
+        "--include-schedules",
         "-i",
-        help="(optional) Omit .schedules from the downloaded folder "
-        "(and remove a leftover local .schedules if present).",
+        help="(optional) Include .schedules in the downloaded folder. "
+        "Default omits .schedules and removes a leftover local .schedules.",
     ),
 ) -> None:
     """Download DataPipeline definition(s) from Fabric to local folders."""
@@ -1954,7 +1954,7 @@ def pipeline_download(
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
-        ignore_schedules=ignore_schedules,
+        include_schedules=include_schedules,
     )
 
 
@@ -2009,12 +2009,13 @@ def pipeline_deploy(
         "-d",
         help="(optional) Validate targets and/or sources only; do not deploy.",
     ),
-    ignore_schedules: bool = typer.Option(
+    include_schedules: bool = typer.Option(
         False,
-        "--ignore-schedules",
+        "--include-schedules",
         "-i",
-        help="(optional) Omit .schedules from the packed definition "
-        "(local folder or origin).",
+        help="(optional) Sync .schedules from the source. Default is pipeline-only: "
+        "create omits .schedules; overwrite reattaches the target's existing "
+        ".schedules so remote schedules stay untouched.",
     ),
 ) -> None:
     """Deploy DataPipeline item(s) from local folders or a Fabric origin."""
@@ -2027,7 +2028,7 @@ def pipeline_deploy(
         dry_run=dry_run,
         names=name,
         manifest=manifest,
-        ignore_schedules=ignore_schedules,
+        include_schedules=include_schedules,
     )
 
 
@@ -2069,11 +2070,12 @@ def pipeline_compare(
         "-d",
         help="(optional) Validate targets and/or sources only; do not compare.",
     ),
-    ignore_schedules: bool = typer.Option(
+    include_schedules: bool = typer.Option(
         False,
-        "--ignore-schedules",
+        "--include-schedules",
         "-i",
-        help="(optional) Exclude .schedules from the unified diff.",
+        help="(optional) Include .schedules in the unified diff. "
+        "Default compares pipeline content only.",
     ),
 ) -> None:
     """Compare target DataPipeline to a local folder or Fabric origin."""
@@ -2085,7 +2087,7 @@ def pipeline_compare(
         silent=True,
         dry_run=dry_run,
         manifest=manifest,
-        ignore_schedules=ignore_schedules,
+        include_schedules=include_schedules,
     )
 
 
@@ -3763,7 +3765,7 @@ def run_pipeline_command(
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for pipeline CLI commands and the interactive wizard."""
@@ -3876,7 +3878,7 @@ def run_pipeline_command(
             confirm_download_overwrites_pipeline(client, items, silent=silent)
             with busy("Downloading..."):
                 op_results = run_pl_download(
-                    client, items, ignore_schedules=ignore_schedules
+                    client, items, include_schedules=include_schedules
                 )
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -3899,13 +3901,14 @@ def run_pipeline_command(
                 items,
                 silent=silent,
                 display_names=display_names,
+                include_schedules=include_schedules,
             )
             with busy("Deploying..."):
                 op_results = run_pl_deploy(
                     client,
                     items,
                     display_names=display_names,
-                    ignore_schedules=ignore_schedules,
+                    include_schedules=include_schedules,
                 )
             _print_op_results(op_results)  # type: ignore[arg-type]
             for result in op_results:
@@ -3936,7 +3939,7 @@ def run_pipeline_command(
         elif mode is CommandMode.COMPARE:
             with busy("Comparing..."):
                 compare_results = run_pl_compare(
-                    client, items, ignore_schedules=ignore_schedules
+                    client, items, include_schedules=include_schedules
                 )
             _print_compare_results(compare_results)  # type: ignore[arg-type]
             _write_manifest_after_success(

@@ -32,7 +32,7 @@ def compare_pipeline(
     client: FabricClient,
     item: WorkItem,
     *,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
 ) -> CompareResult:
     """Diff target DataPipeline against a local folder or another remote."""
     if item.target is None or item.target.item_id is None:
@@ -59,16 +59,16 @@ def compare_pipeline(
 
     if item.origin is not None:
         return _compare_origin_to_target(
-            client, item, ignore_schedules=ignore_schedules
+            client, item, include_schedules=include_schedules
         )
-    return _compare_file_to_target(client, item, ignore_schedules=ignore_schedules)
+    return _compare_file_to_target(client, item, include_schedules=include_schedules)
 
 
 def run_compare_batch(
     client: FabricClient,
     items: list[WorkItem],
     *,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
 ) -> list[CompareResult]:
     results: list[CompareResult] = []
     for item in items:
@@ -81,7 +81,7 @@ def run_compare_batch(
         else:
             update_status("Comparing pipeline...")
         results.append(
-            compare_pipeline(client, item, ignore_schedules=ignore_schedules)
+            compare_pipeline(client, item, include_schedules=include_schedules)
         )
     return results
 
@@ -90,7 +90,7 @@ def _compare_file_to_target(
     client: FabricClient,
     item: WorkItem,
     *,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
 ) -> CompareResult:
     assert item.target is not None and item.target.item_id is not None
     assert item.file is not None
@@ -99,7 +99,9 @@ def _compare_file_to_target(
 
     try:
         validate_local_pipeline(local_path)
-        local_text = folder_to_diff_text(local_path, ignore_schedules=ignore_schedules)
+        local_text = folder_to_diff_text(
+            local_path, include_schedules=include_schedules
+        )
     except DefinitionError as exc:
         return CompareResult(
             ok=False,
@@ -117,7 +119,7 @@ def _compare_file_to_target(
             client, target.workspace_id, target.item_id
         )
         remote_text = definition_to_diff_text(
-            remote_definition, ignore_schedules=ignore_schedules
+            remote_definition, include_schedules=include_schedules
         )
     except (FabricApiError, DefinitionError) as exc:
         return CompareResult(
@@ -140,7 +142,7 @@ def _compare_origin_to_target(
     client: FabricClient,
     item: WorkItem,
     *,
-    ignore_schedules: bool = False,
+    include_schedules: bool = False,
 ) -> CompareResult:
     assert item.target is not None and item.target.item_id is not None
     assert item.origin is not None and item.origin.item_id is not None
@@ -164,10 +166,10 @@ def _compare_origin_to_target(
             client, target.workspace_id, target.item_id
         )
         origin_text = definition_to_diff_text(
-            origin_definition, ignore_schedules=ignore_schedules
+            origin_definition, include_schedules=include_schedules
         )
         target_text = definition_to_diff_text(
-            target_definition, ignore_schedules=ignore_schedules
+            target_definition, include_schedules=include_schedules
         )
     except (FabricApiError, DefinitionError) as exc:
         return CompareResult(

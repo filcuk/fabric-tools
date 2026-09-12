@@ -1130,6 +1130,7 @@ def confirm_deploy_actions_pipeline(
     *,
     silent: bool,
     display_names: list[str] | None = None,
+    include_schedules: bool = False,
 ) -> None:
     """Confirm create or remote overwrite before DataPipeline deploy."""
     from fabric_tools.pipeline.definition import (
@@ -1165,6 +1166,16 @@ def confirm_deploy_actions_pipeline(
                         name = "(unnamed)"
                 source = _source_phrase_fabric(client, item)
                 lines.append(f"  - '{name}' in {workspace}{source}")
+        if include_schedules:
+            lines.append(
+                "Source .schedules will be included when present "
+                "(create has no existing schedule to preserve)."
+            )
+        else:
+            lines.append(
+                "Pipeline-only: .schedules will not be sent "
+                "(use --include-schedules / -i to sync schedules)."
+            )
         lines.append("Are you sure?")
         confirm_or_abort("\n".join(lines), silent=False)
         return
@@ -1177,6 +1188,17 @@ def confirm_deploy_actions_pipeline(
             remote = resolve_item_name(client, item.target)
             source = _source_phrase_fabric(client, item, prefix=" with")
             lines.append(f"  - {remote} in {workspace}{source}")
+    if include_schedules:
+        lines.append(
+            "Source .schedules will replace remote schedules "
+            "(or clear them if the source has none)."
+        )
+    else:
+        lines.append(
+            "Pipeline-only: each target's existing .schedules will be reattached "
+            "so remote schedules stay untouched "
+            "(use --include-schedules / -i to sync schedules from the source)."
+        )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 

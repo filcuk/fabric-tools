@@ -181,7 +181,7 @@ def test_compare_origin_to_target() -> None:
     assert "OriginWait" in result.diff_text or "TargetWait" in result.diff_text
 
 
-def test_compare_ignore_schedules(tmp_path: Path) -> None:
+def test_compare_default_omits_schedules(tmp_path: Path) -> None:
     folder = _write_folder(
         tmp_path / "ETL.DataPipeline",
         wait_seconds=10,
@@ -196,11 +196,28 @@ def test_compare_ignore_schedules(tmp_path: Path) -> None:
         }
     )
     item = WorkItem(Target(WS, PL), folder)
-    without = compare_pipeline(client, item)  # type: ignore[arg-type]
-    assert without.ok
-    assert not without.identical
+    default = compare_pipeline(client, item)  # type: ignore[arg-type]
+    assert default.ok
+    assert default.identical
+    assert default.diff_text == ""
 
-    ignored = compare_pipeline(client, item, ignore_schedules=True)  # type: ignore[arg-type]
-    assert ignored.ok
-    assert ignored.identical
-    assert ignored.diff_text == ""
+    included = compare_pipeline(client, item, include_schedules=True)  # type: ignore[arg-type]
+    assert included.ok
+    assert not included.identical
+
+
+def test_compare_include_schedules_identical(tmp_path: Path) -> None:
+    schedules = '{"schedules":[{"name":"same"}]}\n'
+    folder = _write_folder(
+        tmp_path / "ETL.DataPipeline",
+        wait_seconds=10,
+        schedules=schedules,
+    )
+    client = FakeClient(
+        {PL: _definition(wait_seconds=10, schedules=schedules.encode("utf-8"))}
+    )
+    item = WorkItem(Target(WS, PL), folder)
+    result = compare_pipeline(client, item, include_schedules=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert result.identical
+    assert result.diff_text == ""

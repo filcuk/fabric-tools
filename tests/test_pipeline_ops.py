@@ -256,7 +256,7 @@ def test_download_rejects_bad_destination(tmp_path: Path) -> None:
     assert "Unsupported pipeline path" in result.message
 
 
-def test_download_ignore_schedules(tmp_path: Path) -> None:
+def test_download_default_omits_schedules(tmp_path: Path) -> None:
     client = FakeClient(definitions_by_item={PL: _definition(with_schedules=True)})
     dest = tmp_path / "out.DataPipeline"
     dest.mkdir()
@@ -264,35 +264,137 @@ def test_download_ignore_schedules(tmp_path: Path) -> None:
         '{"schedules":[{"name":"stale"}]}\n', encoding="utf-8"
     )
     item = WorkItem(Target(WS, PL), dest)
-    result = download_pipeline(client, item, ignore_schedules=True)  # type: ignore[arg-type]
+    result = download_pipeline(client, item)  # type: ignore[arg-type]
     assert result.ok
     assert (dest / "pipeline-content.json").is_file()
     assert not (dest / ".schedules").exists()
 
 
-def test_deploy_ignore_schedules_from_folder(tmp_path: Path) -> None:
-    client = FakeClient()
+def test_download_include_schedules(tmp_path: Path) -> None:
+    client = FakeClient(definitions_by_item={PL: _definition(with_schedules=True)})
+    dest = tmp_path / "out.DataPipeline"
+    item = WorkItem(Target(WS, PL), dest)
+    result = download_pipeline(client, item, include_schedules=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert (dest / ".schedules").is_file()
+
+
+def test_deploy_overwrite_default_preserves_remote_schedules(tmp_path: Path) -> None:
+    client = FakeClient(
+        definitions_by_item={
+            PL: _definition(wait_seconds=10, with_schedules=True),
+        }
+    )
+    # Make remote schedules distinct so we can assert they were reattached.
+    remote_schedules = _part(".schedules", b'{"schedules":[{"name":"remote"}]}\n')
+    client.definitions_by_item[PL]["parts"] = [
+        p for p in client.definitions_by_item[PL]["parts"] if p["path"] != ".schedules"
+    ] + [remote_schedules]
+
     src = _write_local_pipeline(tmp_path / "ETL.DataPipeline", with_schedules=True)
     item = WorkItem(Target(WS, PL), src)
-    result = deploy_pipeline(client, item, ignore_schedules=True)  # type: ignore[arg-type]
+    result = deploy_pipeline(client, item)  # type: ignore[arg-type]
     assert result.ok
+    assert "preserved remote schedules" in result.message
     assert client.last_update_definition is not None
     paths = {
         part["path"] for part in client.last_update_definition["definition"]["parts"]
     }
+    assert "pipeline-content.json" in paths
+    assert ".schedules" in paths
+    schedules = next(
+        p
+        for p in client.last_update_definition["definition"]["parts"]
+        if p["path"] == ".schedules"
+    )
+    assert b"remote" in base64.b64decode(schedules["payload"])
+    # Source schedules must not be sent when include_schedules is false.
+    assert client.calls  # getDefinition for preserve + updateDefinition
+    get_calls = [c for c in client.calls if str(c[1]).endswith("/getDefinition")]
+    assert len(get_calls) == 1
+
+
+def test_deploy_overwrite_include_schedules_from_folder(tmp_path: Path) -> None:
+    client = FakeClient(
+        definitions_by_item={PL: _definition(wait_seconds=10, with_schedules=True)}
+    )
+    src = _write_local_pipeline(tmp_path / "ETL.DataPipeline", with_schedules=True)
+    # Distinct local schedules content
+    (src / ".schedules").write_text(
+        '{"schedules":[{"name":"local"}]}\n', encoding="utf-8"
+    )
+    item = WorkItem(Target(WS, PL), src)
+    result = deploy_pipeline(client, item, include_schedules=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert "preserved remote schedules" not in result.message
+    assert client.last_update_definition is not None
+    schedules = next(
+        p
+        for p in client.last_update_definition["definition"]["parts"]
+        if p["path"] == ".schedules"
+    )
+    assert b"local" in base64.b64decode(schedules["payload"])
+    # No preserve getDefinition when including source schedules.
+    get_calls = [c for c in client.calls if str(c[1]).endswith("/getDefinition")]
+    assert get_calls == []
+
+
+def test_deploy_create_default_omits_schedules(tmp_path: Path) -> None:
+    client = FakeClient()
+    src = _write_local_pipeline(tmp_path / "ETL.DataPipeline", with_schedules=True)
+    item = WorkItem(Target(WS), src)
+    result = deploy_pipeline(client, item, display_name="ETL")  # type: ignore[arg-type]
+    assert result.ok
+    assert client.last_create_payload is not None
+    paths = {part["path"] for part in client.last_create_payload["definition"]["parts"]}
     assert ".schedules" not in paths
     assert "pipeline-content.json" in paths
 
 
-def test_deploy_ignore_schedules_from_origin() -> None:
+def test_deploy_include_schedules_from_origin() -> None:
     client = FakeClient(
         definitions_by_item={ORIGIN: _definition(wait_seconds=20, with_schedules=True)}
     )
     item = WorkItem(Target(WS, PL), None, origin=Target(WS, ORIGIN))
-    result = deploy_pipeline(client, item, ignore_schedules=True)  # type: ignore[arg-type]
+    # Target also needs a definition for FakeClient get_item, but include path
+    # should not fetch target getDefinition for preserve.
+    client.definitions_by_item[PL] = _definition(wait_seconds=10, with_schedules=True)
+    result = deploy_pipeline(client, item, include_schedules=True)  # type: ignore[arg-type]
     assert result.ok
     assert client.last_update_definition is not None
     paths = {
         part["path"] for part in client.last_update_definition["definition"]["parts"]
     }
-    assert ".schedules" not in paths
+    assert ".schedules" in paths
+    get_calls = [c for c in client.calls if str(c[1]).endswith("/getDefinition")]
+    # Only origin getDefinition, not target preserve fetch.
+    assert len(get_calls) == 1
+    assert ORIGIN in get_calls[0][1]
+
+
+def test_deploy_overwrite_from_origin_preserves_target_schedules() -> None:
+    client = FakeClient(
+        definitions_by_item={
+            ORIGIN: _definition(wait_seconds=20, with_schedules=True),
+            PL: _definition(wait_seconds=10, with_schedules=True),
+        }
+    )
+    # Distinct target schedules
+    client.definitions_by_item[PL]["parts"] = [
+        p for p in client.definitions_by_item[PL]["parts"] if p["path"] != ".schedules"
+    ] + [_part(".schedules", b'{"schedules":[{"name":"target"}]}\n')]
+
+    item = WorkItem(Target(WS, PL), None, origin=Target(WS, ORIGIN))
+    result = deploy_pipeline(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert "preserved remote schedules" in result.message
+    assert client.last_update_definition is not None
+    schedules = next(
+        p
+        for p in client.last_update_definition["definition"]["parts"]
+        if p["path"] == ".schedules"
+    )
+    assert b"target" in base64.b64decode(schedules["payload"])
+    # Origin getDefinition + target preserve getDefinition
+    get_calls = [c for c in client.calls if str(c[1]).endswith("/getDefinition")]
+    assert len(get_calls) == 2

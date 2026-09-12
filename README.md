@@ -61,7 +61,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 - DataPipeline (`pipeline`)
   - `*.DataPipeline\` — Fabric Git folder with `pipeline-content.json` (optional `.platform`, `.schedules`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
-  - `--ignore-schedules` / `-i`: omit `.schedules` on download/deploy/compare (Job Scheduler surface is optional vs activity JSON)
+  - Default is pipeline-only (omit `.schedules`). `--include-schedules` / `-i` syncs schedules: download writes them; compare includes them; deploy create/overwrite sends source schedules. Overwrite without `-i` reattaches each target's existing `.schedules` so remote schedules stay untouched
   - Activity references (notebooks, lakehouses, connections) are passed through as-is and must be valid in the target workspace
 - User Data Functions (`udf`)
   - `*.UserDataFunction\` — Fabric Git-style folder (`definition.json`, `function_app.py`, `resources/functions.json`; optional `.platform`, `privateLibraries/*.whl`)
@@ -99,7 +99,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 | `--cells` | `-c` | Notebook overwrite only: listed 1-based cells (single local `.ipynb` only) |
 | `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`) |
 | `--independent` | `-i` | `report` download/deploy/compare and `semantic-model deploy`: act only on this command’s artifact; not on `semantic-model delete` |
-| `--ignore-schedules` | `-i` | `pipeline` download/deploy/compare: omit `.schedules` (not on delete) |
+| `--include-schedules` | `-i` | `pipeline` download/deploy/compare: sync `.schedules` (default is pipeline-only; overwrite without `-i` preserves remote schedules; not on delete) |
 
 ## Example commands
 
