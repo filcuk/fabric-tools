@@ -15,7 +15,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `semantic-model` \| `report` \| `paginated-report`)
   - `inspect_cmd.py` — Fabric workspace/item list/get helpers (filters, formatters, `--target` shapes)
-  - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; Nuitka onefile unpacks under `%LOCALAPPDATA%\fabric-tools\app`; `setup update` downloads release exe and deferred-installs)
+  - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; Nuitka onefile extracts under `%LOCALAPPDATA%\fabric-tools\cache`, install copies to `app\`; `setup update` downloads release exe and deferred-installs)
   - `update_check.py` — GitHub Releases check (`setup update --check`); once-per-day background notice; release asset download
   - `auth.py` — Azure token acquisition (Fabric + Power BI scopes; SP env, timed WAM broker, browser/device code; persistent cache)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`, `list_workspaces`, `list_items`)

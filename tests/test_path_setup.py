@@ -9,10 +9,12 @@ import pytest
 
 from fabric_tools.path_setup import (
     APPLY_UPDATE_HELPER_NAME,
+    CLEAR_ONEFILE_CACHE_HELPER_NAME,
     EXE_NAME,
     INTERNAL_DIR_NAME,
     ONEDIR_BOOTLOADER_DIR,
     PathSetupError,
+    _cleanup_onefile_caches,
     _has_nuitka_runtime_siblings,
     _install_from_onefile_meipass,
     _install_frozen_tree,
@@ -21,11 +23,14 @@ from fabric_tools.path_setup import (
     _normalize_dir,
     _runtime_present,
     _split_path,
+    _write_deferred_cache_cleanup_helper,
     _write_deferred_install_helper,
     format_nuitka_orphan_exe_error,
     frozen_app_root,
     is_frozen,
     is_portable_onefile,
+    legacy_onefile_cache_dir,
+    onefile_cache_dir,
     path_status,
     perform_setup_update,
 )
@@ -242,6 +247,65 @@ def test_write_deferred_install_helper(tmp_path: Path) -> None:
     text = helper.read_text(encoding="utf-8")
     assert "tasklist" in text
     assert "setup install" in text
+
+
+def test_write_deferred_cache_cleanup_helper(tmp_path: Path) -> None:
+    helper = tmp_path / CLEAR_ONEFILE_CACHE_HELPER_NAME
+    _write_deferred_cache_cleanup_helper(helper)
+    text = helper.read_text(encoding="utf-8")
+    assert "tasklist" in text
+    assert "rmdir" in text
+
+
+def test_cleanup_onefile_caches_removes_current_and_legacy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "fabric-tools"
+    cache = root / "cache" / "0.3.0.0"
+    legacy = root / "fabric-tools" / "0.3.0.0"
+    cache.mkdir(parents=True)
+    legacy.mkdir(parents=True)
+    (cache / "python312.dll").write_bytes(b"dll")
+    (legacy / "python312.dll").write_bytes(b"dll")
+
+    monkeypatch.setattr("fabric_tools.path_setup.install_root", lambda: root)
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: False)
+
+    result = _cleanup_onefile_caches()
+    assert result == {"cleaned": True, "scheduled": False}
+    assert not onefile_cache_dir().exists()
+    assert not legacy_onefile_cache_dir().exists()
+
+
+def test_cleanup_onefile_caches_defers_when_running_from_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "fabric-tools"
+    cache = root / "cache" / "0.3.0.0"
+    cache.mkdir(parents=True)
+    (cache / "python312.dll").write_bytes(b"dll")
+    (cache / "_ctypes.pyd").write_bytes(b"pyd")
+
+    spawned: list[tuple] = []
+
+    monkeypatch.setattr("fabric_tools.path_setup.install_root", lambda: root)
+    monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.frozen_app_root",
+        lambda: cache,
+    )
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._spawn_deferred_cache_cleanup",
+        lambda helper, pid, *dirs: spawned.append((helper, pid, dirs)),
+    )
+
+    result = _cleanup_onefile_caches()
+    assert result == {"cleaned": False, "scheduled": True}
+    assert cache.exists()
+    assert len(spawned) == 1
+    helper, _pid, dirs = spawned[0]
+    assert helper.name == CLEAR_ONEFILE_CACHE_HELPER_NAME
+    assert onefile_cache_dir() in dirs
 
 
 def test_is_frozen_detects_nuitka_compiled(monkeypatch: pytest.MonkeyPatch) -> None:

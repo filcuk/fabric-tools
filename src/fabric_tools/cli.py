@@ -875,6 +875,10 @@ def setup_install() -> None:
         typer.echo("Install directory was already on your user PATH.")
     if result.get("legacy_cleaned"):
         typer.echo("Removed previous install under fabric-tools\\bin.")
+    if result.get("cache_cleaned"):
+        typer.echo("Removed onefile extract cache.")
+    elif result.get("cache_cleanup_scheduled"):
+        typer.echo("Scheduled onefile extract cache cleanup after this process exits.")
     typer.echo(
         "Open a new terminal (restart your IDE if needed), then run: fabric-tools --help"
     )

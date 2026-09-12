@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -13,11 +14,15 @@ INSTALL_DIR_NAME = "fabric-tools"
 APP_DIR_NAME = "app"
 LEGACY_BIN_DIR_NAME = "bin"
 UPDATE_DIR_NAME = "update"
+CACHE_DIR_NAME = "cache"
+# Pre-cutover Nuitka onefile cache: %LOCALAPPDATA%\fabric-tools\fabric-tools\{VERSION}
+LEGACY_ONEFILE_CACHE_DIR_NAME = "fabric-tools"
 EXE_NAME = "fabric-tools.exe"
 CMD_NAME = "fabric-tools.cmd"
 INTERNAL_DIR_NAME = "_internal"
 ONEDIR_BOOTLOADER_DIR = "_onedir_bootloader"
 APPLY_UPDATE_HELPER_NAME = "apply-update.cmd"
+CLEAR_ONEFILE_CACHE_HELPER_NAME = "clear-onefile-cache.cmd"
 
 
 class PathSetupError(RuntimeError):
@@ -64,6 +69,16 @@ def default_install_dir() -> Path:
 
 def legacy_bin_dir() -> Path:
     return install_root() / LEGACY_BIN_DIR_NAME
+
+
+def onefile_cache_dir() -> Path:
+    """Nuitka onefile extract cache (``--onefile-tempdir-spec`` …/cache/{VERSION})."""
+    return install_root() / CACHE_DIR_NAME
+
+
+def legacy_onefile_cache_dir() -> Path:
+    """Old onefile cache nest ``…\\fabric-tools\\fabric-tools\\`` (pre cache\\ layout)."""
+    return install_root() / LEGACY_ONEFILE_CACHE_DIR_NAME
 
 
 def installed_exe_path(install_dir: Path | None = None) -> Path:
@@ -181,7 +196,7 @@ def _has_nuitka_runtime_siblings(directory: Path) -> bool:
         return False
 
 
-ONEFILE_TEMPDIR_SPEC = "{CACHE_DIR}/{COMPANY}/{PRODUCT}/{VERSION}"
+ONEFILE_TEMPDIR_SPEC = "{CACHE_DIR}/{COMPANY}/cache/{VERSION}"
 
 
 def is_portable_onefile() -> bool:
@@ -267,6 +282,7 @@ def install_to_user_path(*, install_dir: Path | None = None) -> dict[str, str | 
 
     path_added = ensure_user_path_contains(str(target_dir))
     legacy_cleaned = _cleanup_legacy_bin_install()
+    cache_cleanup = _cleanup_onefile_caches()
     return {
         "install_dir": str(target_dir),
         "bin_dir": str(target_dir),
@@ -276,6 +292,8 @@ def install_to_user_path(*, install_dir: Path | None = None) -> dict[str, str | 
         "path_added": path_added,
         "already_on_path": not path_added and _user_path_contains(str(target_dir)),
         "legacy_cleaned": legacy_cleaned,
+        "cache_cleaned": cache_cleanup["cleaned"],
+        "cache_cleanup_scheduled": cache_cleanup["scheduled"],
     }
 
 
@@ -299,6 +317,9 @@ def uninstall_from_user_path(
     if delete_files:
         deleted.extend(_delete_install_tree(target_dir))
         deleted.extend(_delete_install_tree(legacy))
+        deleted.extend(_delete_install_tree(onefile_cache_dir()))
+        deleted.extend(_delete_install_tree(legacy_onefile_cache_dir()))
+        deleted.extend(_delete_install_tree(update_staging_dir()))
         _try_remove_empty_install_root()
 
     return {
@@ -447,6 +468,108 @@ def _spawn_deferred_install(helper: Path, pid: int, exe: Path) -> None:
         raise PathSetupError(f"failed to schedule update install: {exc}") from exc
 
 
+def _path_is_under(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _onefile_cache_dirs() -> list[Path]:
+    return [onefile_cache_dir(), legacy_onefile_cache_dir()]
+
+
+def _running_from_onefile_cache() -> bool:
+    """True when this process's payload (or argv0) lives under a onefile cache tree."""
+    candidates: list[Path] = []
+    root = frozen_app_root()
+    if root is not None:
+        candidates.append(root)
+    with contextlib.suppress(IndexError, OSError):
+        candidates.append(Path(sys.argv[0]).resolve().parent)
+    for cache_dir in _onefile_cache_dirs():
+        if not cache_dir.exists():
+            continue
+        if any(_path_is_under(path, cache_dir) for path in candidates):
+            return True
+    return False
+
+
+def _write_deferred_cache_cleanup_helper(path: Path) -> None:
+    """Write a cmd script that waits for a PID, then deletes cache directories."""
+    path.write_text(
+        "\r\n".join(
+            [
+                "@echo off",
+                "setlocal EnableExtensions",
+                'set "PID=%~1"',
+                ":waitloop",
+                'tasklist /FI "PID eq %PID%" 2>NUL | findstr /I "%PID%" >NUL',
+                "if not errorlevel 1 (",
+                "  ping -n 2 127.0.0.1 >NUL",
+                "  goto waitloop",
+                ")",
+                'if not "%~2"=="" if exist "%~2" rmdir /s /q "%~2"',
+                'if not "%~3"=="" if exist "%~3" rmdir /s /q "%~3"',
+                "exit /b 0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _spawn_deferred_cache_cleanup(helper: Path, pid: int, *dirs: Path) -> None:
+    """Start deferred onefile-cache cleanup detached from this process."""
+    creationflags = 0
+    if hasattr(subprocess, "DETACHED_PROCESS"):
+        creationflags |= subprocess.DETACHED_PROCESS
+    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        creationflags |= subprocess.CREATE_NO_WINDOW
+
+    args = ["cmd.exe", "/c", str(helper), str(pid), *(str(d) for d in dirs)]
+    try:
+        subprocess.Popen(  # noqa: S603
+            args,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+            close_fds=True,
+        )
+    except OSError as exc:
+        raise PathSetupError(f"failed to schedule onefile cache cleanup: {exc}") from exc
+
+
+def _cleanup_onefile_caches() -> dict[str, bool]:
+    """Remove onefile extract caches (current + legacy layout).
+
+    When this process is still running from a cache extract (portable onefile
+    ``setup install``), deletion is deferred until after exit.
+    """
+    targets = [d for d in _onefile_cache_dirs() if d.exists()]
+    if not targets:
+        return {"cleaned": False, "scheduled": False}
+
+    if is_frozen() and _running_from_onefile_cache():
+        staging = update_staging_dir()
+        staging.mkdir(parents=True, exist_ok=True)
+        helper = staging / CLEAR_ONEFILE_CACHE_HELPER_NAME
+        _write_deferred_cache_cleanup_helper(helper)
+        _spawn_deferred_cache_cleanup(helper, os.getpid(), *targets)
+        return {"cleaned": False, "scheduled": True}
+
+    cleaned = False
+    for directory in targets:
+        if _delete_install_tree(directory):
+            cleaned = True
+    _try_remove_empty_install_root()
+    return {"cleaned": cleaned, "scheduled": False}
+
+
 def ensure_user_path_contains(directory: str) -> bool:
     """Add directory to the current user PATH if missing. Returns True if modified."""
     current = _read_user_path()
@@ -505,7 +628,7 @@ def _install_nuitka_tree(source_root: Path, target_dir: Path) -> None:
 
     Onefile extracts ship ``fabric-tools.dll`` (not ``fabric-tools.exe``). In that
     case we install the running onefile bootstrap; the payload is unpacked on first
-    run into the Nuitka cache (``--onefile-tempdir-spec``).
+    run into ``%LOCALAPPDATA%\\fabric-tools\\cache\\{VERSION}``.
     """
     source_root = source_root.resolve()
     target_dir = target_dir.resolve()

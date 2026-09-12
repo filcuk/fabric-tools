@@ -83,7 +83,7 @@ Notes:
 
 - Packaging: [`packaging/nuitka_options.py`](packaging/nuitka_options.py), [`packaging/nuitka_entry.py`](packaging/nuitka_entry.py)
 - Ship only `dist/fabric-tools.exe`. Do not distribute `dist/nuitka/` intermediates (`.dist` / `.build`)
-- Portable runs extract on each launch; `setup install` is for everyday use
+- Portable runs extract under `%LOCALAPPDATA%\fabric-tools\cache\`; `setup install` copies to `app\` and clears the cache
 - Do not commit `dist/` or `build/`
 - Unsigned binaries may trigger SmartScreen warnings
 - Auth from the exe uses Windows WAM (when available), browser/device-code, or `AZURE_*` service principal env vars; tokens persist under `%LOCALAPPDATA%\fabric-tools`

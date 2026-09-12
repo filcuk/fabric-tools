@@ -84,8 +84,8 @@ def compiler_args(*, version_info: tuple[int, int] | None = None) -> list[str]:
     return ["--mingw64"]
 
 
-# Unpacked onefile payload cache (Nuitka-supported placeholders only).
-ONEFILE_TEMPDIR_SPEC = "{CACHE_DIR}/{COMPANY}/{PRODUCT}/{VERSION}"
+# Unpacked onefile payload under %LOCALAPPDATA%\fabric-tools\cache\{VERSION}.
+ONEFILE_TEMPDIR_SPEC = "{CACHE_DIR}/{COMPANY}/cache/{VERSION}"
 
 
 def shared_nuitka_args(
