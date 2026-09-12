@@ -1250,6 +1250,12 @@ def notebook_deploy(
         "-d",
         help="(optional) Validate targets and/or sources only; do not deploy.",
     ),
+    remap: list[str] | None = typer.Option(
+        None,
+        "--remap",
+        "-r",
+        help=_GUID_REMAP_HELP,
+    ),
 ) -> None:
     """Deploy notebook(s) from local files or a Fabric origin (create or overwrite)."""
     run_notebook_command(
@@ -1262,6 +1268,7 @@ def notebook_deploy(
         names=name,
         cells=cells,
         manifest=manifest,
+        remap_values=remap,
     )
 
 
@@ -2738,6 +2745,12 @@ def udf_deploy(
         "-d",
         help="(optional) Validate targets and/or sources only; do not deploy.",
     ),
+    remap: list[str] | None = typer.Option(
+        None,
+        "--remap",
+        "-r",
+        help=_GUID_REMAP_HELP,
+    ),
 ) -> None:
     """Deploy User Data Function item(s) from local folders or a Fabric origin."""
     run_udf_command(
@@ -2749,6 +2762,7 @@ def udf_deploy(
         dry_run=dry_run,
         names=name,
         manifest=manifest,
+        remap_values=remap,
     )
 
 
@@ -2855,6 +2869,7 @@ def run_notebook_command(
     cells: list[str] | None = None,
     ignore_outputs: bool = False,
     manifest: str | None = None,
+    remap_values: list[str] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry used by CLI commands and the interactive wizard.
@@ -2872,6 +2887,7 @@ def run_notebook_command(
         confirm_download_overwrites,
         resolve_notebook_download_files,
     )
+    from fabric_tools.guid_map import guid_map_confirm_line
     from fabric_tools.notebook.cells import (
         CellSelectionError,
         parse_cell_indices,
@@ -2885,6 +2901,10 @@ def run_notebook_command(
     )
     from fabric_tools.status import busy
     from fabric_tools.validate import run_dry_run
+
+    if remap_values and mode is not CommandMode.DEPLOY:
+        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
+        raise typer.Exit(code=EXIT_USER)
 
     try:
         cell_indices = parse_cell_indices(cells)
@@ -2903,6 +2923,18 @@ def run_notebook_command(
     except (ParseError, ManifestError, CellSelectionError) as exc:
         typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
+
+    guid_map_specs = (
+        _resolve_deploy_guid_maps(
+            remap_values,
+            n_targets=len(items),
+            has_targets=has_targets,
+        )
+        if mode is CommandMode.DEPLOY
+        else []
+    )
+    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
 
     if dry_run:
         client: FabricClient | None = None
@@ -2936,6 +2968,11 @@ def run_notebook_command(
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
+        if remap_values and not failed:
+            if map_line:
+                typer.secho(f"remap ok: {map_line}", fg=FG_OK)
+            else:
+                typer.secho("remap ok: GUID remap file(s) valid", fg=FG_OK)
         if not failed and has_targets and (has_files or has_origins):
             try:
                 display_names = (
@@ -3000,6 +3037,7 @@ def run_notebook_command(
                 silent=silent,
                 display_names=display_names,
                 cell_indices=cell_indices,
+                guid_map_line=map_line,
             )
             with busy("Deploying..."):
                 op_results = run_deploy_batch(
@@ -3007,6 +3045,7 @@ def run_notebook_command(
                     items,
                     display_names=display_names,
                     cell_indices=cell_indices,
+                    guid_maps=guid_maps or None,
                 )
             _print_op_results(op_results)
             for result in op_results:
@@ -4579,6 +4618,7 @@ def run_udf_command(
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
+    remap_values: list[str] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for User Data Function CLI commands and the interactive wizard."""
@@ -4591,6 +4631,7 @@ def run_udf_command(
         confirm_download_overwrites_udf,
         resolve_udf_download_files,
     )
+    from fabric_tools.guid_map import guid_map_confirm_line
     from fabric_tools.status import busy
     from fabric_tools.udf.compare import run_compare_batch as run_udf_compare
     from fabric_tools.udf.ops import (
@@ -4614,6 +4655,10 @@ def run_udf_command(
         typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
+    if remap_values and mode is not CommandMode.DEPLOY:
+        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
+        raise typer.Exit(code=EXIT_USER)
+
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
             _resolve_udf_inputs(
@@ -4629,6 +4674,18 @@ def run_udf_command(
     except (ParseError, ManifestError) as exc:
         typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
+
+    guid_map_specs = (
+        _resolve_deploy_guid_maps(
+            remap_values,
+            n_targets=len(items),
+            has_targets=has_targets,
+        )
+        if mode is CommandMode.DEPLOY
+        else []
+    )
+    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
 
     if dry_run:
         client: FabricClient | None = None
@@ -4661,6 +4718,11 @@ def run_udf_command(
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
+        if remap_values and not failed:
+            if map_line:
+                typer.secho(f"remap ok: {map_line}", fg=FG_OK)
+            else:
+                typer.secho("remap ok: GUID remap file(s) valid", fg=FG_OK)
         if not failed and has_targets and (has_files or has_origins):
             try:
                 display_names = (
@@ -4724,12 +4786,14 @@ def run_udf_command(
                 items,
                 silent=silent,
                 display_names=display_names,
+                guid_map_line=map_line,
             )
             with busy("Deploying..."):
                 op_results = run_udf_deploy(
                     client,
                     items,
                     display_names=display_names,
+                    guid_maps=guid_maps or None,
                 )
             _print_op_results(op_results)  # type: ignore[arg-type]
             for result in op_results:

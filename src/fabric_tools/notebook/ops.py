@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.guid_map import GuidMapError, apply_guid_map_to_definition
 from fabric_tools.notebook.cells import (
     CellSelectionError,
     format_cell_indices,
@@ -85,8 +86,14 @@ def deploy_notebook(
     display_name: str | None = None,
     cell_indices: list[int] | None = None,
     origin_definition_cache: dict[str, dict[str, Any]] | None = None,
+    guid_map: dict[str, str] | None = None,
 ) -> OpResult:
-    """Create or overwrite one notebook from a local path or Fabric origin."""
+    """Create or overwrite one notebook from a local path or Fabric origin.
+
+    When *guid_map* is set, source→target GUID tokens in definition text parts
+    are rewritten in memory before create/update (local files are not edited).
+    On overwrite, target lakehouse/environment preserve still runs after remap.
+    """
     if item.target is None:
         return OpResult(False, "deploy requires a --target")
     if item.file is None and item.origin is None:
@@ -97,7 +104,9 @@ def deploy_notebook(
     target = item.target
 
     if cell_indices is not None:
-        return _deploy_selective_cells(client, item, cell_indices=cell_indices)
+        return _deploy_selective_cells(
+            client, item, cell_indices=cell_indices, guid_map=guid_map
+        )
 
     try:
         definition, source_label = _resolve_source_definition(
@@ -105,7 +114,11 @@ def deploy_notebook(
             item,
             origin_definition_cache=origin_definition_cache,
         )
-    except (FabricApiError, DefinitionError) as exc:
+        remap_suffix = ""
+        if guid_map:
+            definition, n_replaced = apply_guid_map_to_definition(definition, guid_map)
+            remap_suffix = f" (remapped {n_replaced} GUID(s))"
+    except (FabricApiError, DefinitionError, GuidMapError) as exc:
         return OpResult(
             False,
             f"deploy source failed: {exc}",
@@ -145,7 +158,8 @@ def deploy_notebook(
         item_id = str(created.get("id") or "")
         return OpResult(
             True,
-            f"created {target.workspace_id}:{item_id} from {source_label} (name='{name}')",
+            f"created {target.workspace_id}:{item_id} from {source_label} "
+            f"(name='{name}'){remap_suffix}",
             target.workspace_id,
             item_id or None,
         )
@@ -167,7 +181,7 @@ def deploy_notebook(
             definition = pack_ipynb_dict(merged_nb)
         elif detect_format(item.file) is NotebookFormat.IPYNB:  # type: ignore[arg-type]
             assert item.file is not None
-            local_nb = read_ipynb(item.file)
+            local_nb = ipynb_from_definition(definition)
             remote_definition = get_notebook_definition(
                 client,
                 target.workspace_id,
@@ -197,7 +211,7 @@ def deploy_notebook(
         suffix = f" (preserved remote {', '.join(preserved_keys)})"
     return OpResult(
         True,
-        f"updated {target.label()} from {source_label}{suffix}",
+        f"updated {target.label()} from {source_label}{suffix}{remap_suffix}",
         target.workspace_id,
         target.item_id,
     )
@@ -235,6 +249,7 @@ def _deploy_selective_cells(
     item: WorkItem,
     *,
     cell_indices: list[int],
+    guid_map: dict[str, str] | None = None,
 ) -> OpResult:
     """Fetch remote notebook, replace selected cells from local, then update."""
     assert item.target is not None and item.file is not None
@@ -254,7 +269,11 @@ def _deploy_selective_cells(
         remote_nb = ipynb_from_definition(remote_definition)
         merged = merge_notebook_cells(remote_nb, local_nb, cell_indices)
         definition = pack_ipynb_dict(merged)
-    except (DefinitionError, CellSelectionError) as exc:
+        remap_suffix = ""
+        if guid_map:
+            definition, n_replaced = apply_guid_map_to_definition(definition, guid_map)
+            remap_suffix = f" (remapped {n_replaced} GUID(s))"
+    except (DefinitionError, CellSelectionError, GuidMapError) as exc:
         return OpResult(
             False,
             f"cell update failed {target.label()} from {path}: {exc}",
@@ -286,7 +305,7 @@ def _deploy_selective_cells(
         )
     return OpResult(
         True,
-        f"updated cells [{cells_label}] in {target.label()} from {path}",
+        f"updated cells [{cells_label}] in {target.label()} from {path}{remap_suffix}",
         target.workspace_id,
         target.item_id,
     )
@@ -397,6 +416,7 @@ def run_deploy_batch(
     *,
     display_names: list[str] | None = None,
     cell_indices: list[int] | None = None,
+    guid_maps: list[dict[str, str] | None] | None = None,
 ) -> list[OpResult]:
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
@@ -404,6 +424,9 @@ def run_deploy_batch(
         name = None
         if display_names and index < len(display_names):
             name = display_names[index]
+        guid_map = None
+        if guid_maps and index < len(guid_maps):
+            guid_map = guid_maps[index]
         target = item.target
         if target is not None and target.is_create:
             label = name or (item.file.name if item.file is not None else "notebook")
@@ -422,6 +445,7 @@ def run_deploy_batch(
                 display_name=name,
                 cell_indices=cell_indices,
                 origin_definition_cache=origin_cache,
+                guid_map=guid_map,
             )
         )
     return results

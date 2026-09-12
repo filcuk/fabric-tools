@@ -84,6 +84,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Deploy: create or overwrite; overwrite may use `--cells` / `-c` (1-based, single local `.ipynb` only)
 - Full `.ipynb` overwrite: merge omitted `metadata.dependencies` (`lakehouse`, `environment`) from remote before `updateDefinition`
 - Origin overwrite: strip origin `lakehouse`/`environment`, then preserve each target’s dependency metadata
+- Deploy `--remap` / `-r`: rewrite source→target GUIDs in definition text before create/update (skips `.platform`); overwrite preserve of lakehouse/environment still runs after remap
 - Delete: Fabric soft delete (`DELETE .../notebooks/{id}`)
 
 ### Dataflow Gen2 (`dataflow`)
@@ -123,6 +124,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - API: Fabric UserDataFunction (`/workspaces/{ws}/userDataFunctions/...`), same Fabric auth scope as notebooks
 - Auth: **user identity only** — service principal is rejected up front (`check_udf_user_auth`)
 - Deploy: create or overwrite; overwrite preserves target `connectedDataSources` (origin overwrite strips origin connections first, then applies each target’s)
+- Deploy `--remap` / `-r`: rewrite source→target GUIDs in definition text before create/update (skips `.platform` / `.whl`); overwrite `connectedDataSources` preserve still runs after remap
 - Compare: multi-part unified diff (JSON pretty-printed; `.whl` parts reported as `<binary N bytes>`)
 - Delete: Fabric soft delete (`DELETE .../userDataFunctions/{id}`)
 

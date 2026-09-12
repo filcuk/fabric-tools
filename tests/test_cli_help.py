@@ -173,8 +173,8 @@ def test_pipeline_include_schedules_on_download_deploy_compare_not_delete() -> N
     assert "--include-schedules" not in delete.stdout
 
 
-def test_pipeline_and_dataflow_deploy_help_lists_remap() -> None:
-    for group in ("pipeline", "dataflow"):
+def test_deploy_kinds_help_lists_remap() -> None:
+    for group in ("pipeline", "dataflow", "notebook", "udf"):
         deploy = CliRunner().invoke(app, [group, "deploy", "--help"])
         assert deploy.exit_code == 0
         assert "--remap" in deploy.stdout

@@ -49,6 +49,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
   - `.ipynb` — Jupyter notebook
   - `*.Notebook\` — Fabric Git folder with `notebook-content.*` and `.platform`
   - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Deploy `--remap` / `-r`: rewrite embedded GUIDs (e.g. lakehouse deps / cell text) for another workspace; overwrite still preserves target lakehouse/environment when applicable
 - Dataflow Gen2 (Fabric)
   - `*.Dataflow\` — Git-style folder with `queryMetadata.json`, `mashup.pq` (optional `.platform`, `*.mdf`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
@@ -66,6 +67,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
   - `*.UserDataFunction\` — Fabric Git-style folder (`definition.json`, `function_app.py`, `resources/functions.json`; optional `.platform`, `privateLibraries/*.whl`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
   - Overwrite preserves the target item’s `connectedDataSources`
+  - Deploy `--remap` / `-r`: rewrite embedded GUIDs on create (and other text parts on overwrite); overwrite still preserves target `connectedDataSources`
   - Fabric APIs require interactive user auth (service principal is not supported)
 - Semantic models (`semantic-model`)
   - `*.SemanticModel\` — Fabric Git folder (`definition.pbism` + TMDL `definition/` or TMSL `model.bim`)
@@ -104,7 +106,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 | `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`). Esc or ← Back returns one major step; Ctrl+C cancels |
 | `--independent` | `-i` | `report` download/deploy/compare and `semantic-model deploy`: act only on this command’s artifact; not on `semantic-model delete` |
 | `--include-schedules` | `-i` | `pipeline` download/deploy/compare: sync `.schedules` (default is pipeline-only; overwrite without `-i` preserves remote schedules; not on delete) |
-| `--remap` | `-r` | `pipeline` / `dataflow` deploy only: JSON file of source GUID → target GUID applied in memory to definition text (skips `.platform`). One file may broadcast to all targets, or pair 1:1 with targets. |
+| `--remap` | `-r` | `notebook` / `dataflow` / `pipeline` / `udf` deploy only: JSON file of source GUID → target GUID applied in memory to definition text (skips `.platform`). One file may broadcast to all targets, or pair 1:1 with targets. |
 | `--filter` | `-f` | `inspect` only: case-insensitive display-name substring |
 | `--item` | `-i` | `inspect` only: Fabric type filter (`Personal`, `Notebook`, …) |
 
