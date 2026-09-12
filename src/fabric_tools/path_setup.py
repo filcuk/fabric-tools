@@ -90,22 +90,66 @@ def frozen_onedir_root() -> Path | None:
     return None
 
 
+def _nuitka_payload_candidates() -> list[Path]:
+    """Candidate directories for the running Nuitka payload (standalone or onefile extract)."""
+    candidates: list[Path] = []
+
+    def _add(path: Path | None) -> None:
+        if path is None:
+            return
+        resolved = path.resolve()
+        if resolved not in candidates:
+            candidates.append(resolved)
+
+    compiled = _nuitka_compiled()
+    if compiled is not None:
+        containing = getattr(compiled, "containing_dir", None)
+        if containing:
+            _add(Path(os.path.expanduser(str(containing))))
+
+    # Onefile extract: __main__.__file__ is typically .../Temp/onefile_*/nuitka_entry.py
+    main = sys.modules.get("__main__")
+    main_file = getattr(main, "__file__", None) if main is not None else None
+    if main_file:
+        _add(Path(main_file).parent)
+
+    try:
+        import fabric_tools
+
+        ft_file = getattr(fabric_tools, "__file__", None)
+        if ft_file:
+            package_dir = Path(ft_file).resolve().parent
+            # .../payload/fabric_tools/__init__.py → payload root
+            if package_dir.name == "fabric_tools":
+                _add(package_dir.parent)
+            else:
+                _add(package_dir)
+    except ImportError:
+        pass
+
+    _add(Path(sys.argv[0]).resolve().parent)
+    return candidates
+
+
 def frozen_app_root() -> Path | None:
     """Directory containing the frozen app payload (Nuitka or PyInstaller onedir).
 
-    Nuitka's ``__compiled__.containing_dir`` is sometimes the ``--output-dir`` parent
-    (e.g. ``dist\\nuitka``) rather than the ``*.dist`` folder that holds the exe and
-    DLLs. Prefer any candidate that actually looks like a complete payload tree.
+    Nuitka ``__compiled__.containing_dir`` is unreliable (sometimes the build
+    ``--output-dir``). For onefile, the real payload is the temp extract next to
+    ``__main__.__file__``. Prefer any candidate that has native runtime siblings.
     """
-    compiled = _nuitka_compiled()
-    if compiled is not None:
-        candidates: list[Path] = []
-        containing = getattr(compiled, "containing_dir", None)
-        if containing:
-            candidates.append(Path(os.path.expanduser(str(containing))).resolve())
+    if _nuitka_compiled() is not None:
+        candidates = _nuitka_payload_candidates()
         argv0_dir = Path(sys.argv[0]).resolve().parent
-        if argv0_dir not in candidates:
-            candidates.append(argv0_dir)
+
+        with_runtime = [
+            path for path in candidates if _has_nuitka_runtime_siblings(path)
+        ]
+        if with_runtime:
+            # Installed / standalone: prefer the launch directory when it is complete.
+            if argv0_dir in with_runtime:
+                return argv0_dir
+            return with_runtime[0]
 
         complete = [
             path
@@ -113,14 +157,9 @@ def frozen_app_root() -> Path | None:
             if (path / EXE_NAME).is_file() and _has_nuitka_runtime_siblings(path)
         ]
         if complete:
-            # Prefer the launch directory when both are complete (standalone / installed).
             if argv0_dir in complete:
                 return argv0_dir
             return complete[0]
-
-        with_runtime = [path for path in candidates if _has_nuitka_runtime_siblings(path)]
-        if with_runtime:
-            return with_runtime[0]
         if candidates:
             return candidates[0]
         return None
@@ -161,8 +200,14 @@ def is_portable_onefile() -> bool:
 
 
 def format_nuitka_orphan_exe_error() -> str | None:
-    """Error when a Nuitka exe was copied out of its ``.dist`` folder without siblings."""
+    """Error when a Nuitka standalone exe was copied without its sibling DLLs.
+
+    Onefile builds are never orphans: the bootstrap has no siblings by design; the
+    payload lives in a temp extract.
+    """
     if _nuitka_compiled() is None:
+        return None
+    if is_portable_onefile():
         return None
     argv0_dir = Path(sys.argv[0]).resolve().parent
     if _has_nuitka_runtime_siblings(argv0_dir):
@@ -170,11 +215,15 @@ def format_nuitka_orphan_exe_error() -> str | None:
     root = frozen_app_root()
     if root is not None and _has_nuitka_runtime_siblings(root):
         return None
+    # Payload found via __main__.__file__ / package path even if frozen_app_root lagged.
+    for path in _nuitka_payload_candidates():
+        if _has_nuitka_runtime_siblings(path):
+            return None
     return (
         "This Nuitka fabric-tools.exe is missing sibling runtime files "
-        "(python3*.dll / _ctypes.pyd). Run it from inside the standalone "
-        ".dist folder (or run setup install from there). "
-        "A lone copied .exe will not work."
+        "(python3*.dll / _ctypes.pyd). For distribution use the onefile build "
+        "(dist\\fabric-tools.exe from build_exe_nuitka.ps1). "
+        "A lone copy of a standalone .exe will not work."
     )
 
 

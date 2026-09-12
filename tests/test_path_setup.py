@@ -324,17 +324,25 @@ def test_is_portable_onefile_true_for_nuitka_onefile(
     portable.mkdir()
     (extract / "python312.dll").write_bytes(b"dll")
     (extract / "_ctypes.pyd").write_bytes(b"pyd")
+    (extract / "nuitka_entry.py").write_text("# entry\n", encoding="utf-8")
     monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
     monkeypatch.setattr(
         "fabric_tools.path_setup._nuitka_compiled",
-        lambda: SimpleNamespace(containing_dir=str(extract)),
+        lambda: SimpleNamespace(containing_dir=str(tmp_path / "wrong-output-dir")),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "__main__",
+        SimpleNamespace(__file__=str(extract / "nuitka_entry.py")),
     )
     monkeypatch.setattr(
         "sys.argv",
         [str(portable / EXE_NAME), "-h"],
     )
+    assert frozen_app_root() == extract.resolve()
     assert is_portable_onefile() is True
     assert format_install_speed_notice() is not None
+    assert format_nuitka_orphan_exe_error() is None
 
 
 def test_is_portable_onefile_false_for_nuitka_standalone(
@@ -343,6 +351,7 @@ def test_is_portable_onefile_false_for_nuitka_standalone(
     app = tmp_path / "fabric-tools.dist"
     app.mkdir()
     (app / "python312.dll").write_bytes(b"dll")
+    (app / EXE_NAME).write_bytes(b"exe")
     monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: True)
     monkeypatch.setattr(
         "fabric_tools.path_setup._nuitka_compiled",
@@ -366,10 +375,15 @@ def test_format_nuitka_orphan_exe_error(
         "fabric_tools.path_setup._nuitka_compiled",
         lambda: SimpleNamespace(containing_dir=str(orphan_dir)),
     )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "__main__",
+        SimpleNamespace(__file__=str(orphan_dir / "nuitka_entry.py")),
+    )
     monkeypatch.setattr("sys.argv", [str(orphan_dir / EXE_NAME)])
     err = format_nuitka_orphan_exe_error()
     assert err is not None
-    assert ".dist" in err
+    assert "onefile" in err.lower() or "missing sibling" in err.lower()
 
 
 def test_format_nuitka_orphan_exe_error_none_when_siblings_present(
