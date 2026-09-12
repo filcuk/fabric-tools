@@ -49,8 +49,9 @@ def test_shared_nuitka_args_include_core_flags(project_root: Path) -> None:
     assert "--mingw64" in args
     assert "--msvc=latest" not in args
     assert "--assume-yes-for-downloads" in args
-    assert "--file-version=0.3.0.0" in args
-    assert "--product-version=0.3.0.0" in args
+    win_version = windows_file_version()
+    assert f"--file-version={win_version}" in args
+    assert f"--product-version={win_version}" in args
     assert "--include-package=fabric_tools" in args
     assert "--output-folder-name=fabric-tools" in args
     assert "--onefile-tempdir-spec={CACHE_DIR}/{COMPANY}/cache/{VERSION}" in args
