@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 import questionary
 import typer
-from questionary import Choice
+from questionary import Choice, Style
 
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.manifest import (
@@ -450,6 +450,11 @@ def _target_prompt(mode: CommandMode, *, tool: str) -> str:
     return "Enter target workspace:artifact"
 
 
+# questionary 2.1.x permanently reverse-styles `default` as checkbox-"selected"
+# while the pointer moves (tmbo/questionary#473). Disable until a release with #503.
+_SELECT_STYLE = Style([("selected", "noreverse")])
+
+
 def _select(
     message: str,
     *,
@@ -461,6 +466,7 @@ def _select(
         choices=choices,
         default=default,
         instruction="(use arrow keys)",
+        style=_SELECT_STYLE,
     ).ask()
     if result is None:
         raise typer.Exit(code=EXIT_USER)

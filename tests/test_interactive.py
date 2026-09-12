@@ -439,3 +439,21 @@ def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["mode"] is CommandMode.DOWNLOAD
     assert captured["kwargs"]["file_values"] is None
     assert captured["kwargs"]["on_success"] is not None
+
+
+def test_select_disables_stuck_default_highlight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fabric_tools.interactive import _SELECT_STYLE, _select
+
+    captured: dict[str, Any] = {}
+
+    def fake_select(*_a: Any, **kwargs: Any) -> _Ask:
+        captured.update(kwargs)
+        return _Ask("b")
+
+    monkeypatch.setattr("questionary.select", fake_select)
+
+    assert _select("pick", choices=["a", "b"], default="a") == "b"
+    assert captured["style"] is _SELECT_STYLE
+    assert ("selected", "noreverse") in captured["style"].style_rules
