@@ -173,6 +173,18 @@ def test_pipeline_include_schedules_on_download_deploy_compare_not_delete() -> N
     assert "--include-schedules" not in delete.stdout
 
 
+def test_pipeline_and_dataflow_deploy_help_lists_remap() -> None:
+    for group in ("pipeline", "dataflow"):
+        deploy = CliRunner().invoke(app, [group, "deploy", "--help"])
+        assert deploy.exit_code == 0
+        assert "--remap" in deploy.stdout
+        assert "-r" in deploy.stdout
+        for cmd in ("download", "compare", "delete"):
+            other = CliRunner().invoke(app, [group, cmd, "--help"])
+            assert other.exit_code == 0
+            assert "--remap" not in other.stdout
+
+
 def test_semantic_model_help_lists_commands() -> None:
     result = CliRunner().invoke(app, ["semantic-model", "--help"])
     assert result.exit_code == 0
@@ -261,7 +273,9 @@ def test_setup_status_user_facing_output(monkeypatch) -> None:
     result = CliRunner().invoke(app, ["setup", "status"])
     assert result.exit_code == 0
     assert " Status  installed" in result.stdout
-    assert "Install  C:\\Users\\demo\\AppData\\Local\\fabric-tools\\app" in result.stdout
+    assert (
+        "Install  C:\\Users\\demo\\AppData\\Local\\fabric-tools\\app" in result.stdout
+    )
     assert "   PATH  registered" in result.stdout
     assert "open a new terminal" in result.stdout
     assert "  Cache  no" in result.stdout

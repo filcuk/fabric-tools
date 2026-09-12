@@ -52,7 +52,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 - Dataflow Gen2 (Fabric)
   - `*.Dataflow\` — Git-style folder with `queryMetadata.json`, `mashup.pq` (optional `.platform`, `*.mdf`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
-  - Connection IDs in the definition are environment-specific; Publish may still be needed in the service after sync
+  - Connection IDs in the definition are environment-specific; use `--remap` / `-r` on deploy to rewrite GUIDs for another workspace. Publish may still be needed in the service after sync
 - Dataflow Gen1 (Power BI)
   - `model.json` — CDM dataflow definition
   - download, deploy (**create only**), compare, delete
@@ -60,8 +60,8 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 - DataPipeline (`pipeline`)
   - `*.DataPipeline\` — Fabric Git folder with `pipeline-content.json` (optional `.platform`, `.schedules`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Activity references (notebooks, lakehouses, connections) are environment-specific; use `--remap` / `-r` on deploy to rewrite GUIDs for another workspace
   - Default is pipeline-only (omit `.schedules`). `--include-schedules` / `-i` syncs schedules: download writes them; compare includes them; deploy create/overwrite sends source schedules. Overwrite without `-i` reattaches each target's existing `.schedules` so remote schedules stay untouched
-  - Activity references (notebooks, lakehouses, connections) are passed through as-is and must be valid in the target workspace
 - User Data Functions (`udf`)
   - `*.UserDataFunction\` — Fabric Git-style folder (`definition.json`, `function_app.py`, `resources/functions.json`; optional `.platform`, `privateLibraries/*.whl`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
@@ -104,6 +104,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 | `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`). Esc or ← Back returns one major step; Ctrl+C cancels |
 | `--independent` | `-i` | `report` download/deploy/compare and `semantic-model deploy`: act only on this command’s artifact; not on `semantic-model delete` |
 | `--include-schedules` | `-i` | `pipeline` download/deploy/compare: sync `.schedules` (default is pipeline-only; overwrite without `-i` preserves remote schedules; not on delete) |
+| `--remap` | `-r` | `pipeline` / `dataflow` deploy only: JSON file of source GUID → target GUID applied in memory to definition text (skips `.platform`). One file may broadcast to all targets, or pair 1:1 with targets. |
 | `--filter` | `-f` | `inspect` only: case-insensitive display-name substring |
 | `--item` | `-i` | `inspect` only: Fabric type filter (`Personal`, `Notebook`, …) |
 
@@ -162,6 +163,7 @@ fabric-tools dataflow download -s -t <workspaceId>:<dataflowId> -f .\Sales.Dataf
 fabric-tools dataflow download -s -t <workspaceId>:<dataflowId>
 fabric-tools dataflow deploy -s -t <workspaceId> -f .\Sales.Dataflow -n "Sales"
 fabric-tools dataflow deploy -s -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
+fabric-tools dataflow deploy -s -t <testWs>:<dataflowId> -f .\Sales.Dataflow -r .\test.remap.json
 fabric-tools dataflow compare -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
 fabric-tools dataflow delete -s -t <workspaceId>:<dataflowId>
 
@@ -179,6 +181,7 @@ fabric-tools pipeline download -s -t <workspaceId>:<pipelineId> -i
 fabric-tools pipeline deploy -s -t <workspaceId> -f .\ETL.DataPipeline -n "ETL"
 fabric-tools pipeline deploy -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
 fabric-tools pipeline deploy -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline -i
+fabric-tools pipeline deploy -s -o <devWs>:<pipelineId> -t <testWs>:<pipelineId> -t <prodWs>:<pipelineId> -r .\test.remap.json -r .\prod.remap.json
 fabric-tools pipeline compare -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
 fabric-tools pipeline compare -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline -i
 fabric-tools pipeline delete -s -t <workspaceId>:<pipelineId>

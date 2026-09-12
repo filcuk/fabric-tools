@@ -74,6 +74,42 @@ _MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
     "Alone: load targets/files/origins. With a successful run or dry-run: write/update the manifest."
 )
+_GUID_REMAP_HELP = (
+    "(optional, deploy only) JSON file remapping source GUID → target GUID. "
+    "Applied in memory to definition text before create/update "
+    "(skips .platform). Repeatable or comma-separated; one file may broadcast "
+    "to all targets, or pair 1:1 with targets."
+)
+
+
+def _resolve_deploy_guid_maps(
+    remap_values: list[str] | None,
+    *,
+    n_targets: int,
+    has_targets: bool,
+) -> list:
+    """Load and pair ``--remap`` / ``-r`` files for deploy / deploy dry-run.
+
+    When there are no targets (file-only dry-run), validates that each file
+    loads and returns an empty list of per-target specs.
+    """
+    from fabric_tools.guid_map import GuidMapError, load_guid_map, resolve_guid_maps
+
+    if not remap_values:
+        return []
+    try:
+        if has_targets and n_targets > 0:
+            return resolve_guid_maps(remap_values, n_targets)
+        # Validate maps load even when dry-run has no targets yet.
+        for raw in remap_values:
+            for piece in raw.split(","):
+                piece = piece.strip()
+                if piece:
+                    load_guid_map(piece)
+        return []
+    except GuidMapError as exc:
+        typer.secho(str(exc), fg=FG_ERROR, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
 
 
 def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
@@ -298,7 +334,7 @@ app.add_typer(inspect_app, name="inspect", rich_help_panel="Fabric")
 
 setup_app = typer.Typer(
     name="setup",
-    help="Install, update, status, clean, or uninstall the local fabric-tools app.",
+    help="Manage fabric-tools installation and updates.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -306,7 +342,7 @@ app.add_typer(setup_app, name="setup", rich_help_panel="Local")
 
 env_app = typer.Typer(
     name="env",
-    help="List or change supported environment variables.",
+    help="Manage environment variables.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -314,7 +350,7 @@ app.add_typer(env_app, name="env", rich_help_panel="Local")
 
 manifest_app = typer.Typer(
     name="manifest",
-    help="Inspect, list, delete, and move local deployment manifests (.ftdep).",
+    help="Manage deployment manifests (.ftdep).",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -895,9 +931,7 @@ def setup_install() -> None:
     elif layout == "onedir":
         typer.echo("Installed onedir build (exe + _internal).")
     if result["path_added"]:
-        typer.secho(
-            "Registered install directory on your user PATH.", fg=FG_OK
-        )
+        typer.secho("Registered install directory on your user PATH.", fg=FG_OK)
     elif result["already_on_path"]:
         typer.echo("Install directory was already on your user PATH.")
     if result.get("legacy_cleaned"):
@@ -934,9 +968,7 @@ def setup_uninstall(
         raise typer.Exit(code=EXIT_USER) from exc
 
     if result["removed_from_path"]:
-        typer.secho(
-            "Removed install directory from your user PATH.", fg=FG_OK
-        )
+        typer.secho("Removed install directory from your user PATH.", fg=FG_OK)
     else:
         typer.echo("Install directory was not present on your user PATH.")
     if result["deleted_files"]:
@@ -1430,6 +1462,12 @@ def dataflow_deploy(
         "-d",
         help="(optional) Validate targets and/or sources only; do not deploy.",
     ),
+    remap: list[str] | None = typer.Option(
+        None,
+        "--remap",
+        "-r",
+        help=_GUID_REMAP_HELP,
+    ),
 ) -> None:
     """Deploy Dataflow Gen2 item(s) from local folders or a Fabric origin."""
     run_dataflow_command(
@@ -1441,6 +1479,7 @@ def dataflow_deploy(
         dry_run=dry_run,
         names=name,
         manifest=manifest,
+        remap_values=remap,
     )
 
 
@@ -2479,6 +2518,12 @@ def pipeline_deploy(
         "create omits .schedules; overwrite reattaches the target's existing "
         ".schedules so remote schedules stay untouched.",
     ),
+    remap: list[str] | None = typer.Option(
+        None,
+        "--remap",
+        "-r",
+        help=_GUID_REMAP_HELP,
+    ),
 ) -> None:
     """Deploy DataPipeline item(s) from local folders or a Fabric origin."""
     run_pipeline_command(
@@ -2491,6 +2536,7 @@ def pipeline_deploy(
         names=name,
         manifest=manifest,
         include_schedules=include_schedules,
+        remap_values=remap,
     )
 
 
@@ -3049,6 +3095,7 @@ def run_dataflow_command(
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
+    remap_values: list[str] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for dataflow (Gen2) CLI commands and the interactive wizard."""
@@ -3071,8 +3118,13 @@ def run_dataflow_command(
     from fabric_tools.dataflow.ops import (
         run_download_batch as run_df_download,
     )
+    from fabric_tools.guid_map import guid_map_confirm_line
     from fabric_tools.status import busy
     from fabric_tools.validate import run_dry_run_dataflow
+
+    if remap_values and mode is not CommandMode.DEPLOY:
+        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
+        raise typer.Exit(code=EXIT_USER)
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -3089,6 +3141,18 @@ def run_dataflow_command(
     except (ParseError, ManifestError) as exc:
         typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
+
+    guid_map_specs = (
+        _resolve_deploy_guid_maps(
+            remap_values,
+            n_targets=len(items),
+            has_targets=has_targets,
+        )
+        if mode is CommandMode.DEPLOY
+        else []
+    )
+    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
 
     if dry_run:
         client: FabricClient | None = None
@@ -3121,6 +3185,11 @@ def run_dataflow_command(
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
+        if remap_values and not failed:
+            if map_line:
+                typer.secho(f"remap ok: {map_line}", fg=FG_OK)
+            else:
+                typer.secho("remap ok: GUID remap file(s) valid", fg=FG_OK)
         if not failed and has_targets and (has_files or has_origins):
             try:
                 display_names = (
@@ -3184,12 +3253,14 @@ def run_dataflow_command(
                 items,
                 silent=silent,
                 display_names=display_names,
+                guid_map_line=map_line,
             )
             with busy("Deploying..."):
                 op_results = run_df_deploy(
                     client,
                     items,
                     display_names=display_names,
+                    guid_maps=guid_maps or None,
                 )
             _print_op_results(op_results)  # type: ignore[arg-type]
             for result in op_results:
@@ -4252,6 +4323,7 @@ def run_pipeline_command(
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
     include_schedules: bool = False,
+    remap_values: list[str] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for pipeline CLI commands and the interactive wizard."""
@@ -4264,6 +4336,7 @@ def run_pipeline_command(
         confirm_download_overwrites_pipeline,
         resolve_pipeline_download_files,
     )
+    from fabric_tools.guid_map import guid_map_confirm_line
     from fabric_tools.pipeline.compare import run_compare_batch as run_pl_compare
     from fabric_tools.pipeline.ops import (
         run_delete_batch as run_pl_delete,
@@ -4276,6 +4349,10 @@ def run_pipeline_command(
     )
     from fabric_tools.status import busy
     from fabric_tools.validate import run_dry_run_pipeline
+
+    if remap_values and mode is not CommandMode.DEPLOY:
+        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
+        raise typer.Exit(code=EXIT_USER)
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -4292,6 +4369,18 @@ def run_pipeline_command(
     except (ParseError, ManifestError) as exc:
         typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
+
+    guid_map_specs = (
+        _resolve_deploy_guid_maps(
+            remap_values,
+            n_targets=len(items),
+            has_targets=has_targets,
+        )
+        if mode is CommandMode.DEPLOY
+        else []
+    )
+    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
 
     if dry_run:
         client: FabricClient | None = None
@@ -4324,6 +4413,11 @@ def run_pipeline_command(
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
+        if remap_values and not failed:
+            if map_line:
+                typer.secho(f"remap ok: {map_line}", fg=FG_OK)
+            else:
+                typer.secho("remap ok: GUID remap file(s) valid", fg=FG_OK)
         if not failed and has_targets and (has_files or has_origins):
             try:
                 display_names = (
@@ -4390,6 +4484,7 @@ def run_pipeline_command(
                 silent=silent,
                 display_names=display_names,
                 include_schedules=include_schedules,
+                guid_map_line=map_line,
             )
             with busy("Deploying..."):
                 op_results = run_pl_deploy(
@@ -4397,6 +4492,7 @@ def run_pipeline_command(
                     items,
                     display_names=display_names,
                     include_schedules=include_schedules,
+                    guid_maps=guid_maps or None,
                 )
             _print_op_results(op_results)  # type: ignore[arg-type]
             for result in op_results:

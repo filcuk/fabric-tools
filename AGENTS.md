@@ -22,6 +22,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`, `list_workspaces`, `list_items`)
   - `powerbi_client.py` — Power BI REST client (Gen1 dataflow get/delete/import + poll; report list/export/import; paginated report RDL export/import/delete)
   - `definition_parts.py` — recursive folder ↔ InlineBase64 definition parts
+  - `guid_map.py` — deploy `--remap` / `-r` JSON (source GUID → target GUID) load/pair/apply to definition text parts
   - `parsing.py` — `--target` / `--file` / `--origin` parsing and mode validation (`download` \| `deploy` \| `compare` \| `delete`; `deploy_create_only` for Gen1)
   - `validate.py` — `--dry-run` remote/local checks (Fabric notebooks + Dataflow Gen2 + Power BI Gen1 + DataPipeline + UDF + semantic model + report + paginated-report)
   - `confirm.py` — overwrite / create / delete prompts
@@ -92,8 +93,9 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Deploy: create or overwrite (`updateDefinition`; `updateMetadata=true` when `.platform` is present)
 - Compare: multi-part unified diff (JSON parts pretty-printed with `sort_keys`; mashup as text)
 - Delete: Fabric soft delete (`DELETE .../dataflows/{id}`)
-- Connection IDs / lakehouse GUIDs in mashup and metadata are environment-specific (passed through as-is)
+- Connection IDs / lakehouse GUIDs in mashup and metadata are environment-specific; use deploy `--remap` / `-r` to rewrite source→target GUIDs in memory (skips `.platform`)
 - Publish is not auto-triggered after definition sync; UI save / Publish may still be needed before refresh
+- Deploy `--remap` / `-r`: JSON object of GUID→GUID; one file may broadcast to all targets, or pair 1:1 with targets (not on download/compare/delete)
 
 ### Dataflow Gen1
 
@@ -112,7 +114,8 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Compare: normalized JSON unified diff of `pipeline-content.json` by default; `.schedules` when `--include-schedules` (`.platform` always excluded)
 - `--include-schedules` / `-i` on download/deploy/compare: sync `.schedules` (download writes them; default download also removes a leftover local `.schedules`)
 - Delete: Fabric soft delete (`DELETE .../dataPipelines/{id}`)
-- Activity references (notebook / lakehouse / connection GUIDs) are passed through as-is; they must be valid in the target workspace (no remapping)
+- Activity references (notebook / lakehouse / connection GUIDs) are environment-specific; use deploy `--remap` / `-r` to rewrite source→target GUIDs in memory before create/update (skips `.platform`; local folders unchanged)
+- Deploy `--remap` / `-r`: JSON object of GUID→GUID; one file may broadcast to all targets, or pair 1:1 with targets (not on download/compare/delete)
 
 ### User Data Functions (`udf`)
 

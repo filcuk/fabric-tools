@@ -495,6 +495,7 @@ def confirm_deploy_actions_dataflow(
     *,
     silent: bool,
     display_names: list[str] | None = None,
+    guid_map_line: str | None = None,
 ) -> None:
     """Confirm create or remote overwrite before Dataflow Gen2 deploy."""
     if silent or not items:
@@ -526,6 +527,8 @@ def confirm_deploy_actions_dataflow(
                         name = "(unnamed)"
                 source = _source_phrase_fabric(client, item)
                 lines.append(f"  - '{name}' in {workspace}{source}")
+        if guid_map_line:
+            lines.append(guid_map_line)
         lines.append("Are you sure?")
         confirm_or_abort("\n".join(lines), silent=False)
         return
@@ -538,6 +541,8 @@ def confirm_deploy_actions_dataflow(
             remote = resolve_item_name(client, item.target)
             source = _source_phrase_fabric(client, item, prefix=" with")
             lines.append(f"  - {remote} in {workspace}{source}")
+    if guid_map_line:
+        lines.append(guid_map_line)
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -1131,6 +1136,7 @@ def confirm_deploy_actions_pipeline(
     silent: bool,
     display_names: list[str] | None = None,
     include_schedules: bool = False,
+    guid_map_line: str | None = None,
 ) -> None:
     """Confirm create or remote overwrite before DataPipeline deploy."""
     from fabric_tools.pipeline.definition import (
@@ -1176,6 +1182,8 @@ def confirm_deploy_actions_pipeline(
                 "Pipeline-only: .schedules will not be sent "
                 "(use --include-schedules / -i to sync schedules)."
             )
+        if guid_map_line:
+            lines.append(guid_map_line)
         lines.append("Are you sure?")
         confirm_or_abort("\n".join(lines), silent=False)
         return
@@ -1199,6 +1207,8 @@ def confirm_deploy_actions_pipeline(
             "so remote schedules stay untouched "
             "(use --include-schedules / -i to sync schedules from the source)."
         )
+    if guid_map_line:
+        lines.append(guid_map_line)
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 

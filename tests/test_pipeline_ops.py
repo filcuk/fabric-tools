@@ -460,3 +460,126 @@ def test_get_pipeline_definition_accepts_bare_parts() -> None:
     definition = get_pipeline_definition(client, WS, PL)  # type: ignore[arg-type]
     assert "parts" in definition
     assert any(p["path"] == "pipeline-content.json" for p in definition["parts"])
+
+
+def test_deploy_create_applies_guid_map(tmp_path: Path) -> None:
+    nb_src = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    nb_dst = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    ws_src = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    ws_dst = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+    folder = tmp_path / "ETL.DataPipeline"
+    folder.mkdir()
+    content = {
+        "properties": {
+            "activities": [
+                {
+                    "name": "RunNotebook",
+                    "type": "TridentNotebook",
+                    "dependsOn": [],
+                    "typeProperties": {
+                        "notebookId": nb_src,
+                        "workspaceId": ws_src,
+                    },
+                }
+            ]
+        }
+    }
+    (folder / "pipeline-content.json").write_text(
+        json.dumps(content, indent=2) + "\n", encoding="utf-8"
+    )
+
+    client = FakeClient()
+    item = WorkItem(Target(WS), folder)
+    result = deploy_pipeline(
+        client,
+        item,
+        display_name="ETL",
+        guid_map={nb_src: nb_dst, ws_src: ws_dst},
+    )  # type: ignore[arg-type]
+    assert result.ok
+    assert "remapped 2 GUID(s)" in result.message
+    assert client.last_create_payload is not None
+    raw = base64.b64decode(
+        client.last_create_payload["definition"]["parts"][0]["payload"]
+    )
+    uploaded = json.loads(raw.decode("utf-8"))
+    props = uploaded["properties"]["activities"][0]["typeProperties"]
+    assert props["notebookId"] == nb_dst
+    assert props["workspaceId"] == ws_dst
+    # Local folder unchanged.
+    local = json.loads((folder / "pipeline-content.json").read_text(encoding="utf-8"))
+    assert (
+        local["properties"]["activities"][0]["typeProperties"]["notebookId"] == nb_src
+    )
+
+
+def test_deploy_origin_cache_does_not_cross_contaminate_maps() -> None:
+    from fabric_tools.pipeline.ops import run_deploy_batch
+
+    nb_dev = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    nb_test = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    nb_prod = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    origin_def = {
+        "parts": [
+            _part(
+                "pipeline-content.json",
+                json.dumps(
+                    {
+                        "properties": {
+                            "activities": [
+                                {
+                                    "name": "RunNotebook",
+                                    "type": "TridentNotebook",
+                                    "dependsOn": [],
+                                    "typeProperties": {
+                                        "notebookId": nb_dev,
+                                        "workspaceId": WS,
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ).encode("utf-8"),
+            )
+        ]
+    }
+    client = FakeClient(definitions_by_item={ORIGIN: origin_def, PL: _definition()})
+    test_ws = "11111111-1111-1111-1111-111111111111"
+    prod_ws = "22222222-2222-2222-2222-222222222222"
+    items = [
+        WorkItem(Target(test_ws), None, origin=Target(WS, ORIGIN)),
+        WorkItem(Target(prod_ws), None, origin=Target(WS, ORIGIN)),
+    ]
+    results = run_deploy_batch(
+        client,  # type: ignore[arg-type]
+        items,
+        guid_maps=[
+            {nb_dev: nb_test},
+            {nb_dev: nb_prod},
+        ],
+    )
+    assert all(r.ok for r in results)
+    # Two creates; inspect notebook ids from create payloads via calls.
+    creates = [
+        call
+        for call in client.calls
+        if call[0] == "POST" and str(call[1]).endswith("/items")
+    ]
+    assert len(creates) == 2
+    first = json.loads(
+        base64.b64decode(creates[0][3]["definition"]["parts"][0]["payload"]).decode(
+            "utf-8"
+        )
+    )
+    second = json.loads(
+        base64.b64decode(creates[1][3]["definition"]["parts"][0]["payload"]).decode(
+            "utf-8"
+        )
+    )
+    assert (
+        first["properties"]["activities"][0]["typeProperties"]["notebookId"] == nb_test
+    )
+    assert (
+        second["properties"]["activities"][0]["typeProperties"]["notebookId"] == nb_prod
+    )
