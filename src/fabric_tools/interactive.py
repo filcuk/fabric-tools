@@ -54,7 +54,7 @@ def run_interactive_wizard() -> None:
     )
 
     typer.echo("fabric-tools interactive mode")
-    typer.echo("Use arrow keys + Enter to select. Ctrl+C cancels.\n")
+    typer.echo("Use arrow keys or 1-9 + Enter to select. Ctrl+C cancels.\n")
 
     tool = _select(
         "Select tool",
@@ -465,8 +465,9 @@ def _select(
         message,
         choices=choices,
         default=default,
-        instruction="(use arrow keys)",
+        instruction="(use arrow keys or 1-9)",
         style=_SELECT_STYLE,
+        use_shortcuts=True,
     ).ask()
     if result is None:
         raise typer.Exit(code=EXIT_USER)

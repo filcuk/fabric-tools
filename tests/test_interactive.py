@@ -457,3 +457,4 @@ def test_select_disables_stuck_default_highlight(
     assert _select("pick", choices=["a", "b"], default="a") == "b"
     assert captured["style"] is _SELECT_STYLE
     assert ("selected", "noreverse") in captured["style"].style_rules
+    assert captured["use_shortcuts"] is True
