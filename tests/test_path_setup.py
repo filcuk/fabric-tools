@@ -244,6 +244,8 @@ def test_frozen_app_root_prefers_nuitka(
 ) -> None:
     extract = tmp_path / "extract"
     extract.mkdir()
+    (extract / EXE_NAME).write_bytes(b"exe")
+    (extract / "python312.dll").write_bytes(b"dll")
     monkeypatch.setattr(
         "fabric_tools.path_setup._nuitka_compiled",
         lambda: SimpleNamespace(containing_dir=str(extract)),
@@ -252,7 +254,26 @@ def test_frozen_app_root_prefers_nuitka(
         "fabric_tools.path_setup.frozen_onedir_root",
         lambda: tmp_path / "pyi-app",
     )
-    assert frozen_app_root() == extract
+    monkeypatch.setattr("sys.argv", [str(extract / EXE_NAME)])
+    assert frozen_app_root() == extract.resolve()
+
+
+def test_frozen_app_root_prefers_argv0_dist_over_output_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Nuitka may set containing_dir to --output-dir; payload lives in *.dist."""
+    output_dir = tmp_path / "nuitka"
+    dist = output_dir / "fabric-tools.dist"
+    output_dir.mkdir()
+    dist.mkdir()
+    (dist / EXE_NAME).write_bytes(b"exe")
+    (dist / "python312.dll").write_bytes(b"dll")
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._nuitka_compiled",
+        lambda: SimpleNamespace(containing_dir=str(output_dir)),
+    )
+    monkeypatch.setattr("sys.argv", [str(dist / EXE_NAME)])
+    assert frozen_app_root() == dist.resolve()
 
 
 def test_is_portable_onefile_false_when_not_frozen(

@@ -91,12 +91,39 @@ def frozen_onedir_root() -> Path | None:
 
 
 def frozen_app_root() -> Path | None:
-    """Directory containing the frozen app payload (Nuitka or PyInstaller onedir)."""
+    """Directory containing the frozen app payload (Nuitka or PyInstaller onedir).
+
+    Nuitka's ``__compiled__.containing_dir`` is sometimes the ``--output-dir`` parent
+    (e.g. ``dist\\nuitka``) rather than the ``*.dist`` folder that holds the exe and
+    DLLs. Prefer any candidate that actually looks like a complete payload tree.
+    """
     compiled = _nuitka_compiled()
     if compiled is not None:
+        candidates: list[Path] = []
         containing = getattr(compiled, "containing_dir", None)
         if containing:
-            return Path(os.path.expanduser(str(containing))).resolve()
+            candidates.append(Path(os.path.expanduser(str(containing))).resolve())
+        argv0_dir = Path(sys.argv[0]).resolve().parent
+        if argv0_dir not in candidates:
+            candidates.append(argv0_dir)
+
+        complete = [
+            path
+            for path in candidates
+            if (path / EXE_NAME).is_file() and _has_nuitka_runtime_siblings(path)
+        ]
+        if complete:
+            # Prefer the launch directory when both are complete (standalone / installed).
+            if argv0_dir in complete:
+                return argv0_dir
+            return complete[0]
+
+        with_runtime = [path for path in candidates if _has_nuitka_runtime_siblings(path)]
+        if with_runtime:
+            return with_runtime[0]
+        if candidates:
+            return candidates[0]
+        return None
     return frozen_onedir_root()
 
 
