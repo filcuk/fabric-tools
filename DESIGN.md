@@ -11,10 +11,10 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Role | Style | Mechanism | Typical use |
 |------|--------|-----------|-------------|
 | Error / failure | red | Typer `fg=RED` / Rich `"red"` | Exceptions, failed ops, dry-run failures |
-| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"` | User cancel, notices, soft errors, partial env state; **Power BI** in help text |
+| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"` | User cancel, notices, soft errors, partial env state |
 | Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare `identical`, enabled/set |
 | Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands, compare headers, **Usage** command path and `COMMAND` placeholder |
-| Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Option/argument placeholders in `--help` (e.g. `<PATH>`, `<DEST>`, `<manifest>`, **Usage** `[ARGS]...`) |
+| Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Option/argument placeholders in `--help` (e.g. `<PATH>`, `<DEST>`, `<manifest>`, **Usage** `[ARGS]...`); **Power BI** in help text |
 | Command option — long (help) | magenta | Typer Rich `STYLE_OPTION` | Long options in `--help` (e.g. `--target`); **Usage** `[OPTIONS]` |
 | Command option — alias (help) | bright magenta (`#ff9cf5`) | Typer Rich `STYLE_SWITCH` | Short aliases in `--help` (e.g. `-t`). Truecolor so it stays distinct from magenta when ANSI bright magenta matches magenta. |
 | Muted hint | dim | Typer `dim=True` / Rich `"dim"` | Secondary prose; root help subtitle; **Usage:** label |
@@ -58,7 +58,7 @@ At CLI startup, Typer Rich help styles are set so **long options** (`--target`) 
 
 **Usage** lines are highlighted the same way: dim `Usage:` label, cyan command path (`fabric-tools notebook …`) and `COMMAND` placeholder, magenta `[OPTIONS]` / `--flags`, bright yellow argument placeholders (`[ARGS]...`, `<…>`).
 
-In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is yellow (`fabric-tools` is left alone).
+In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is bright yellow (`fabric-tools` is left alone).
 
 On **root** `--help` only, the **Fabric** commands panel title and frame use teal (`#8acfb3`); the **Local** panel keeps the default dim border. The ASCII banner colours ``FABRIC`` as `#8acfb3` and the hyphen gap plus ``TOOLS`` as `#1d8e7a`. The subtitle under the banner is **dim**. Subcommand help is unchanged.
 

@@ -55,13 +55,13 @@ HELP_STYLE_USAGE = STYLE_DIM
 HELP_STYLE_USAGE_COMMAND = ""
 HELP_STYLE_COMMAND = STYLE_ID
 HELP_STYLE_FABRIC = STYLE_PANEL_FABRIC
-HELP_STYLE_POWERBI = STYLE_WARN
+HELP_STYLE_POWERBI = STYLE_METAVAR
 HELP_PANEL_FABRIC = "Fabric"
 
 # Highlighter patterns: long options before short, and short must not match
 # inside ``--dry-run`` / ``--target`` (Typer's defaults style both as switch).
 # Usage-line tokens: command path cyan, [OPTIONS] magenta, placeholders yellow.
-# Product names in help prose: Fabric teal, Power BI yellow.
+# Product names in help prose: Fabric teal, Power BI bright yellow.
 _HELP_OPTION_HIGHLIGHTS = [
     r"(?P<option>\-\-[\w\-]+)",
     r"(?P<switch>(?<![\w\-])\-[a-zA-Z0-9]+)(?![\w\-])",
@@ -97,11 +97,11 @@ class PaletteRow:
 
 PALETTE_ROWS: tuple[PaletteRow, ...] = (
     PaletteRow("red", STYLE_ERROR, "Error / failure"),
-    PaletteRow("yellow", STYLE_WARN, "Warning / cancel / soft fail; Power BI in help"),
+    PaletteRow("yellow", STYLE_WARN, "Warning / cancel / soft fail"),
     PaletteRow(
         "bright yellow",
         STYLE_METAVAR,
-        "Help metavar (e.g. <PATH>, [ARGS]...)",
+        "Help metavar (e.g. <PATH>, [ARGS]...); Power BI in help",
     ),
     PaletteRow("green", STYLE_OK, "Success / affirmative"),
     PaletteRow(
