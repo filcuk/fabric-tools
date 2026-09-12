@@ -6,18 +6,19 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 
 ## Project goal
 
-`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), semantic model sync (`semantic-model`), report sync (`report`; joins a packable model by default), and paginated report sync (`paginated-report`; `.rdl` via Power BI).
+`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), semantic model sync (`semantic-model`), report sync (`report`; joins a packable model by default), paginated report sync (`paginated-report`; `.rdl` via Power BI), and read-only `inspect` (list/get workspaces and items).
 
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` + `report` + `paginated-report` groups, `env` (show/set/unset), `manifest` (inspect/list/delete/move), `setup`
+  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` + `report` + `paginated-report` + `inspect` groups, `env` (show/set/unset), `manifest` (inspect/list/delete/move), `setup`
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `semantic-model` \| `report` \| `paginated-report`)
+  - `inspect_cmd.py` — Fabric workspace/item list/get helpers (filters, formatters, `--target` shapes)
   - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; onefile unpacks to onedir under `%LOCALAPPDATA%\fabric-tools\app`; `setup update` downloads release exe and deferred-installs)
   - `update_check.py` — GitHub Releases check (`setup update --check`); once-per-day background notice; release asset download
   - `auth.py` — Azure token acquisition (Fabric + Power BI scopes; SP env, timed WAM broker, browser/device code; persistent cache)
-  - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`)
+  - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`, `list_workspaces`, `list_items`)
   - `powerbi_client.py` — Power BI REST client (Gen1 dataflow get/delete/import + poll; report list/export/import; paginated report RDL export/import/delete)
   - `definition_parts.py` — recursive folder ↔ InlineBase64 definition parts
   - `parsing.py` — `--target` / `--file` / `--origin` parsing and mode validation (`download` \| `deploy` \| `compare` \| `delete`; `deploy_create_only` for Gen1)
@@ -60,9 +61,19 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Schema v1 = file sources; v2 adds origin fields. `manifest inspect` one-line summaries in cwd; `manifest inspect -m` dumps one file, or one-line summaries when `-m` is a folder; `manifest list` filenames only; `manifest delete` / `move` local `.ftdep` files (confirm unless `-s`). Interactive may offer save after execute or dry-run.
 - Flags: `--silent`, `--dry-run`
 - Auth: interactive default; Windows WAM silent reuse, then interactive WAM (skipped in IDE/non-TTY, otherwise 45s timeout) then browser then device code; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` (not supported for `udf`)
-- Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute and `setup install` / `setup update` (install) / `setup uninstall`. Allows download, compare, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, `setup update --check`. `--silent` does not override.
+- Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute and `setup install` / `setup update` (install) / `setup uninstall`. Allows download, compare, `inspect`, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, `setup update --check`. `--silent` does not override.
 - Env report: `fabric-tools env` lists supported env vars (`FABRIC_TOOLS_*`, `AZURE_*`) and current process values (`AZURE_CLIENT_SECRET` redacted). `env set` / `env unset` persist catalogued names in the Windows user environment (new terminal needed for other shells; secret values never echoed). Allowed under read-only.
 - Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only. Portable one-file runs warn on stderr to install for up to ~20× faster startup (skipped under `setup install` / `setup update`).
+
+### Inspect (`inspect`)
+
+- Read-only Fabric Core browse: `inspect workspace list|get`, `inspect item list|get` (not local `manifest inspect`)
+- `--target` / `-t`: workspace GUID for workspace get / item list; `workspaceId:itemId` for item get
+- `--filter` / `-f`: case-insensitive `displayName` substring (inspect-scoped; not `--file`)
+- `--item` / `-i`: Fabric type filter — workspace types (`Personal`, `Workspace`, `AdminWorkspace`) or item types (`Notebook`, `Dataflow`, …); inspect-scoped (not root `--interactive`)
+- List: one line per row (name, ids, type, capacity/domain when present). Get: multi-line field detail
+- Item list passes `--item` to the Fabric `type` query param; name filter is client-side
+- Scope is what the signed-in principal can access (Personal / My workspace included for user auth; typically not for service principal)
 
 ### Notebooks
 
@@ -146,6 +157,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for full install/test/build steps.
 ```bash
 py -3 -m pip install -e ".[dev]"
 py -3 -m fabric_tools --version
+py -3 -m fabric_tools inspect --help
 py -3 -m fabric_tools notebook --help
 py -3 -m fabric_tools dataflow --help
 py -3 -m fabric_tools semantic-model --help

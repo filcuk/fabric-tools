@@ -31,7 +31,7 @@ fabric-tools setup uninstall
 
 Commands may print a one-line update notice on stderr at most once per local day when a newer GitHub release exists. Disable with `$env:FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`.
 
-Set `$env:FABRIC_TOOLS_READONLY=1` to refuse deploy, delete, and mutating `setup` actions (install / update / uninstall). Download, compare, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, and `setup update --check` still work. Useful for agents.
+Set `$env:FABRIC_TOOLS_READONLY=1` to refuse deploy, delete, and mutating `setup` actions (install / update / uninstall). Download, compare, `inspect`, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, and `setup update --check` still work. Useful for agents.
 
 List or change supported environment variables (Windows user environment for set/unset):
 
@@ -84,6 +84,11 @@ fabric-tools env unset AZURE_CLIENT_SECRET
   - download, deploy (create/overwrite), compare, delete
   - Overwrite uses the existing remote report name (`--name` is create-only)
   - Datasources/credentials are not synced; configure them in the service after deploy
+- Inspect (`inspect`)
+  - Read-only browse of Fabric workspaces and items (GUIDs for use with `--target` elsewhere)
+  - `inspect workspace list|get`, `inspect item list|get`
+  - `--filter` / `-f` (name), `--item` / `-i` (type) are inspect-scoped (not the global `--file` / `--interactive` meanings)
+  - Includes Personal / My workspace when signed in as a user
 
 ## Flags
 
@@ -100,10 +105,22 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 | `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`). Esc or ← Back returns one major step; Ctrl+C cancels |
 | `--independent` | `-i` | `report` download/deploy/compare and `semantic-model deploy`: act only on this command’s artifact; not on `semantic-model delete` |
 | `--include-schedules` | `-i` | `pipeline` download/deploy/compare: sync `.schedules` (default is pipeline-only; overwrite without `-i` preserves remote schedules; not on delete) |
+| `--filter` | `-f` | `inspect` only: case-insensitive display-name substring |
+| `--item` | `-i` | `inspect` only: Fabric type filter (`Personal`, `Notebook`, …) |
 
 ## Example commands
 
 ```powershell
+# Discover workspaces (My workspace: --item Personal)
+fabric-tools inspect workspace list
+fabric-tools inspect workspace list -f sales -i Workspace
+fabric-tools inspect workspace get -t <workspaceId>
+
+# List / get items in a workspace
+fabric-tools inspect item list -t <workspaceId>
+fabric-tools inspect item list -t <workspaceId> -f etl -i Notebook
+fabric-tools inspect item get -t <workspaceId>:<itemId>
+
 # Dry-run: local file only
 fabric-tools notebook deploy -d -f .\etl.ipynb
 
