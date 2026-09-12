@@ -226,6 +226,10 @@ def test_runtime_present_pyinstaller_and_nuitka(tmp_path: Path) -> None:
 def test_path_status_reports_runtime_present(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    from fabric_tools.update_check import compact_windows_version
+
+    pe_version = "1.2.3.0"
+    expected = compact_windows_version(pe_version)
     app = tmp_path / "app"
     app.mkdir()
     (app / EXE_NAME).write_bytes(b"exe")
@@ -239,12 +243,84 @@ def test_path_status_reports_runtime_present(
         "fabric_tools.path_setup._onefile_cache_present",
         lambda: False,
     )
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.read_exe_product_version",
+        lambda _path: pe_version,
+    )
     status = path_status(install_dir=app)
     assert status["exe_present"] is True
     assert status["internal_present"] is False
     assert status["runtime_present"] is True
     assert status["install_state"] == "installed"
     assert status["cache_present"] is False
+    assert status["installed_version"] == expected
+    assert status["version"] == expected
+    assert status["running_version"]
+
+
+def test_resolve_status_version_prefers_pe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from fabric_tools.path_setup import resolve_status_version
+    from fabric_tools.update_check import compact_windows_version
+
+    pe_version = "1.2.3.0"
+    running = "9.9.9"
+    expected = compact_windows_version(pe_version)
+    exe = tmp_path / EXE_NAME
+    exe.write_bytes(b"exe")
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.read_exe_product_version",
+        lambda _path: pe_version,
+    )
+    display, installed = resolve_status_version(
+        exe_path=exe, exe_present=True, running_version=running
+    )
+    assert display == expected
+    assert installed == expected
+
+
+def test_resolve_status_version_falls_back_to_running(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from fabric_tools.path_setup import resolve_status_version
+
+    running = "9.9.9"
+    exe = tmp_path / EXE_NAME
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.read_exe_product_version",
+        lambda _path: None,
+    )
+    display, installed = resolve_status_version(
+        exe_path=exe, exe_present=True, running_version=running
+    )
+    assert display == running
+    assert installed == ""
+
+
+def test_resolve_status_version_rejects_corrupt_pe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from fabric_tools.path_setup import resolve_status_version
+
+    running = "9.9.9"
+    corrupt = "1.2.3.00FileV"
+    exe = tmp_path / EXE_NAME
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.read_exe_product_version",
+        lambda _path: corrupt,
+    )
+    display, installed = resolve_status_version(
+        exe_path=exe, exe_present=True, running_version=running
+    )
+    assert display == running
+    assert installed == ""
+
+
+def test_read_exe_product_version_missing_file(tmp_path: Path) -> None:
+    from fabric_tools.path_setup import read_exe_product_version
+
+    assert read_exe_product_version(tmp_path / "missing.exe") is None
 
 
 def test_install_state_incomplete_and_not_installed() -> None:

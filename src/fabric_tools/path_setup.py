@@ -89,6 +89,160 @@ def installed_cmd_path(install_dir: Path | None = None) -> Path:
     return (install_dir or default_install_dir()) / CMD_NAME
 
 
+def read_exe_product_version(path: Path) -> str | None:
+    """Read ProductVersion (or FileVersion) from a Windows PE resource.
+
+    Returns a dotted version string, or ``None`` when unavailable (non-Windows,
+    missing file, or no version resource).
+    """
+    if os.name != "nt":
+        return None
+    try:
+        if not path.is_file():
+            return None
+    except OSError:
+        return None
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return None
+
+    version_dll = ctypes.WinDLL("version")
+    get_size = version_dll.GetFileVersionInfoSizeW
+    get_size.argtypes = [wintypes.LPCWSTR, wintypes.LPDWORD]
+    get_size.restype = wintypes.DWORD
+
+    get_info = version_dll.GetFileVersionInfoW
+    get_info.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+    ]
+    get_info.restype = wintypes.BOOL
+
+    query = version_dll.VerQueryValueW
+    query.argtypes = [
+        wintypes.LPVOID,
+        wintypes.LPCWSTR,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.UINT),
+    ]
+    query.restype = wintypes.BOOL
+
+    dummy = wintypes.DWORD(0)
+    size = get_size(str(path), ctypes.byref(dummy))
+    if not size:
+        return None
+
+    buffer = ctypes.create_string_buffer(size)
+    if not get_info(str(path), 0, size, buffer):
+        return None
+
+    block = ctypes.c_void_p()
+    length = wintypes.UINT(0)
+
+    # Prefer VS_FIXEDFILEINFO — numeric DWORDs, no string-table length pitfalls.
+    class VS_FIXEDFILEINFO(ctypes.Structure):
+        _fields_ = [
+            ("dwSignature", wintypes.DWORD),
+            ("dwStrucVersion", wintypes.DWORD),
+            ("dwFileVersionMS", wintypes.DWORD),
+            ("dwFileVersionLS", wintypes.DWORD),
+            ("dwProductVersionMS", wintypes.DWORD),
+            ("dwProductVersionLS", wintypes.DWORD),
+            ("dwFileFlagsMask", wintypes.DWORD),
+            ("dwFileFlags", wintypes.DWORD),
+            ("dwFileOS", wintypes.DWORD),
+            ("dwFileType", wintypes.DWORD),
+            ("dwFileSubtype", wintypes.DWORD),
+            ("dwFileDateMS", wintypes.DWORD),
+            ("dwFileDateLS", wintypes.DWORD),
+        ]
+
+    if query(buffer, "\\", ctypes.byref(block), ctypes.byref(length)) and block.value:
+        info = ctypes.cast(block.value, ctypes.POINTER(VS_FIXEDFILEINFO)).contents
+        ms = int(info.dwProductVersionMS)
+        ls = int(info.dwProductVersionLS)
+        if ms or ls:
+            return f"{ms >> 16}.{ms & 0xFFFF}.{ls >> 16}.{ls & 0xFFFF}"
+
+    def _string_at(ptr: int) -> str:
+        # VerQueryValueW puLen is bytes; wstring_at expects characters. Read
+        # until the embedded NUL instead of trusting puLen as a wchar count.
+        return ctypes.wstring_at(ptr).strip()
+
+    # Fall back to ProductVersion / FileVersion strings via translation table.
+    translations: list[tuple[int, int]] = [(0x0409, 0x04B0)]
+    if (
+        query(
+            buffer,
+            r"\VarFileInfo\Translation",
+            ctypes.byref(block),
+            ctypes.byref(length),
+        )
+        and block.value
+        and length.value >= 4
+    ):
+        lang_codepage = ctypes.cast(block.value, ctypes.POINTER(wintypes.WORD))
+        translations.insert(0, (int(lang_codepage[0]), int(lang_codepage[1])))
+
+    for lang, codepage in translations:
+        for name in ("ProductVersion", "FileVersion"):
+            sub = rf"\StringFileInfo\{lang:04X}{codepage:04X}\{name}"
+            if (
+                query(buffer, sub, ctypes.byref(block), ctypes.byref(length))
+                and block.value
+            ):
+                text = _string_at(block.value)
+                if text:
+                    return text
+
+    return None
+
+
+def resolve_status_version(
+    *,
+    exe_path: Path,
+    exe_present: bool,
+    running_version: str | None = None,
+) -> tuple[str, str]:
+    """Return ``(display_version, installed_version)`` for setup status.
+
+    Prefers the installed exe PE product version; falls back to the running
+    package version. ``installed_version`` is empty when PE metadata is absent.
+    """
+    from fabric_tools import __version__
+    from fabric_tools.update_check import (
+        UpdateCheckError,
+        compact_windows_version,
+        normalize_version,
+        parse_version_tuple,
+    )
+
+    running = normalize_version(
+        running_version if running_version is not None else __version__
+    )
+    installed = ""
+    if exe_present:
+        pe = read_exe_product_version(exe_path)
+        if pe:
+            compacted = compact_windows_version(pe)
+            core = compacted.split("+", 1)[0].split("-", 1)[0]
+            segments = core.split(".")
+            if segments and all(part.isdigit() for part in segments):
+                try:
+                    parse_version_tuple(compacted)
+                except UpdateCheckError:
+                    compacted = ""
+                else:
+                    installed = compacted
+    display = installed or running
+    return display, installed
+
+
 def meipass_dir() -> Path | None:
     """PyInstaller extract dir for a running onefile build, else ``None``."""
     raw = getattr(sys, "_MEIPASS", None)
@@ -341,6 +495,12 @@ def path_status(*, install_dir: Path | None = None) -> dict[str, str | bool]:
     cmd_present = cmd.is_file()
     internal_present = internal.is_dir()
     runtime_present = _runtime_present(target_dir)
+    version, installed_version = resolve_status_version(
+        exe_path=exe, exe_present=exe_present
+    )
+    from fabric_tools import __version__
+    from fabric_tools.update_check import normalize_version
+
     return {
         "install_dir": str(target_dir),
         "bin_dir": str(target_dir),
@@ -358,6 +518,9 @@ def path_status(*, install_dir: Path | None = None) -> dict[str, str | bool]:
             runtime_present=runtime_present,
             internal_present=internal_present,
         ),
+        "version": version,
+        "installed_version": installed_version,
+        "running_version": normalize_version(__version__),
     }
 
 
@@ -578,7 +741,9 @@ def _spawn_deferred_cache_cleanup(helper: Path, pid: int, *dirs: Path) -> None:
             close_fds=True,
         )
     except OSError as exc:
-        raise PathSetupError(f"failed to schedule onefile cache cleanup: {exc}") from exc
+        raise PathSetupError(
+            f"failed to schedule onefile cache cleanup: {exc}"
+        ) from exc
 
 
 def _cleanup_onefile_caches() -> dict[str, bool]:

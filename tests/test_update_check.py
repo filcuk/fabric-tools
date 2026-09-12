@@ -36,6 +36,15 @@ def test_normalize_version_strips_v() -> None:
     assert normalize_version("0.2.0") == "0.2.0"
 
 
+def test_compact_windows_version_trims_fourth_zero() -> None:
+    from fabric_tools.update_check import compact_windows_version
+
+    assert compact_windows_version("0.3.0.0") == "0.3.0"
+    assert compact_windows_version("v1.2.3.0") == "1.2.3"
+    assert compact_windows_version("1.2.3.4") == "1.2.3.4"
+    assert compact_windows_version("0.3.0") == "0.3.0"
+
+
 def test_parse_and_compare_versions() -> None:
     assert parse_version_tuple("0.2.0") == (0, 2, 0)
     assert parse_version_tuple("v0.10.1") == (0, 10, 1)

@@ -254,11 +254,14 @@ def test_notebook_delete_help() -> None:
 
 
 def test_setup_status_user_facing_output(monkeypatch) -> None:
+    installed = "1.2.3"
+    running = "1.2.4"
+    install_dir = r"C:\Users\demo\AppData\Local\fabric-tools\app"
     monkeypatch.setattr(
         "fabric_tools.path_setup.path_status",
         lambda: {
-            "install_dir": r"C:\Users\demo\AppData\Local\fabric-tools\app",
-            "bin_dir": r"C:\Users\demo\AppData\Local\fabric-tools\app",
+            "install_dir": install_dir,
+            "bin_dir": install_dir,
             "exe_present": True,
             "cmd_present": False,
             "internal_present": False,
@@ -268,14 +271,19 @@ def test_setup_status_user_facing_output(monkeypatch) -> None:
             "frozen": False,
             "cache_present": False,
             "install_state": "installed",
+            "version": installed,
+            "installed_version": installed,
+            "running_version": running,
         },
     )
+    monkeypatch.setenv("FABRIC_TOOLS_DISABLE_UPDATE_CHECK", "1")
     result = CliRunner().invoke(app, ["setup", "status"])
     assert result.exit_code == 0
     assert " Status  installed" in result.stdout
-    assert (
-        "Install  C:\\Users\\demo\\AppData\\Local\\fabric-tools\\app" in result.stdout
-    )
+    assert f"Version  {installed}" in result.stdout
+    assert " < " not in result.stdout
+    assert "(up to date)" not in result.stdout
+    assert f"Install  {install_dir}" in result.stdout
     assert "   PATH  registered" in result.stdout
     assert "open a new terminal" in result.stdout
     assert "  Cache  no" in result.stdout
@@ -286,23 +294,202 @@ def test_setup_status_user_facing_output(monkeypatch) -> None:
     assert "Install:" not in result.stdout
 
 
-def test_setup_status_hints_clean_when_cache_present(monkeypatch) -> None:
+def test_setup_status_shows_update_available(monkeypatch) -> None:
+    from fabric_tools.update_check import UpdateCheckResult
+
+    installed = "1.2.3"
+    latest = "1.2.4"
+    install_dir = r"C:\Users\demo\AppData\Local\fabric-tools\app"
     monkeypatch.setattr(
         "fabric_tools.path_setup.path_status",
         lambda: {
-            "install_dir": r"C:\Users\demo\AppData\Local\fabric-tools\app",
-            "bin_dir": r"C:\Users\demo\AppData\Local\fabric-tools\app",
+            "install_dir": install_dir,
+            "bin_dir": install_dir,
             "exe_present": True,
             "cmd_present": False,
             "internal_present": False,
             "runtime_present": True,
             "bin_dir_on_user_path": True,
-            "which_fabric_tools": r"C:\Users\demo\AppData\Local\fabric-tools\app\fabric-tools.exe",
+            "which_fabric_tools": rf"{install_dir}\fabric-tools.exe",
+            "frozen": False,
+            "cache_present": False,
+            "install_state": "installed",
+            "version": installed,
+            "installed_version": installed,
+            "running_version": latest,
+        },
+    )
+    monkeypatch.delenv("FABRIC_TOOLS_DISABLE_UPDATE_CHECK", raising=False)
+
+    def fake_check(*, current=None, **_kwargs):
+        assert current == installed
+        return UpdateCheckResult(
+            current=installed,
+            latest=latest,
+            update_available=True,
+            release_url=f"https://example.test/releases/v{latest}",
+            tag_name=f"v{latest}",
+            prerelease=False,
+            asset_url="https://example.test/fabric-tools.exe",
+        )
+
+    monkeypatch.setattr("fabric_tools.update_check.check_for_update", fake_check)
+    monkeypatch.setattr(
+        "fabric_tools.update_check.save_update_cache", lambda *_a, **_k: None
+    )
+    result = CliRunner().invoke(app, ["setup", "status"])
+    assert result.exit_code == 0
+    assert f"Version  {installed} < {latest}" in result.stdout
+
+
+def test_setup_status_up_to_date_keeps_green_version(monkeypatch) -> None:
+    from fabric_tools.update_check import UpdateCheckResult
+
+    installed = "1.2.4"
+    install_dir = r"C:\Users\demo\AppData\Local\fabric-tools\app"
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.path_status",
+        lambda: {
+            "install_dir": install_dir,
+            "bin_dir": install_dir,
+            "exe_present": True,
+            "cmd_present": False,
+            "internal_present": False,
+            "runtime_present": True,
+            "bin_dir_on_user_path": True,
+            "which_fabric_tools": "",
+            "frozen": False,
+            "cache_present": False,
+            "install_state": "installed",
+            "version": installed,
+            "installed_version": installed,
+            "running_version": installed,
+        },
+    )
+    monkeypatch.delenv("FABRIC_TOOLS_DISABLE_UPDATE_CHECK", raising=False)
+
+    def fake_check(*, current=None, **_kwargs):
+        return UpdateCheckResult(
+            current=installed,
+            latest=installed,
+            update_available=False,
+            release_url=f"https://example.test/releases/v{installed}",
+            tag_name=f"v{installed}",
+            prerelease=False,
+            asset_url=None,
+        )
+
+    monkeypatch.setattr("fabric_tools.update_check.check_for_update", fake_check)
+    monkeypatch.setattr(
+        "fabric_tools.update_check.save_update_cache", lambda *_a, **_k: None
+    )
+    result = CliRunner().invoke(app, ["setup", "status"])
+    assert result.exit_code == 0
+    assert f"Version  {installed} (up to date)" in result.stdout
+    assert " < " not in result.stdout
+
+
+def test_setup_status_update_check_failure_keeps_version(monkeypatch) -> None:
+    from fabric_tools.update_check import UpdateCheckError
+
+    installed = "1.2.3"
+    install_dir = r"C:\Users\demo\AppData\Local\fabric-tools\app"
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.path_status",
+        lambda: {
+            "install_dir": install_dir,
+            "bin_dir": install_dir,
+            "exe_present": True,
+            "cmd_present": False,
+            "internal_present": False,
+            "runtime_present": True,
+            "bin_dir_on_user_path": False,
+            "which_fabric_tools": "",
+            "frozen": False,
+            "cache_present": False,
+            "install_state": "installed",
+            "version": installed,
+            "installed_version": installed,
+            "running_version": installed,
+        },
+    )
+    monkeypatch.delenv("FABRIC_TOOLS_DISABLE_UPDATE_CHECK", raising=False)
+
+    def boom(*, current=None, **_kwargs):
+        raise UpdateCheckError("failed to reach GitHub")
+
+    monkeypatch.setattr("fabric_tools.update_check.check_for_update", boom)
+    result = CliRunner().invoke(app, ["setup", "status"])
+    assert result.exit_code == 0
+    assert f"Version  {installed} (update check failed)" in result.stdout
+    assert " < " not in result.stdout
+    assert "(up to date)" not in result.stdout
+    assert "failed to reach GitHub" not in result.stdout
+
+
+def test_setup_status_update_check_timeout_note(monkeypatch) -> None:
+    import httpx
+
+    from fabric_tools.update_check import UpdateCheckError
+
+    installed = "1.2.3"
+    install_dir = r"C:\Users\demo\AppData\Local\fabric-tools\app"
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.path_status",
+        lambda: {
+            "install_dir": install_dir,
+            "bin_dir": install_dir,
+            "exe_present": True,
+            "cmd_present": False,
+            "internal_present": False,
+            "runtime_present": True,
+            "bin_dir_on_user_path": False,
+            "which_fabric_tools": "",
+            "frozen": False,
+            "cache_present": False,
+            "install_state": "installed",
+            "version": installed,
+            "installed_version": installed,
+            "running_version": installed,
+        },
+    )
+    monkeypatch.delenv("FABRIC_TOOLS_DISABLE_UPDATE_CHECK", raising=False)
+
+    def boom(*, current=None, **_kwargs):
+        raise UpdateCheckError(
+            "failed to reach GitHub: timed out"
+        ) from httpx.TimeoutException("timed out")
+
+    monkeypatch.setattr("fabric_tools.update_check.check_for_update", boom)
+    result = CliRunner().invoke(app, ["setup", "status"])
+    assert result.exit_code == 0
+    assert f"Version  {installed} (update check timeout)" in result.stdout
+    assert "(update check failed)" not in result.stdout
+
+
+def test_setup_status_hints_clean_when_cache_present(monkeypatch) -> None:
+    installed = "1.2.4"
+    install_dir = r"C:\Users\demo\AppData\Local\fabric-tools\app"
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.path_status",
+        lambda: {
+            "install_dir": install_dir,
+            "bin_dir": install_dir,
+            "exe_present": True,
+            "cmd_present": False,
+            "internal_present": False,
+            "runtime_present": True,
+            "bin_dir_on_user_path": True,
+            "which_fabric_tools": rf"{install_dir}\fabric-tools.exe",
             "frozen": False,
             "cache_present": True,
             "install_state": "installed",
+            "version": installed,
+            "installed_version": installed,
+            "running_version": installed,
         },
     )
+    monkeypatch.setenv("FABRIC_TOOLS_DISABLE_UPDATE_CHECK", "1")
     result = CliRunner().invoke(app, ["setup", "status"])
     assert result.exit_code == 0
     assert "  Cache  yes" in result.stdout
