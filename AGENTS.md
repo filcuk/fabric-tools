@@ -71,7 +71,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - `--target` / `-t`: workspace GUID for workspace get / item list; `workspaceId:itemId` for item get
 - `--filter` / `-f`: case-insensitive `displayName` substring (inspect-scoped; not `--file`)
 - `--item` / `-i`: Fabric type filter — workspace types (`Personal`, `Workspace`, `AdminWorkspace`) or item types (`Notebook`, `Dataflow`, …); inspect-scoped (not root `--interactive`)
-- List: aligned columns with header row (Rich: name default, other columns dim; headers bold blue). Workspace: `NAME ID TYPE CAPACITY DOMAIN`. Item: `NAME TARGET TYPE` (`TARGET` = `workspaceId:itemId`). Get: aligned key/value columns (dim keys, default values)
+- List: aligned columns with header row (Rich: name default, other columns dim; headers blue). Workspace: `NAME ID TYPE CAPACITY DOMAIN`. Item: `NAME TARGET TYPE` (`TARGET` = `workspaceId:itemId`). Get: aligned key/value columns (dim keys, default values)
 - Item list passes `--item` to the Fabric `type` query param; name filter is client-side
 - Scope is what the signed-in principal can access (Personal / My workspace included for user auth; typically not for service principal)
 
