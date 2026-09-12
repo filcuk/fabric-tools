@@ -460,12 +460,13 @@ def _select(
     *,
     choices: list[str] | list[Choice],
     default: str | None = None,
+    instruction: str = "(use arrow keys or 1-9)",
 ) -> str:
     result = questionary.select(
         message,
         choices=choices,
         default=default,
-        instruction="(use arrow keys or 1-9)",
+        instruction=instruction,
         style=_SELECT_STYLE,
         use_shortcuts=True,
     ).ask()
@@ -475,10 +476,19 @@ def _select(
 
 
 def _confirm(message: str, *, default: bool = False) -> bool:
-    result = questionary.confirm(message, default=default).ask()
-    if result is None:
-        raise typer.Exit(code=EXIT_USER)
-    return bool(result)
+    # Same select UX as other prompts (arrows / shortcuts + Enter).
+    return (
+        _select(
+            message,
+            choices=[
+                Choice("Yes", value="Yes", shortcut_key="y"),
+                Choice("No", value="No", shortcut_key="n"),
+            ],
+            default="Yes" if default else "No",
+            instruction="(use arrow keys or y/n)",
+        )
+        == "Yes"
+    )
 
 
 def _text(message: str, *, allow_empty: bool) -> str:

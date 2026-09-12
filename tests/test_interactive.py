@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 import typer
+from questionary import Choice
 
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.interactive import run_interactive_wizard
@@ -20,15 +21,29 @@ class _Ask:
         return self._value
 
 
+def _yn(value: bool) -> str:
+    return "Yes" if value else "No"
+
+
 def test_interactive_dispatches_compare(monkeypatch: pytest.MonkeyPatch) -> None:
-    selects = iter(["notebook", "compare", "execute", "file"])
+    # tool, activity, run_mode, source; then add another?, ignore outputs?, proceed?
+    selects = iter(
+        [
+            "notebook",
+            "compare",
+            "execute",
+            "file",
+            _yn(False),
+            _yn(True),
+            _yn(True),
+        ]
+    )
     texts = iter(
         [
             "./a.ipynb",
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter([False, True, True])  # add another?, ignore outputs?, proceed?
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -38,10 +53,6 @@ def test_interactive_dispatches_compare(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
-    )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
     )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
@@ -63,14 +74,16 @@ def test_interactive_dispatches_compare(monkeypatch: pytest.MonkeyPatch) -> None
 def test_interactive_dry_run_offers_manifest_callback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selects = iter(["notebook", "download", "dry_both"])
+    # tool, activity, run_mode; then add another?, specify paths?, proceed?
+    selects = iter(
+        ["notebook", "download", "dry_both", _yn(False), _yn(True), _yn(True)]
+    )
     texts = iter(
         [
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
             "./a.ipynb",
         ]
     )
-    confirms = iter([False, True, True])  # add another?, specify paths?, proceed?
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -80,10 +93,6 @@ def test_interactive_dry_run_offers_manifest_callback(
     monkeypatch.setattr(
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
-    )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
     )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
@@ -107,12 +116,12 @@ def test_prompt_save_manifest_writes_file(
     from fabric_tools.interactive import prompt_save_manifest
     from fabric_tools.parsing import Target, WorkItem
 
-    confirms = iter([True])
+    selects = iter([_yn(True)])
     texts = iter([str(tmp_path / "deploy")])
 
     monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
     )
     monkeypatch.setattr(
         "questionary.text",
@@ -135,15 +144,23 @@ def test_prompt_save_manifest_writes_file(
 
 
 def test_interactive_abort_on_proceed(monkeypatch: pytest.MonkeyPatch) -> None:
-    selects = iter(["notebook", "download", "execute"])
+    # tool, activity, run_mode; add another?, specify paths?, silent?, proceed?
+    selects = iter(
+        [
+            "notebook",
+            "download",
+            "execute",
+            _yn(False),
+            _yn(False),
+            _yn(False),
+            _yn(False),
+        ]
+    )
     texts = iter(
         [
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter(
-        [False, False, False, False]
-    )  # add another?, specify paths?, silent?, proceed?
 
     monkeypatch.setattr(
         "questionary.select",
@@ -153,10 +170,6 @@ def test_interactive_abort_on_proceed(monkeypatch: pytest.MonkeyPatch) -> None:
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
     )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
-    )
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -164,13 +177,14 @@ def test_interactive_abort_on_proceed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_interactive_notebook_delete(monkeypatch: pytest.MonkeyPatch) -> None:
-    selects = iter(["notebook", "delete", "execute"])
+    selects = iter(
+        ["notebook", "delete", "execute", _yn(False), _yn(True), _yn(True)]
+    )
     texts = iter(
         [
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter([False, True, True])  # add another?, silent?, proceed?
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -180,10 +194,6 @@ def test_interactive_notebook_delete(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
-    )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
     )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
@@ -201,15 +211,22 @@ def test_interactive_notebook_delete(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_interactive_dataflow_gen1_download(monkeypatch: pytest.MonkeyPatch) -> None:
-    selects = iter(["dataflow-gen1", "download", "execute"])
+    selects = iter(
+        [
+            "dataflow-gen1",
+            "download",
+            "execute",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(True),
+        ]
+    )
     texts = iter(
         [
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter(
-        [False, False, True, True]
-    )  # add another?, specify paths?, silent?, proceed?
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -219,10 +236,6 @@ def test_interactive_dataflow_gen1_download(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
-    )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
     )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
@@ -243,13 +256,22 @@ def test_interactive_dataflow_gen1_download(monkeypatch: pytest.MonkeyPatch) -> 
 def test_interactive_paginated_report_download(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selects = iter(["paginated-report", "download", "execute"])
+    selects = iter(
+        [
+            "paginated-report",
+            "download",
+            "execute",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(True),
+        ]
+    )
     texts = iter(
         [
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter([False, False, True, True])
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -259,10 +281,6 @@ def test_interactive_paginated_report_download(
     monkeypatch.setattr(
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
-    )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
     )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
@@ -281,13 +299,22 @@ def test_interactive_paginated_report_download(
 
 
 def test_interactive_dataflow_download(monkeypatch: pytest.MonkeyPatch) -> None:
-    selects = iter(["dataflow", "download", "execute"])
+    selects = iter(
+        [
+            "dataflow",
+            "download",
+            "execute",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(True),
+        ]
+    )
     texts = iter(
         [
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter([False, False, True, True])
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -297,10 +324,6 @@ def test_interactive_dataflow_download(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
-    )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
     )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
@@ -319,14 +342,24 @@ def test_interactive_dataflow_download(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
-    selects = iter(["pipeline", "download", "execute"])
+    # another target? destination paths? silent? include-schedules? proceed?
+    selects = iter(
+        [
+            "pipeline",
+            "download",
+            "execute",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(False),
+            _yn(True),
+        ]
+    )
     texts = iter(
         [
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    # another target? destination paths? silent? include-schedules? proceed?
-    confirms = iter([False, False, True, False, True])
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -336,10 +369,6 @@ def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
-    )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
     )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
@@ -361,15 +390,25 @@ def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_interactive_pipeline_deploy_include_schedules(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selects = iter(["pipeline", "deploy", "execute", "file"])
+    # another pair? silent? include-schedules? proceed?
+    selects = iter(
+        [
+            "pipeline",
+            "deploy",
+            "execute",
+            "file",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(True),
+        ]
+    )
     texts = iter(
         [
             r".\ETL.DataPipeline",
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    # another pair? silent? include-schedules? proceed?
-    confirms = iter([False, False, True, True])
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -379,10 +418,6 @@ def test_interactive_pipeline_deploy_include_schedules(
     monkeypatch.setattr(
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
-    )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
     )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
@@ -404,13 +439,14 @@ def test_interactive_pipeline_deploy_include_schedules(
 
 
 def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:
-    selects = iter(["udf", "download", "execute"])
+    selects = iter(
+        ["udf", "download", "execute", _yn(False), _yn(False), _yn(True), _yn(True)]
+    )
     texts = iter(
         [
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter([False, False, True, True])
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -420,10 +456,6 @@ def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
-    )
-    monkeypatch.setattr(
-        "questionary.confirm",
-        lambda *a, **k: _Ask(next(confirms)),
     )
 
     def fake_run(mode: CommandMode, **kwargs: Any) -> None:
@@ -458,3 +490,29 @@ def test_select_disables_stuck_default_highlight(
     assert captured["style"] is _SELECT_STYLE
     assert ("selected", "noreverse") in captured["style"].style_rules
     assert captured["use_shortcuts"] is True
+
+
+def test_confirm_uses_yes_no_select(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fabric_tools.interactive import _SELECT_STYLE, _confirm
+
+    captured: dict[str, Any] = {}
+
+    def fake_select(*_a: Any, **kwargs: Any) -> _Ask:
+        captured.update(kwargs)
+        return _Ask("Yes")
+
+    monkeypatch.setattr("questionary.select", fake_select)
+
+    assert _confirm("ok?", default=False) is True
+    assert captured["default"] == "No"
+    assert captured["instruction"] == "(use arrow keys or y/n)"
+    assert captured["style"] is _SELECT_STYLE
+    assert captured["use_shortcuts"] is True
+    titles = [
+        c.title if isinstance(c, Choice) else c for c in captured["choices"]
+    ]
+    assert titles == ["Yes", "No"]
+    shortcuts = [
+        c.shortcut_key for c in captured["choices"] if isinstance(c, Choice)
+    ]
+    assert shortcuts == ["y", "n"]
