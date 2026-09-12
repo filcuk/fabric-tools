@@ -124,7 +124,26 @@ def test_install_from_onefile_requires_bootloader(tmp_path: Path) -> None:
         _install_from_onefile_meipass(meipass, tmp_path / "app")
 
 
-def test_install_nuitka_tree_copies_full_dist(tmp_path: Path) -> None:
+def test_install_nuitka_tree_onefile_payload_copies_bootstrap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    extract = tmp_path / "onefile_extract"
+    bootstrap_dir = tmp_path / "download"
+    dest = tmp_path / "app"
+    extract.mkdir()
+    bootstrap_dir.mkdir()
+    (extract / "fabric-tools.dll").write_bytes(b"payload")
+    (extract / "python312.dll").write_bytes(b"dll")
+    (extract / "_ctypes.pyd").write_bytes(b"pyd")
+    bootstrap = bootstrap_dir / EXE_NAME
+    bootstrap.write_bytes(b"bootstrap")
+    monkeypatch.setattr("sys.argv", [str(bootstrap)])
+
+    _install_nuitka_tree(extract, dest)
+
+    assert (dest / EXE_NAME).read_bytes() == b"bootstrap"
+    assert list(dest.iterdir()) == [dest / EXE_NAME]
+
     source = tmp_path / "fabric-tools.dist"
     dest = tmp_path / "app"
     source.mkdir()

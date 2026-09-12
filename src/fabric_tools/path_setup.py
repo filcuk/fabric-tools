@@ -181,6 +181,9 @@ def _has_nuitka_runtime_siblings(directory: Path) -> bool:
         return False
 
 
+ONEFILE_TEMPDIR_SPEC = "{CACHE_DIR}/{COMPANY}/{PRODUCT}/{VERSION}"
+
+
 def is_portable_onefile() -> bool:
     """True when running a one-file build that extracts on each launch."""
     if not is_frozen():
@@ -203,7 +206,7 @@ def format_nuitka_orphan_exe_error() -> str | None:
     """Error when a Nuitka standalone exe was copied without its sibling DLLs.
 
     Onefile builds are never orphans: the bootstrap has no siblings by design; the
-    payload lives in a temp extract.
+    payload lives in a cache/temp extract.
     """
     if _nuitka_compiled() is None:
         return None
@@ -215,15 +218,13 @@ def format_nuitka_orphan_exe_error() -> str | None:
     root = frozen_app_root()
     if root is not None and _has_nuitka_runtime_siblings(root):
         return None
-    # Payload found via __main__.__file__ / package path even if frozen_app_root lagged.
     for path in _nuitka_payload_candidates():
         if _has_nuitka_runtime_siblings(path):
             return None
     return (
-        "This Nuitka fabric-tools.exe is missing sibling runtime files "
-        "(python3*.dll / _ctypes.pyd). For distribution use the onefile build "
-        "(dist\\fabric-tools.exe from build_exe_nuitka.ps1). "
-        "A lone copy of a standalone .exe will not work."
+        "This Nuitka fabric-tools.exe is missing its runtime payload. "
+        "Use the onefile build from scripts\\build_exe_nuitka.ps1 "
+        "(dist\\fabric-tools.exe)."
     )
 
 
@@ -231,6 +232,12 @@ def format_install_speed_notice() -> str | None:
     """Warn portable one-file users to install for faster startup."""
     if not is_portable_onefile():
         return None
+    try:
+        # Installed onefile still uses a cache extract; don't nag after setup install.
+        if Path(sys.argv[0]).resolve().parent == default_install_dir().resolve():
+            return None
+    except PathSetupError:
+        pass
     return (
         "Warning: portable one-file exe extracts on every launch (slow startup). "
         "Install for up to 20x faster launches: fabric-tools setup install"
@@ -487,10 +494,11 @@ def _install_frozen_app(target_dir: Path) -> str:
         root = frozen_app_root()
         if root is None:
             raise PathSetupError(
-                "Nuitka build has no __compiled__.containing_dir; cannot install."
+                "Nuitka build has no runnable payload directory; cannot install."
             )
         _install_nuitka_tree(root, target_dir)
-        return "onefile" if is_portable_onefile() else "standalone"
+        # Onefile extracts use fabric-tools.dll; standalone trees include the exe.
+        return "onefile" if not (root / EXE_NAME).is_file() else "standalone"
 
     onedir_root = frozen_onedir_root()
     if onedir_root is not None:
@@ -509,13 +517,21 @@ def _install_frozen_app(target_dir: Path) -> str:
 
 
 def _install_nuitka_tree(source_root: Path, target_dir: Path) -> None:
-    """Copy a Nuitka standalone / onefile-extract tree into the install directory."""
+    """Install a Nuitka standalone tree or onefile bootstrap into ``target_dir``.
+
+    Onefile extracts ship ``fabric-tools.dll`` (not ``fabric-tools.exe``). In that
+    case we install the running onefile bootstrap; the payload is unpacked on first
+    run into the Nuitka cache (``--onefile-tempdir-spec``).
+    """
     source_root = source_root.resolve()
     target_dir = target_dir.resolve()
     source_exe = source_root / EXE_NAME
-    if not source_exe.is_file():
+    has_exe = source_exe.is_file()
+    has_runtime = _has_nuitka_runtime_siblings(source_root)
+    if not has_exe and not has_runtime:
         raise PathSetupError(
-            f"Incomplete Nuitka layout at {source_root} (need {EXE_NAME})."
+            f"Incomplete Nuitka layout at {source_root} "
+            f"(need {EXE_NAME} or runtime DLLs such as python3*.dll / _ctypes.pyd)."
         )
 
     if source_root == target_dir:
@@ -523,12 +539,21 @@ def _install_nuitka_tree(source_root: Path, target_dir: Path) -> None:
 
     target_dir.mkdir(parents=True, exist_ok=True)
     _clear_directory_contents(target_dir)
-    for item in source_root.iterdir():
-        dest = target_dir / item.name
-        if item.is_dir():
-            shutil.copytree(item, dest)
-        else:
-            shutil.copy2(item, dest)
+
+    if has_exe:
+        for item in source_root.iterdir():
+            dest = target_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, dest)
+            else:
+                shutil.copy2(item, dest)
+    else:
+        bootstrap = Path(sys.argv[0]).resolve()
+        if not bootstrap.is_file():
+            raise PathSetupError(
+                "Cannot locate the Nuitka onefile bootstrap executable to install."
+            )
+        shutil.copy2(bootstrap, target_dir / EXE_NAME)
 
     if not (target_dir / EXE_NAME).is_file():
         raise PathSetupError(
