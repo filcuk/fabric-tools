@@ -126,6 +126,13 @@ def test_cli_readonly_allows_setup_status(monkeypatch: pytest.MonkeyPatch) -> No
     assert READONLY_ENV not in (result.stderr or result.output)
 
 
+def test_cli_readonly_blocks_setup_clean(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(READONLY_ENV, "1")
+    result = CliRunner().invoke(app, ["setup", "clean"])
+    assert result.exit_code == EXIT_USER
+    assert READONLY_ENV in (result.stderr or result.output)
+
+
 def test_cli_readonly_allows_manifest_delete(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:

@@ -68,6 +68,7 @@ def test_setup_help_lists_update() -> None:
     assert result.exit_code == 0
     assert "update" in result.stdout
     assert "install" in result.stdout
+    assert "clean" in result.stdout
     assert "[-c] [-s]" in result.stdout
     assert "[--keep-files]" in result.stdout
 
@@ -262,5 +263,39 @@ def test_setup_status_user_facing_output(monkeypatch) -> None:
     assert "PATH:    registered" in result.stdout
     assert "open a new terminal" in result.stdout
     assert "Cache:   no" in result.stdout
+    assert "setup clean" not in result.stdout
     assert "_internal" not in result.stdout
     assert "shutil.which" not in result.stdout
+
+
+def test_setup_status_hints_clean_when_cache_present(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.path_status",
+        lambda: {
+            "install_dir": r"C:\Users\demo\AppData\Local\fabric-tools\app",
+            "bin_dir": r"C:\Users\demo\AppData\Local\fabric-tools\app",
+            "exe_present": True,
+            "cmd_present": False,
+            "internal_present": False,
+            "runtime_present": True,
+            "bin_dir_on_user_path": True,
+            "which_fabric_tools": r"C:\Users\demo\AppData\Local\fabric-tools\app\fabric-tools.exe",
+            "frozen": False,
+            "cache_present": True,
+            "install_state": "installed",
+        },
+    )
+    result = CliRunner().invoke(app, ["setup", "status"])
+    assert result.exit_code == 0
+    assert "Cache:   yes" in result.stdout
+    assert "setup clean" in result.stdout
+
+
+def test_setup_clean_removes_cache(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.clean_onefile_caches",
+        lambda: {"cleaned": True, "scheduled": False},
+    )
+    result = CliRunner().invoke(app, ["setup", "clean"])
+    assert result.exit_code == 0
+    assert "Removed onefile extract cache" in result.stdout

@@ -294,7 +294,7 @@ app.add_typer(inspect_app, name="inspect", rich_help_panel="Fabric")
 
 setup_app = typer.Typer(
     name="setup",
-    help="Install, update, and manage the utility.",
+    help="Install, update, status, clean, or uninstall the local fabric-tools app.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -836,7 +836,7 @@ def main(
 
 @setup_app.callback()
 def setup_main(ctx: typer.Context) -> None:
-    """Manage the fabric-tools install (install / update / status / uninstall)."""
+    """Manage the fabric-tools install (install / update / status / clean / uninstall)."""
     root = ctx.find_root()
     if ctx.invoked_subcommand == "update":
         root.meta["skip_bg_update"] = True
@@ -962,6 +962,35 @@ def setup_status_cmd() -> None:
         "yes" if cache_present else "no",
         fg=typer.colors.YELLOW if cache_present else typer.colors.GREEN,
     )
+    if state == "installed" and cache_present:
+        typer.echo()
+        typer.secho(
+            "Cache is only used for portable one-file runs. Clear with: ",
+            fg=typer.colors.BRIGHT_BLACK,
+            nl=False,
+        )
+        typer.secho("fabric-tools setup clean", fg=typer.colors.CYAN)
+    raise typer.Exit(code=EXIT_OK)
+
+
+@setup_app.command("clean")
+def setup_clean() -> None:
+    """Remove the portable one-file extract cache (keeps the installed app)."""
+    from fabric_tools.path_setup import PathSetupError, clean_onefile_caches
+
+    _enforce_readonly_setup("clean")
+    try:
+        result = clean_onefile_caches()
+    except PathSetupError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    if result["cleaned"]:
+        typer.secho("Removed onefile extract cache.", fg=typer.colors.GREEN)
+    elif result["scheduled"]:
+        typer.echo("Scheduled onefile extract cache cleanup after this process exits.")
+    else:
+        typer.echo("No onefile extract cache found.")
     raise typer.Exit(code=EXIT_OK)
 
 

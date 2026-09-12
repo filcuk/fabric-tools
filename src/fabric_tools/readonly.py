@@ -39,11 +39,11 @@ def ensure_command_allowed(mode: CommandMode, *, dry_run: bool) -> None:
 
 
 def ensure_setup_mutation_allowed(action: str) -> None:
-    """Refuse setup install / update (install) / uninstall when read-only."""
+    """Refuse mutating setup actions when read-only."""
     if not is_readonly_enabled():
         return
     raise ReadOnlyError(
         f"Refusing setup {action}: {READONLY_ENV} is set. "
-        "Unset it to allow install, update, or uninstall "
+        "Unset it to allow install, update, uninstall, or clean "
         "(setup status and setup update --check remain allowed)."
     )

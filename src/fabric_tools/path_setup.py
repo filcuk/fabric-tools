@@ -585,7 +585,7 @@ def _cleanup_onefile_caches() -> dict[str, bool]:
     """Remove onefile extract caches (current + legacy layout).
 
     When this process is still running from a cache extract (portable onefile
-    ``setup install``), deletion is deferred until after exit.
+    ``setup install`` / ``setup clean``), deletion is deferred until after exit.
     """
     targets = [d for d in _onefile_cache_dirs() if d.exists()]
     if not targets:
@@ -605,6 +605,13 @@ def _cleanup_onefile_caches() -> dict[str, bool]:
             cleaned = True
     _try_remove_empty_install_root()
     return {"cleaned": cleaned, "scheduled": False}
+
+
+def clean_onefile_caches() -> dict[str, bool]:
+    """Remove onefile extract caches. Public entry for ``setup clean``."""
+    if os.name != "nt":
+        raise PathSetupError("setup clean is currently supported on Windows only.")
+    return _cleanup_onefile_caches()
 
 
 def ensure_user_path_contains(directory: str) -> bool:
