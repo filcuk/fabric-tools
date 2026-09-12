@@ -949,7 +949,8 @@ def setup_status_cmd() -> None:
         typer.secho(str(exc), fg=FG_ERROR, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    # Same key/value layout as inspect get: dim keys, no colon, two-space gap.
+    # Same key/value layout as inspect get: dim right-aligned keys, no colon,
+    # two-space gap, left-aligned values.
     _gap = "  "
     keys = ("Status", "Install", "PATH", "Cache")
     key_w = max(len(k) for k in keys)
@@ -957,7 +958,7 @@ def setup_status_cmd() -> None:
 
     def print_row(key: str, value: str, *, value_style: str | None = None) -> None:
         line = Text()
-        line.append(f"{key:<{key_w}}", style=STYLE_DIM)
+        line.append(f"{key:>{key_w}}", style=STYLE_DIM)
         line.append(_gap)
         line.append(value, style=value_style)
         console.print(line)
@@ -974,7 +975,7 @@ def setup_status_cmd() -> None:
     print_row("Install", str(status["install_dir"]))
 
     path_line = Text()
-    path_line.append(f"{'PATH':<{key_w}}", style=STYLE_DIM)
+    path_line.append(f"{'PATH':>{key_w}}", style=STYLE_DIM)
     path_line.append(_gap)
     if status["bin_dir_on_user_path"]:
         path_line.append("registered", style=STYLE_OK)

@@ -258,11 +258,11 @@ def test_setup_status_user_facing_output(monkeypatch) -> None:
     )
     result = CliRunner().invoke(app, ["setup", "status"])
     assert result.exit_code == 0
-    assert "Status   installed" in result.stdout
+    assert " Status  installed" in result.stdout
     assert "Install  C:\\Users\\demo\\AppData\\Local\\fabric-tools\\app" in result.stdout
-    assert "PATH     registered" in result.stdout
+    assert "   PATH  registered" in result.stdout
     assert "open a new terminal" in result.stdout
-    assert "Cache    no" in result.stdout
+    assert "  Cache  no" in result.stdout
     assert "setup clean" not in result.stdout
     assert "_internal" not in result.stdout
     assert "shutil.which" not in result.stdout
@@ -289,7 +289,7 @@ def test_setup_status_hints_clean_when_cache_present(monkeypatch) -> None:
     )
     result = CliRunner().invoke(app, ["setup", "status"])
     assert result.exit_code == 0
-    assert "Cache    yes" in result.stdout
+    assert "  Cache  yes" in result.stdout
     assert "setup clean" in result.stdout
 
 

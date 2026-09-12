@@ -260,7 +260,7 @@ def _format_detail(row: dict[str, Any], keys: tuple[str, ...]) -> str:
     if not pairs:
         return "(no fields)"
     key_w = max(len(key) for key, _ in pairs)
-    return "\n".join(f"{key:<{key_w}}{_COL_GAP}{value}" for key, value in pairs)
+    return "\n".join(f"{key:>{key_w}}{_COL_GAP}{value}" for key, value in pairs)
 
 
 def _print_detail(row: dict[str, Any], keys: tuple[str, ...]) -> None:
@@ -275,7 +275,7 @@ def _print_detail(row: dict[str, Any], keys: tuple[str, ...]) -> None:
     console = Console()
     for key, value in pairs:
         line = Text()
-        line.append(f"{key:<{key_w}}", style=STYLE_DIM)
+        line.append(f"{key:>{key_w}}", style=STYLE_DIM)
         line.append(_COL_GAP)
         line.append(value)
         console.print(line)

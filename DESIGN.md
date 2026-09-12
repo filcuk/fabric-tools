@@ -26,16 +26,16 @@ Shared formatting rules for multi-column / key-value CLI output:
 
 - **Column gap:** two spaces between columns (`"  "`).
 - **No trailing colon** on keys or header labels (use `Status`, not `Status:`).
-- **Key / value rows** (inspect get, setup status): left column is the key, left-padded to the widest key width, styled **dim**; value column is primary text (or a semantic colour when the value itself is a status token).
+- **Key / value rows** (inspect get, setup status): left column is the key, **right-aligned** within the widest key width, styled **dim**; value column is **left-aligned** primary text (or a semantic colour when the value itself is a status token).
 - **List tables** (inspect workspace/item list): header row is **bold blue**; first data column (name) is primary; remaining columns are **dim**.
 
 Example setup status shape:
 
 ```text
-Status   installed
+ Status  installed
 Install  C:\Users\...\fabric-tools\app
-PATH     registered
-Cache    no
+   PATH  registered
+  Cache  no
 ```
 
 ### Env report statuses

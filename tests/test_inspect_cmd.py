@@ -154,9 +154,9 @@ def test_format_workspace_detail_skips_empty() -> None:
     )
     key_w = len("displayName")
     assert detail == (
-        f"{'id':<{key_w}}  {WS}\n"
-        f"{'displayName':<{key_w}}  Finance\n"
-        f"{'type':<{key_w}}  Workspace"
+        f"{'id':>{key_w}}  {WS}\n"
+        f"{'displayName':>{key_w}}  Finance\n"
+        f"{'type':>{key_w}}  Workspace"
     )
 
 
@@ -171,10 +171,10 @@ def test_format_item_detail() -> None:
     )
     key_w = len("displayName")
     assert detail == (
-        f"{'id':<{key_w}}  {ITEM}\n"
-        f"{'displayName':<{key_w}}  ETL\n"
-        f"{'type':<{key_w}}  Notebook\n"
-        f"{'workspaceId':<{key_w}}  {WS}"
+        f"{'id':>{key_w}}  {ITEM}\n"
+        f"{'displayName':>{key_w}}  ETL\n"
+        f"{'type':>{key_w}}  Notebook\n"
+        f"{'workspaceId':>{key_w}}  {WS}"
     )
 
 
