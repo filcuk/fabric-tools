@@ -216,6 +216,75 @@ def test_dry_run_dataflow_gen1_missing_remote() -> None:
     assert any(not r.ok and "DataflowNotFound" in r.message for r in results)
 
 
+def test_dry_run_paginated_report_local_and_remote(tmp_path: Path) -> None:
+    from fabric_tools.powerbi_client import PowerBiApiError
+    from fabric_tools.validate import run_dry_run_paginated_report
+
+    rdl = tmp_path / "Sales.rdl"
+    rdl.write_text(
+        '<?xml version="1.0"?><Report xmlns="x"><Width>1in</Width></Report>\n',
+        encoding="utf-8",
+    )
+    ws = "11111111-1111-1111-1111-111111111111"
+    report_id = "22222222-2222-2222-2222-222222222222"
+
+    class FakePowerBi:
+        def get_group(self, group_id: str) -> dict[str, Any]:
+            return {"id": group_id, "name": "Dev"}
+
+        def get_report(self, group_id: str, rid: str) -> dict[str, Any]:
+            if rid != report_id:
+                raise PowerBiApiError("missing", status_code=404)
+            return {
+                "id": rid,
+                "name": "Sales",
+                "reportType": "PaginatedReport",
+            }
+
+    items = [WorkItem(Target(ws, report_id), rdl)]
+    results = run_dry_run_paginated_report(
+        CommandMode.DOWNLOAD,
+        items,
+        client=FakePowerBi(),  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=True,
+    )
+    assert all(r.ok for r in results)
+    assert any(".rdl" in r.message for r in results)
+    assert any("paginated-report" in r.message for r in results)
+
+
+def test_dry_run_paginated_report_rejects_power_bi_report() -> None:
+    from fabric_tools.validate import run_dry_run_paginated_report
+
+    class FakePowerBi:
+        def get_group(self, group_id: str) -> dict[str, Any]:
+            return {"id": group_id, "name": "Dev"}
+
+        def get_report(self, group_id: str, report_id: str) -> dict[str, Any]:
+            return {
+                "id": report_id,
+                "name": "Sales",
+                "reportType": "PowerBIReport",
+            }
+
+    item = WorkItem(
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
+        None,
+    )
+    results = run_dry_run_paginated_report(
+        CommandMode.DELETE,
+        [item],
+        client=FakePowerBi(),  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=False,
+    )
+    assert any(not r.ok and "PaginatedReport" in r.message for r in results)
+
+
 def test_dry_run_dataflow_local_and_remote(tmp_path: Path) -> None:
     from fabric_tools.validate import run_dry_run_dataflow
 

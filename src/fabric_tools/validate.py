@@ -1,4 +1,5 @@
-"""Dry-run validation for notebook, dataflow, dataflow-gen1, pipeline, and udf CLI commands."""
+"""Dry-run validation for notebook, dataflow, dataflow-gen1, pipeline, udf,
+semantic-model, report, and paginated-report CLI commands."""
 
 from __future__ import annotations
 
@@ -27,12 +28,30 @@ from fabric_tools.notebook.definition import (
     validate_local_notebook,
 )
 from fabric_tools.notebook.ops import get_notebook_definition
+from fabric_tools.paginated_report.definition import (
+    DefinitionError as PaginatedReportDefinitionError,
+)
+from fabric_tools.paginated_report.definition import (
+    ensure_paginated_report,
+    validate_local_rdl,
+)
 from fabric_tools.parsing import CommandMode, Target, WorkItem
 from fabric_tools.pipeline.definition import (
     DefinitionError as PipelineDefinitionError,
 )
 from fabric_tools.pipeline.definition import validate_local_pipeline
 from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
+from fabric_tools.report.definition import (
+    DefinitionError as ReportDefinitionError,
+)
+from fabric_tools.report.definition import (
+    is_pbix_path,
+    validate_local_report,
+)
+from fabric_tools.semantic_model.definition import (
+    DefinitionError as SemanticModelDefinitionError,
+)
+from fabric_tools.semantic_model.definition import validate_local_semantic_model
 from fabric_tools.udf.definition import (
     DefinitionError as UdfDefinitionError,
 )
@@ -227,6 +246,192 @@ def run_dry_run_dataflow(
     return results
 
 
+def run_dry_run_semantic_model(
+    mode: CommandMode,
+    items: list[WorkItem],
+    *,
+    client: FabricClient | None,
+    has_targets: bool,
+    has_files: bool,
+    has_origins: bool = False,
+) -> list[CheckResult]:
+    """Validate local semantic model folders and/or Fabric remotes without mutating."""
+    results: list[CheckResult] = []
+
+    if has_files:
+        seen_files: set[Path] = set()
+        for item in items:
+            if item.file is None:
+                continue
+            file_key = item.file.resolve()
+            if file_key in seen_files:
+                continue
+            seen_files.add(file_key)
+            try:
+                validate_local_semantic_model(item.file)
+                results.append(
+                    CheckResult(True, f"local ok: {item.file} (SemanticModel folder)")
+                )
+            except SemanticModelDefinitionError as exc:
+                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+
+    needs_remote = has_targets or has_origins
+    if needs_remote:
+        if client is None:
+            results.append(CheckResult(False, "remote fail: Fabric client is required"))
+            return results
+        seen_workspaces: set[str] = set()
+        seen_items: set[str] = set()
+
+        if has_origins:
+            for item in items:
+                origin = item.origin
+                if origin is None or origin.item_id is None:
+                    continue
+                if origin.workspace_id not in seen_workspaces:
+                    seen_workspaces.add(origin.workspace_id)
+                    results.append(_check_workspace(client, origin.workspace_id))
+                key = origin.label()
+                if key not in seen_items:
+                    seen_items.add(key)
+                    results.append(
+                        _check_item(
+                            client,
+                            origin,
+                            mode=mode,
+                            role="origin",
+                            expected_type="SemanticModel",
+                            kind_label="semantic-model",
+                        )
+                    )
+
+        if has_targets:
+            for item in items:
+                target = item.target
+                if target is None:
+                    continue
+                if target.workspace_id not in seen_workspaces:
+                    seen_workspaces.add(target.workspace_id)
+                    results.append(_check_workspace(client, target.workspace_id))
+                if target.item_id is not None:
+                    key = target.label()
+                    if key not in seen_items:
+                        seen_items.add(key)
+                        results.append(
+                            _check_item(
+                                client,
+                                target,
+                                mode=mode,
+                                role="target",
+                                expected_type="SemanticModel",
+                                kind_label="semantic-model",
+                            )
+                        )
+
+    return results
+
+
+def run_dry_run_report(
+    mode: CommandMode,
+    items: list[WorkItem],
+    *,
+    client: FabricClient | None,
+    has_targets: bool,
+    has_files: bool,
+    has_origins: bool = False,
+) -> list[CheckResult]:
+    """Validate local report folders / ``.pbix`` and/or Fabric remotes without mutating."""
+    results: list[CheckResult] = []
+
+    if has_files:
+        seen_files: set[Path] = set()
+        for item in items:
+            if item.file is None:
+                continue
+            file_key = item.file.resolve()
+            if file_key in seen_files:
+                continue
+            seen_files.add(file_key)
+            if is_pbix_path(item.file):
+                if mode is CommandMode.COMPARE:
+                    results.append(
+                        CheckResult(
+                            False,
+                            f"local fail: {item.file} — compare does not support .pbix "
+                            "(use a *.Report folder or --origin)",
+                        )
+                    )
+                elif item.file.is_file():
+                    results.append(CheckResult(True, f"local ok: {item.file} (.pbix)"))
+                else:
+                    results.append(
+                        CheckResult(False, f"local fail: {item.file} — file not found")
+                    )
+                continue
+            try:
+                validate_local_report(item.file)
+                results.append(
+                    CheckResult(True, f"local ok: {item.file} (Report folder)")
+                )
+            except ReportDefinitionError as exc:
+                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+
+    needs_remote = has_targets or has_origins
+    if needs_remote:
+        if client is None:
+            results.append(CheckResult(False, "remote fail: Fabric client is required"))
+            return results
+        seen_workspaces: set[str] = set()
+        seen_items: set[str] = set()
+
+        if has_origins:
+            for item in items:
+                origin = item.origin
+                if origin is None or origin.item_id is None:
+                    continue
+                if origin.workspace_id not in seen_workspaces:
+                    seen_workspaces.add(origin.workspace_id)
+                    results.append(_check_workspace(client, origin.workspace_id))
+                key = origin.label()
+                if key not in seen_items:
+                    seen_items.add(key)
+                    results.append(
+                        _check_item(
+                            client,
+                            origin,
+                            mode=mode,
+                            role="origin",
+                            expected_type="Report",
+                            kind_label="report",
+                        )
+                    )
+
+        if has_targets:
+            for item in items:
+                target = item.target
+                if target is None:
+                    continue
+                if target.workspace_id not in seen_workspaces:
+                    seen_workspaces.add(target.workspace_id)
+                    results.append(_check_workspace(client, target.workspace_id))
+                if target.item_id is not None:
+                    key = target.label()
+                    if key not in seen_items:
+                        seen_items.add(key)
+                        results.append(
+                            _check_item(
+                                client,
+                                target,
+                                mode=mode,
+                                role="target",
+                                expected_type="Report",
+                                kind_label="report",
+                            )
+                        )
+
+    return results
+
+
 def run_dry_run_dataflow_gen1(
     mode: CommandMode,
     items: list[WorkItem],
@@ -295,6 +500,81 @@ def run_dry_run_dataflow_gen1(
                         seen_items.add(key)
                         results.append(
                             _check_powerbi_dataflow(
+                                client, target, mode=mode, role="target"
+                            )
+                        )
+
+    return results
+
+
+def run_dry_run_paginated_report(
+    mode: CommandMode,
+    items: list[WorkItem],
+    *,
+    client: PowerBiClient | None,
+    has_targets: bool,
+    has_files: bool,
+    has_origins: bool = False,
+) -> list[CheckResult]:
+    """Validate local ``.rdl`` and/or Power BI paginated remotes without mutating."""
+    results: list[CheckResult] = []
+
+    if has_files:
+        seen_files: set[Path] = set()
+        for item in items:
+            if item.file is None:
+                continue
+            file_key = item.file.resolve()
+            if file_key in seen_files:
+                continue
+            seen_files.add(file_key)
+            try:
+                validate_local_rdl(item.file)
+                results.append(CheckResult(True, f"local ok: {item.file} (.rdl)"))
+            except PaginatedReportDefinitionError as exc:
+                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+
+    needs_remote = has_targets or has_origins
+    if needs_remote:
+        if client is None:
+            results.append(
+                CheckResult(False, "remote fail: Power BI client is required")
+            )
+            return results
+        seen_groups: set[str] = set()
+        seen_items: set[str] = set()
+
+        if has_origins:
+            for item in items:
+                origin = item.origin
+                if origin is None or origin.item_id is None:
+                    continue
+                if origin.workspace_id not in seen_groups:
+                    seen_groups.add(origin.workspace_id)
+                    results.append(_check_powerbi_group(client, origin.workspace_id))
+                key = origin.label()
+                if key not in seen_items:
+                    seen_items.add(key)
+                    results.append(
+                        _check_powerbi_paginated_report(
+                            client, origin, mode=mode, role="origin"
+                        )
+                    )
+
+        if has_targets:
+            for item in items:
+                target = item.target
+                if target is None:
+                    continue
+                if target.workspace_id not in seen_groups:
+                    seen_groups.add(target.workspace_id)
+                    results.append(_check_powerbi_group(client, target.workspace_id))
+                if target.item_id is not None:
+                    key = target.label()
+                    if key not in seen_items:
+                        seen_items.add(key)
+                        results.append(
+                            _check_powerbi_paginated_report(
                                 client, target, mode=mode, role="target"
                             )
                         )
@@ -579,4 +859,33 @@ def _check_powerbi_dataflow(
     return CheckResult(
         True,
         f"remote ok: {role} dataflow-gen1 '{name}' ({target.item_id}) [{mode.value}]",
+    )
+
+
+def _check_powerbi_paginated_report(
+    client: PowerBiClient,
+    target: Target,
+    *,
+    mode: CommandMode,
+    role: str = "target",
+) -> CheckResult:
+    assert target.item_id is not None
+    try:
+        data = client.get_report(target.workspace_id, target.item_id)
+        ensure_paginated_report(data, label=target.label())
+    except PowerBiApiError as exc:
+        return CheckResult(
+            False,
+            f"remote fail: {role} {target.workspace_id}:{target.item_id} — {exc}",
+        )
+    except PaginatedReportDefinitionError as exc:
+        return CheckResult(
+            False,
+            f"remote fail: {role} {target.workspace_id}:{target.item_id} — {exc}",
+        )
+    name = data.get("name") or target.item_id
+    return CheckResult(
+        True,
+        f"remote ok: {role} paginated-report '{name}' ({target.item_id}) "
+        f"[{mode.value}]",
     )

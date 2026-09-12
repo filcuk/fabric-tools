@@ -461,3 +461,50 @@ def test_compare_origin_to_target_differs() -> None:
     assert result.ok
     assert not result.identical
     assert result.diff_text
+
+
+def test_deploy_create_applies_guid_map(tmp_path: Path) -> None:
+    lh_src = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    lh_dst = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    src = tmp_path / "demo.ipynb"
+    src.write_text(
+        json.dumps(
+            {
+                "nbformat": 4,
+                "nbformat_minor": 5,
+                "cells": [
+                    {
+                        "cell_type": "code",
+                        "metadata": {},
+                        "source": [f'lakehouse = "{lh_src}"\n'],
+                        "outputs": [],
+                    }
+                ],
+                "metadata": {
+                    "dependencies": {
+                        "lakehouse": {
+                            "default_lakehouse": lh_src,
+                            "default_lakehouse_workspace_id": WS,
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = FakeClient()
+    item = WorkItem(Target(WS), src)
+    result = deploy_notebook(
+        client, item, display_name="Demo", guid_map={lh_src: lh_dst}
+    )  # type: ignore[arg-type]
+    assert result.ok
+    assert "remapped 2 GUID(s)" in result.message
+    create = next(
+        c for c in client.calls if c[0] == "POST" and str(c[1]).endswith("/items")
+    )
+    payload = create[3]["definition"]["parts"][0]["payload"]
+    nb = json.loads(base64.b64decode(payload).decode("utf-8"))
+    assert nb["metadata"]["dependencies"]["lakehouse"]["default_lakehouse"] == lh_dst
+    assert lh_dst in "".join(nb["cells"][0]["source"])
+    local = json.loads(src.read_text(encoding="utf-8"))
+    assert local["metadata"]["dependencies"]["lakehouse"]["default_lakehouse"] == lh_src

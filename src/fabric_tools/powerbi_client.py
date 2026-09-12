@@ -1,4 +1,4 @@
-"""Power BI REST API client (Dataflow Gen1 and related group APIs)."""
+"""Power BI REST API client (Dataflow Gen1, reports, paginated reports)."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class PowerBiApiError(Exception):
 
 
 class PowerBiClient:
-    """Thin httpx wrapper around Power BI REST APIs used for Dataflow Gen1."""
+    """Thin httpx wrapper around Power BI REST APIs used by fabric-tools."""
 
     def __init__(
         self,
@@ -116,6 +116,212 @@ class PowerBiClient:
         if not isinstance(value, list):
             raise PowerBiApiError("Dataflows list response missing 'value'")
         return [item for item in value if isinstance(item, dict)]
+
+    def list_reports(self, group_id: str) -> list[dict[str, Any]]:
+        """GET /groups/{groupId}/reports."""
+        response = self._client.get(
+            f"{self.base_url}/groups/{group_id}/reports",
+            headers=self._json_headers(),
+        )
+        if response.status_code != 200:
+            self._raise_api_error(response)
+        result = self._json_or_none(response)
+        if not isinstance(result, dict):
+            raise PowerBiApiError("Unexpected empty reports list response")
+        value = result.get("value")
+        if not isinstance(value, list):
+            raise PowerBiApiError("Reports list response missing 'value'")
+        return [item for item in value if isinstance(item, dict)]
+
+    def reports_bound_to_dataset(
+        self, group_id: str, dataset_id: str
+    ) -> list[dict[str, Any]]:
+        """Return workspace reports whose ``datasetId`` matches *dataset_id*."""
+        return [
+            report
+            for report in self.list_reports(group_id)
+            if str(report.get("datasetId") or "") == dataset_id
+        ]
+
+    def get_report(self, group_id: str, report_id: str) -> dict[str, Any]:
+        """GET /groups/{groupId}/reports/{reportId}."""
+        response = self._client.get(
+            f"{self.base_url}/groups/{group_id}/reports/{report_id}",
+            headers=self._json_headers(),
+        )
+        if response.status_code != 200:
+            self._raise_api_error(response)
+        result = self._json_or_none(response)
+        if not isinstance(result, dict):
+            raise PowerBiApiError("Unexpected empty report response")
+        return result
+
+    def export_report(
+        self,
+        group_id: str,
+        report_id: str,
+        *,
+        download_type: str = "IncludeModel",
+    ) -> bytes:
+        """GET /groups/{groupId}/reports/{reportId}/Export — return PBIX bytes.
+
+        *download_type* is ``IncludeModel`` (thick) or ``LiveConnect`` (thin).
+        For paginated reports (``.rdl``), use :meth:`export_report_definition`.
+        """
+        if download_type not in {"IncludeModel", "LiveConnect"}:
+            raise ValueError("download_type must be 'IncludeModel' or 'LiveConnect'")
+        response = self._client.get(
+            f"{self.base_url}/groups/{group_id}/reports/{report_id}/Export",
+            headers=self._auth_headers(),
+            params={"downloadType": download_type},
+        )
+        if response.status_code != 200:
+            self._raise_api_error(response)
+        return response.content
+
+    def export_report_definition(self, group_id: str, report_id: str) -> bytes:
+        """GET /groups/{groupId}/reports/{reportId}/Export — return RDL bytes.
+
+        Used for paginated reports. Does not pass ``downloadType`` (PBIX-only).
+        """
+        response = self._client.get(
+            f"{self.base_url}/groups/{group_id}/reports/{report_id}/Export",
+            headers=self._auth_headers(),
+        )
+        if response.status_code != 200:
+            self._raise_api_error(response)
+        return response.content
+
+    def delete_report(self, group_id: str, report_id: str) -> None:
+        """DELETE /groups/{groupId}/reports/{reportId}."""
+        response = self._client.delete(
+            f"{self.base_url}/groups/{group_id}/reports/{report_id}",
+            headers=self._json_headers(),
+        )
+        if response.status_code not in (200, 204):
+            self._raise_api_error(response)
+
+    def import_paginated_report(
+        self,
+        group_id: str,
+        rdl_bytes: bytes,
+        *,
+        display_name: str,
+        name_conflict: str = "Abort",
+        wait: bool = True,
+    ) -> dict[str, Any]:
+        """Import a paginated report ``.rdl`` via POST /groups/{groupId}/imports.
+
+        *name_conflict* is ``Abort`` (create) or ``Overwrite`` (replace by name).
+        *display_name* should be the report display name; ``.rdl`` is appended
+        when missing. Returns the completed Import object when *wait* is True.
+        Use :func:`report_id_from_import` to extract the report id.
+        """
+        if name_conflict not in {"Abort", "Overwrite"}:
+            raise ValueError(
+                "name_conflict must be 'Abort' or 'Overwrite' for paginated reports"
+            )
+
+        dataset_display_name = display_name.strip()
+        if not dataset_display_name:
+            raise ValueError("display_name must be non-empty")
+        if not dataset_display_name.lower().endswith(".rdl"):
+            dataset_display_name = f"{dataset_display_name}.rdl"
+
+        params = {
+            "datasetDisplayName": dataset_display_name,
+            "nameConflict": name_conflict,
+        }
+        files = {
+            "file": (
+                dataset_display_name,
+                rdl_bytes,
+                "application/octet-stream",
+            ),
+        }
+        response = self._client.post(
+            f"{self.base_url}/groups/{group_id}/imports",
+            headers=self._auth_headers(),
+            params=params,
+            files=files,
+        )
+        if response.status_code not in (200, 202):
+            self._raise_api_error(response)
+
+        payload = self._json_or_none(response)
+        if not isinstance(payload, dict) or not payload.get("id"):
+            raise PowerBiApiError(
+                "Import response missing import id",
+                status_code=response.status_code,
+                details=payload,
+            )
+
+        if not wait:
+            return payload
+
+        return self.wait_for_import(group_id, str(payload["id"]))
+
+    def import_pbix(
+        self,
+        group_id: str,
+        pbix_bytes: bytes,
+        *,
+        dataset_display_name: str,
+        name_conflict: str = "Abort",
+        skip_report: bool = False,
+        wait: bool = True,
+    ) -> dict[str, Any]:
+        """Import a ``.pbix`` via POST /groups/{groupId}/imports; optionally wait.
+
+        When *skip_report* is True, only the semantic model is imported (must be
+        True if set — Power BI API requirement).
+        """
+        allowed = {
+            "Abort",
+            "CreateOrOverwrite",
+            "GenerateUniqueName",
+            "Ignore",
+            "Overwrite",
+        }
+        if name_conflict not in allowed:
+            raise ValueError(
+                "name_conflict must be one of: " + ", ".join(sorted(allowed))
+            )
+
+        params: dict[str, str] = {
+            "datasetDisplayName": dataset_display_name,
+            "nameConflict": name_conflict,
+        }
+        if skip_report:
+            params["skipReport"] = "true"
+
+        filename = dataset_display_name
+        if not filename.lower().endswith(".pbix"):
+            filename = f"{filename}.pbix"
+        files = {
+            "file": (filename, pbix_bytes, "application/octet-stream"),
+        }
+        response = self._client.post(
+            f"{self.base_url}/groups/{group_id}/imports",
+            headers=self._auth_headers(),
+            params=params,
+            files=files,
+        )
+        if response.status_code not in (200, 202):
+            self._raise_api_error(response)
+
+        payload = self._json_or_none(response)
+        if not isinstance(payload, dict) or not payload.get("id"):
+            raise PowerBiApiError(
+                "Import response missing import id",
+                status_code=response.status_code,
+                details=payload,
+            )
+
+        if not wait:
+            return payload
+
+        return self.wait_for_import(group_id, str(payload["id"]))
 
     def get_dataflow(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
         """Resolve a dataflow by id from the workspace list (name/metadata)."""
@@ -314,3 +520,30 @@ def dataflow_id_from_import(import_payload: dict[str, Any]) -> str | None:
             if object_id:
                 return str(object_id)
     return None
+
+
+def report_id_from_import(import_payload: dict[str, Any]) -> str | None:
+    """Extract the created/updated report id from a completed Import payload."""
+    report_id, _ = report_and_dataset_ids_from_import(import_payload)
+    return report_id
+
+
+def report_and_dataset_ids_from_import(
+    import_payload: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    """Extract ``(report_id, dataset_id)`` from a completed Import payload."""
+    report_id: str | None = None
+    dataset_id: str | None = None
+    reports = import_payload.get("reports")
+    if isinstance(reports, list):
+        for item in reports:
+            if isinstance(item, dict) and item.get("id"):
+                report_id = str(item["id"])
+                break
+    datasets = import_payload.get("datasets")
+    if isinstance(datasets, list):
+        for item in datasets:
+            if isinstance(item, dict) and item.get("id"):
+                dataset_id = str(item["id"])
+                break
+    return report_id, dataset_id

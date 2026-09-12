@@ -243,3 +243,25 @@ def test_download_rejects_bad_destination(tmp_path: Path) -> None:
     result = download_dataflow(client, item)  # type: ignore[arg-type]
     assert not result.ok
     assert "Unsupported dataflow path" in result.message
+
+
+def test_deploy_create_applies_guid_map_to_mashup(tmp_path: Path) -> None:
+    lh_src = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    lh_dst = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    mashup = f'section Section1;\nshared Q1 = "{lh_src}";\n'
+    src = _write_local_dataflow(tmp_path / "Sales.Dataflow", mashup=mashup)
+    client = FakeClient()
+    item = WorkItem(Target(WS), src)
+    result = deploy_dataflow(
+        client, item, display_name="Sales", guid_map={lh_src: lh_dst}
+    )  # type: ignore[arg-type]
+    assert result.ok
+    assert "remapped 1 GUID(s)" in result.message
+    assert client.last_create_payload is not None
+    parts = {
+        p["path"]: base64.b64decode(p["payload"]).decode("utf-8")
+        for p in client.last_create_payload["definition"]["parts"]
+    }
+    assert lh_dst in parts["mashup.pq"]
+    assert lh_src not in parts["mashup.pq"]
+    assert lh_src in (src / "mashup.pq").read_text(encoding="utf-8")

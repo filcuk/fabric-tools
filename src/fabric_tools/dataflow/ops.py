@@ -14,6 +14,7 @@ from fabric_tools.dataflow.definition import (
     pack_definition,
     unpack_definition,
 )
+from fabric_tools.guid_map import GuidMapError, apply_guid_map_to_definition
 from fabric_tools.parsing import WorkItem
 from fabric_tools.status import update as update_status
 
@@ -65,8 +66,13 @@ def deploy_dataflow(
     *,
     display_name: str | None = None,
     origin_definition_cache: dict[str, dict[str, Any]] | None = None,
+    guid_map: dict[str, str] | None = None,
 ) -> OpResult:
-    """Create or overwrite one Dataflow Gen2 from a local folder or Fabric origin."""
+    """Create or overwrite one Dataflow Gen2 from a local folder or Fabric origin.
+
+    When *guid_map* is set, source→target GUID tokens in definition text parts
+    are rewritten in memory before create/update (local folders are not edited).
+    """
     if item.target is None:
         return OpResult(False, "deploy requires a --target")
     if item.file is None and item.origin is None:
@@ -82,7 +88,11 @@ def deploy_dataflow(
             item,
             origin_definition_cache=origin_definition_cache,
         )
-    except (FabricApiError, DefinitionError) as exc:
+        remap_suffix = ""
+        if guid_map:
+            definition, n_replaced = apply_guid_map_to_definition(definition, guid_map)
+            remap_suffix = f" (remapped {n_replaced} GUID(s))"
+    except (FabricApiError, DefinitionError, GuidMapError) as exc:
         return OpResult(
             False,
             f"deploy source failed: {exc}",
@@ -122,7 +132,8 @@ def deploy_dataflow(
         item_id = str(created.get("id") or "")
         return OpResult(
             True,
-            f"created {target.workspace_id}:{item_id} from {source_label} (name='{name}')",
+            f"created {target.workspace_id}:{item_id} from {source_label} "
+            f"(name='{name}'){remap_suffix}",
             target.workspace_id,
             item_id or None,
         )
@@ -145,7 +156,7 @@ def deploy_dataflow(
         )
     return OpResult(
         True,
-        f"updated {target.label()} from {source_label}",
+        f"updated {target.label()} from {source_label}{remap_suffix}",
         target.workspace_id,
         target.item_id,
     )
@@ -249,6 +260,7 @@ def run_deploy_batch(
     items: list[WorkItem],
     *,
     display_names: list[str] | None = None,
+    guid_maps: list[dict[str, str] | None] | None = None,
 ) -> list[OpResult]:
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
@@ -256,6 +268,9 @@ def run_deploy_batch(
         name = None
         if display_names and index < len(display_names):
             name = display_names[index]
+        guid_map = None
+        if guid_maps and index < len(guid_maps):
+            guid_map = guid_maps[index]
         target = item.target
         if target is not None and target.is_create:
             label = name or (
@@ -274,6 +289,7 @@ def run_deploy_batch(
                 item,
                 display_name=name,
                 origin_definition_cache=origin_cache,
+                guid_map=guid_map,
             )
         )
     return results

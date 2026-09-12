@@ -1,6 +1,6 @@
 # Development
 
-Contributor guide for `fabric-tools`. End-user CLI usage lives in [README.md](README.md). Agent-oriented project notes live in [AGENTS.md](AGENTS.md).
+Contributor guide for `fabric-tools`. End-user CLI usage lives in [README.md](README.md). Agent-oriented project notes live in [AGENTS.md](AGENTS.md). CLI colour and layout design live in [DESIGN.md](DESIGN.md).
 
 ## Requirements
 
@@ -18,13 +18,14 @@ py -3 -m pip install -e ".[dev]"
 Optional extras:
 
 - `.[dev]` — pytest, Ruff, and test helpers
-- `.[build]` — PyInstaller for Windows executable builds
+- `.[build]` — Nuitka for Windows executable builds
 
 ## Run from Python
 
 ```bash
 py -3 -m fabric_tools --version
 py -3 -m fabric_tools --help
+py -3 -m fabric_tools inspect --help
 py -3 -m fabric_tools notebook --help
 py -3 -m fabric_tools pipeline --help
 py -3 -m fabric_tools udf --help
@@ -69,26 +70,20 @@ Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP)
 
 ## Build Windows executable
 
-Produces a single portable `dist/fabric-tools.exe` (one-file). `setup install` unpacks it to a fast onedir tree under `%LOCALAPPDATA%\fabric-tools\app`.
+Produces a single portable `dist/fabric-tools.exe` via **Nuitka onefile**. Prefer **Python 3.12** for the build (`py -3.12`); 3.13+ needs MSVC instead of MinGW.
+
+`setup install` unpacks to a fast tree under `%LOCALAPPDATA%\fabric-tools\app`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
-```
-
-The script builds onedir staging first, then a onefile release that embeds the thin onedir bootloader. Or manually:
-
-```bash
-py -3 -m pip install -e ".[build]"
-py -3 -m PyInstaller --noconfirm --clean packaging/fabric-tools.spec
-set FABRIC_TOOLS_ONEDIR_BOOTLOADER=%CD%\dist\fabric-tools\fabric-tools.exe
-py -3 -m PyInstaller --noconfirm --clean packaging/fabric-tools-onefile.spec
 .\dist\fabric-tools.exe --help
 ```
 
 Notes:
 
-- Spec files: [`packaging/fabric-tools.spec`](packaging/fabric-tools.spec) (onedir staging), [`packaging/fabric-tools-onefile.spec`](packaging/fabric-tools-onefile.spec) (release); shared inputs in [`packaging/analysis_inputs.py`](packaging/analysis_inputs.py)
-- Ship the single `dist/fabric-tools.exe`. Portable runs unpack to temp each launch (slower); `setup install` copies to an onedir install for fast PATH use
+- Packaging: [`packaging/nuitka_options.py`](packaging/nuitka_options.py), [`packaging/nuitka_entry.py`](packaging/nuitka_entry.py)
+- Ship only `dist/fabric-tools.exe`. Do not distribute `dist/nuitka/` intermediates (`.dist` / `.build`)
+- Portable runs extract under `%LOCALAPPDATA%\fabric-tools\cache\`; `setup install` copies to `app\` and clears the cache
 - Do not commit `dist/` or `build/`
 - Unsigned binaries may trigger SmartScreen warnings
 - Auth from the exe uses Windows WAM (when available), browser/device-code, or `AZURE_*` service principal env vars; tokens persist under `%LOCALAPPDATA%\fabric-tools`

@@ -6,10 +6,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.guid_map import GuidMapError, apply_guid_map_to_definition
 from fabric_tools.parsing import WorkItem
 from fabric_tools.pipeline.definition import (
     DefinitionError,
     definition_has_platform,
+    definition_with_remote_schedules,
+    definition_without_schedules,
     detect_pipeline_path,
     display_name_from_path,
     pack_definition,
@@ -28,7 +31,12 @@ class OpResult:
     item_id: str | None = None
 
 
-def download_pipeline(client: FabricClient, item: WorkItem) -> OpResult:
+def download_pipeline(
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    include_schedules: bool = False,
+) -> OpResult:
     """Download one remote DataPipeline definition to a local folder."""
     if item.target is None or item.target.item_id is None:
         return OpResult(False, "download requires workspace:artifact target")
@@ -42,7 +50,9 @@ def download_pipeline(client: FabricClient, item: WorkItem) -> OpResult:
         definition = get_pipeline_definition(
             client, target.workspace_id, target.item_id
         )
-        written = unpack_definition(definition, dest)
+        written = unpack_definition(
+            definition, dest, include_schedules=include_schedules
+        )
     except (FabricApiError, DefinitionError, OSError) as exc:
         return OpResult(
             False,
@@ -65,8 +75,18 @@ def deploy_pipeline(
     *,
     display_name: str | None = None,
     origin_definition_cache: dict[str, dict[str, Any]] | None = None,
+    include_schedules: bool = False,
+    guid_map: dict[str, str] | None = None,
 ) -> OpResult:
-    """Create or overwrite one DataPipeline from a local folder or Fabric origin."""
+    """Create or overwrite one DataPipeline from a local folder or Fabric origin.
+
+    By default omits source ``.schedules``. On overwrite, reattaches the target's
+    existing ``.schedules`` so remote schedules stay untouched. Pass
+    ``include_schedules=True`` to sync schedules from the source instead.
+
+    When *guid_map* is set, source→target GUID tokens in definition text parts
+    are rewritten in memory before create/update (local folders are not edited).
+    """
     if item.target is None:
         return OpResult(False, "deploy requires a --target")
     if item.file is None and item.origin is None:
@@ -81,8 +101,13 @@ def deploy_pipeline(
             client,
             item,
             origin_definition_cache=origin_definition_cache,
+            include_schedules=include_schedules,
         )
-    except (FabricApiError, DefinitionError) as exc:
+        remap_suffix = ""
+        if guid_map:
+            definition, n_replaced = apply_guid_map_to_definition(definition, guid_map)
+            remap_suffix = f" (remapped {n_replaced} GUID(s))"
+    except (FabricApiError, DefinitionError, GuidMapError) as exc:
         return OpResult(
             False,
             f"deploy source failed: {exc}",
@@ -122,13 +147,22 @@ def deploy_pipeline(
         item_id = str(created.get("id") or "")
         return OpResult(
             True,
-            f"created {target.workspace_id}:{item_id} from {source_label} (name='{name}')",
+            f"created {target.workspace_id}:{item_id} from {source_label} "
+            f"(name='{name}'){remap_suffix}",
             target.workspace_id,
             item_id or None,
         )
 
     assert target.item_id is not None
+    preserved = False
     try:
+        if not include_schedules:
+            remote_definition = get_pipeline_definition(
+                client, target.workspace_id, target.item_id
+            )
+            definition, preserved = definition_with_remote_schedules(
+                definition, remote_definition
+            )
         update_pipeline_definition(
             client,
             target.workspace_id,
@@ -136,16 +170,17 @@ def deploy_pipeline(
             definition=definition,
             update_metadata=definition_has_platform(definition),
         )
-    except FabricApiError as exc:
+    except (FabricApiError, DefinitionError) as exc:
         return OpResult(
             False,
             f"overwrite failed {target.label()} from {source_label}: {exc}",
             target.workspace_id,
             target.item_id,
         )
+    suffix = " (preserved remote schedules)" if preserved else ""
     return OpResult(
         True,
-        f"updated {target.label()} from {source_label}",
+        f"updated {target.label()} from {source_label}{suffix}{remap_suffix}",
         target.workspace_id,
         target.item_id,
     )
@@ -231,7 +266,12 @@ def update_pipeline_definition(
     )
 
 
-def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+def run_download_batch(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    include_schedules: bool = False,
+) -> list[OpResult]:
     results: list[OpResult] = []
     for item in items:
         target = item.target
@@ -240,7 +280,9 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
             update_status(f"Downloading {target.label()} -> {dest}...")
         else:
             update_status("Downloading pipeline...")
-        results.append(download_pipeline(client, item))
+        results.append(
+            download_pipeline(client, item, include_schedules=include_schedules)
+        )
     return results
 
 
@@ -249,6 +291,8 @@ def run_deploy_batch(
     items: list[WorkItem],
     *,
     display_names: list[str] | None = None,
+    include_schedules: bool = False,
+    guid_maps: list[dict[str, str] | None] | None = None,
 ) -> list[OpResult]:
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
@@ -256,6 +300,9 @@ def run_deploy_batch(
         name = None
         if display_names and index < len(display_names):
             name = display_names[index]
+        guid_map = None
+        if guid_maps and index < len(guid_maps):
+            guid_map = guid_maps[index]
         target = item.target
         if target is not None and target.is_create:
             label = name or (
@@ -274,6 +321,8 @@ def run_deploy_batch(
                 item,
                 display_name=name,
                 origin_definition_cache=origin_cache,
+                include_schedules=include_schedules,
+                guid_map=guid_map,
             )
         )
     return results
@@ -296,20 +345,28 @@ def _resolve_source_definition(
     item: WorkItem,
     *,
     origin_definition_cache: dict[str, dict[str, Any]] | None,
+    include_schedules: bool = False,
 ) -> tuple[dict[str, Any], str]:
     if item.file is not None:
-        return pack_definition(item.file), str(item.file)
+        return (
+            pack_definition(item.file, include_schedules=include_schedules),
+            str(item.file),
+        )
 
     assert item.origin is not None and item.origin.item_id is not None
     origin = item.origin
     label = f"origin {origin.label()}"
     cache_key = origin.label()
     if origin_definition_cache is not None and cache_key in origin_definition_cache:
-        return origin_definition_cache[cache_key], label
-
-    definition = get_pipeline_definition(client, origin.workspace_id, origin.item_id)
-    if origin_definition_cache is not None:
-        origin_definition_cache[cache_key] = definition
+        definition = origin_definition_cache[cache_key]
+    else:
+        definition = get_pipeline_definition(
+            client, origin.workspace_id, origin.item_id
+        )
+        if origin_definition_cache is not None:
+            origin_definition_cache[cache_key] = definition
+    if not include_schedules:
+        definition = definition_without_schedules(definition)
     return definition, label
 
 

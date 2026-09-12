@@ -1,0 +1,28 @@
+---
+description: Fabric delete cascade — upstream destroys downstream; downstream leaves upstream
+alwaysApply: true
+---
+
+# Fabric delete cascade
+
+Follow the standard Fabric pattern:
+
+**Deleting upstream destroys downstream. Deleting downstream leaves upstream intact.**
+
+Examples (report ↔ semantic model):
+
+- Delete a **report** → the bound **semantic model remains** (may leave an orphan model).
+- Delete a **semantic model** → the **service** removes dependent reports (and related tiles). The CLI does not control or defeat that cascade.
+
+## Confirmations
+
+Unless `-s` / `--silent`, delete and overwrite confirms must **name every known affected object** (type, display name, id) — not only counts.
+
+- Upstream delete: list the model **and** each discovered downstream report before proceeding.
+- Downstream delete: list the report; note the upstream model left behind when known.
+- Shared-model overwrite: list other consumers that will be affected.
+
+## Do not
+
+- Invent CLI flags that pretend to leave dangling reports after a model delete (the service cascades).
+- Cascade-delete a model when the user only deleted a report.
