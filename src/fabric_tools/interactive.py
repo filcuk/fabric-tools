@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 import questionary
 import typer
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 from questionary import Choice, Style
 
 from fabric_tools.exit_codes import EXIT_USER
@@ -39,6 +42,27 @@ _TOOL_KIND = {
     "paginated-report": KIND_PAGINATED_REPORT,
 }
 
+_BACK_VALUE = "__back__"
+_STEPS = ("tool", "activity", "run_mode", "source", "inputs", "options", "proceed")
+_STEP_KEYS: dict[str, tuple[str, ...]] = {
+    "tool": ("tool",),
+    "activity": ("activity",),
+    "run_mode": ("run_mode",),
+    "source": ("source_kind",),
+    "inputs": ("targets", "files", "origins", "names"),
+    "options": (
+        "silent",
+        "ignore_outputs",
+        "independent",
+        "include_schedules",
+    ),
+    "proceed": (),
+}
+
+
+class _Back(Exception):
+    """User asked to return to the previous major wizard step."""
+
 
 def run_interactive_wizard() -> None:
     """Prompt for tool/activity/parameters, then dispatch to the matching runner."""
@@ -54,236 +78,57 @@ def run_interactive_wizard() -> None:
     )
 
     typer.echo("fabric-tools interactive mode")
-    typer.echo("Use arrow keys or 1-9 + Enter to select. Ctrl+C cancels.\n")
-
-    tool = _select(
-        "Select tool",
-        choices=[
-            "notebook",
-            "dataflow",
-            "dataflow-gen1",
-            "pipeline",
-            "udf",
-            "semantic-model",
-            "report",
-            "paginated-report",
-        ],
-        default="notebook",
+    typer.echo(
+        "Use arrow keys or 1-9 + Enter to select. "
+        "Esc or ← Back goes to the previous step. Ctrl+C cancels.\n"
     )
 
-    activity = _select(
-        "Select activity",
-        choices=["download", "deploy", "compare", "delete"],
-        default="download",
-    )
+    answers: dict[str, Any] = {}
+    idx = 0
+    while idx < len(_STEPS):
+        step = _STEPS[idx]
+        if step == "source" and not _needs_source_step(answers):
+            answers.pop("source_kind", None)
+            idx += 1
+            continue
+        try:
+            _run_step(step, answers)
+        except _Back:
+            if idx == 0:
+                typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
+                raise typer.Exit(code=EXIT_USER) from None
+            idx -= 1
+            while True:
+                _clear_from(answers, _STEPS[idx])
+                if _STEPS[idx] == "source" and not _needs_source_step(answers):
+                    if idx == 0:
+                        typer.secho(
+                            "Aborted by user.", fg=typer.colors.YELLOW, err=True
+                        )
+                        raise typer.Exit(code=EXIT_USER) from None
+                    idx -= 1
+                    continue
+                break
+            continue
+        idx += 1
+
+    tool = str(answers["tool"])
+    activity = str(answers["activity"])
     mode = CommandMode(activity)
-
-    if mode is CommandMode.DELETE:
-        run_choices = [
-            Choice("Execute (delete)", value="execute"),
-            Choice("Dry-run: validate remote targets only", value="dry_targets"),
-        ]
-    else:
-        run_choices = [
-            Choice(f"Execute ({activity})", value="execute"),
-            Choice("Dry-run: validate targets and sources", value="dry_both"),
-            Choice("Dry-run: validate remote targets only", value="dry_targets"),
-            Choice("Dry-run: validate local files only", value="dry_files"),
-        ]
-
-    run_mode = _select(
-        "How should this run?",
-        choices=run_choices,
-        default="execute",
-    )
+    run_mode = str(answers["run_mode"])
     dry_run = run_mode != "execute"
-
-    targets: list[str] = []
-    files: list[str] = []
-    origins: list[str] = []
-    names: list[str] = []
-
-    if tool == "dataflow-gen1":
-        file_prompt = "Enter file (model.json)"
-        origin_label = "Power BI origin (workspace:artifact)"
-    elif tool == "paginated-report":
-        file_prompt = "Enter file (.rdl)"
-        origin_label = "Power BI origin (workspace:artifact)"
-    elif tool == "dataflow":
-        file_prompt = "Enter folder (*.Dataflow)"
-        origin_label = "Fabric origin (workspace:artifact)"
-    elif tool == "pipeline":
-        file_prompt = "Enter folder (*.DataPipeline)"
-        origin_label = "Fabric origin (workspace:artifact)"
-    elif tool == "udf":
-        file_prompt = "Enter folder (*.UserDataFunction)"
-        origin_label = "Fabric origin (workspace:artifact)"
-    elif tool == "semantic-model":
-        file_prompt = "Enter folder (*.SemanticModel)"
-        origin_label = "Fabric origin (workspace:artifact)"
-    elif tool == "report":
-        file_prompt = "Enter folder (*.Report) or .pbix path"
-        origin_label = "Fabric origin (workspace:artifact)"
-    else:
-        file_prompt = "Enter file (.ipynb or *.Notebook folder)"
-        origin_label = "Fabric origin (workspace:artifact)"
-
-    source_kind = "file"
-    if mode is CommandMode.DELETE:
-        source_kind = "none"
-    elif mode in {CommandMode.DEPLOY, CommandMode.COMPARE} and run_mode != "dry_files":
-        if run_mode == "dry_targets":
-            source_kind = "none"
-        else:
-            source_kind = _select(
-                "Select source",
-                choices=[
-                    Choice("Local file / folder", value="file"),
-                    Choice(origin_label, value="origin"),
-                ],
-                default="file",
-            )
-
-    if mode is CommandMode.DELETE or run_mode == "dry_targets":
-        while True:
-            target = _text(_target_prompt(mode, tool=tool), allow_empty=bool(targets))
-            if not target:
-                break
-            targets.append(target)
-            if not _confirm("Add another target?", default=False):
-                break
-    elif mode is CommandMode.DOWNLOAD and run_mode != "dry_files":
-        typer.echo("\nEnter target(s). Local path defaults to remote name + extension.")
-        while True:
-            target = _text(_target_prompt(mode, tool=tool), allow_empty=bool(targets))
-            if not target:
-                break
-            targets.append(target)
-            if not _confirm("Add another target?", default=False):
-                break
-        if _confirm("Specify local destination path(s)?", default=False):
-            for target in targets:
-                files.append(_text(f"{file_prompt} for {target}", allow_empty=False))
-    elif run_mode == "dry_files":
-        while True:
-            path = _text(file_prompt, allow_empty=bool(files))
-            if not path:
-                break
-            files.append(path)
-            if not _confirm("Add another file?", default=False):
-                break
-    elif source_kind == "origin":
-        typer.echo("\nEnter origin/target pairs.")
-        while True:
-            origin = _text(
-                "Enter origin workspace:artifact",
-                allow_empty=bool(origins and targets),
-            )
-            if not origin:
-                if origins and targets:
-                    break
-                typer.echo("Enter at least one origin/target pair.")
-                continue
-
-            target = _text(_target_prompt(mode, tool=tool), allow_empty=False)
-            origins.append(origin)
-            targets.append(target)
-
-            if mode is CommandMode.DEPLOY and ":" not in target:
-                name = _text(
-                    "Display name for create (leave blank to use origin name)",
-                    allow_empty=True,
-                )
-                names.append(name)
-
-            if not _confirm("Add another origin/target pair?", default=False):
-                break
-    else:
-        typer.echo("\nEnter file/target pairs.")
-        while True:
-            path = _text(
-                file_prompt,
-                allow_empty=bool(files and targets),
-            )
-            if not path:
-                if files and targets:
-                    break
-                typer.echo("Enter at least one file/target pair.")
-                continue
-
-            target = _text(_target_prompt(mode, tool=tool), allow_empty=False)
-            files.append(path)
-            targets.append(target)
-
-            if mode is CommandMode.DEPLOY and ":" not in target:
-                name = _text(
-                    "Display name for create (leave blank to derive from file)",
-                    allow_empty=True,
-                )
-                names.append(name)
-
-            if not _confirm("Add another file/target pair?", default=False):
-                break
-
-    silent = False
-    ignore_outputs = False
-    if not dry_run and mode is not CommandMode.COMPARE:
-        silent = _confirm("Silent mode (skip confirmation prompts)?", default=False)
-    if tool == "notebook" and mode is CommandMode.COMPARE and not dry_run:
-        ignore_outputs = _confirm(
-            "Ignore notebook cell outputs in .ipynb diffs?",
-            default=False,
-        )
+    targets: list[str] = list(answers.get("targets") or [])
+    files: list[str] = list(answers.get("files") or [])
+    origins: list[str] = list(answers.get("origins") or [])
+    names: list[str] = list(answers.get("names") or [])
+    silent = bool(answers.get("silent", False))
+    ignore_outputs = bool(answers.get("ignore_outputs", False))
+    independent = bool(answers.get("independent", False))
+    include_schedules = bool(answers.get("include_schedules", False))
 
     resolved_names: list[str | None] | None = None
     if names:
         resolved_names = [n or None for n in names]
-
-    typer.echo("\nSummary:")
-    typer.echo(f"  tool:     {tool}")
-    typer.echo(f"  activity: {activity}")
-    typer.echo(f"  dry-run:  {dry_run}")
-    if mode is not CommandMode.COMPARE:
-        typer.echo(f"  silent:   {silent}")
-    if targets:
-        typer.echo(f"  targets:  {', '.join(targets)}")
-    if files:
-        typer.echo(f"  files:    {', '.join(files)}")
-    if origins:
-        typer.echo(f"  origins:  {', '.join(origins)}")
-    if resolved_names:
-        typer.echo(
-            f"  names:    {', '.join(n or '(from source)' for n in resolved_names)}"
-        )
-
-    independent = False
-    if tool == "report" and mode in {
-        CommandMode.DOWNLOAD,
-        CommandMode.DEPLOY,
-        CommandMode.COMPARE,
-    }:
-        independent = _confirm(
-            "Independent (report only — do not join semantic model)?",
-            default=False,
-        )
-        typer.echo(f"  independent: {independent}")
-
-    include_schedules = False
-    if tool == "pipeline" and mode in {
-        CommandMode.DOWNLOAD,
-        CommandMode.DEPLOY,
-        CommandMode.COMPARE,
-    }:
-        include_schedules = _confirm(
-            "Include schedules (.schedules)? "
-            "Default is pipeline-only (overwrite preserves remote schedules).",
-            default=False,
-        )
-        typer.echo(f"  include-schedules: {include_schedules}")
-
-    if not _confirm("Proceed?", default=True):
-        typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
-        raise typer.Exit(code=EXIT_USER)
 
     offer_manifest = (
         mode is not CommandMode.DELETE
@@ -410,12 +255,13 @@ def prompt_save_manifest(
         return
     if not items:
         return
-    if not _confirm("Save deployment manifest?", default=False):
+    if not _confirm("Save deployment manifest?", default=False, allow_back=False):
         return
 
     stem = _text(
         "Manifest name or path (e.g. test → test.ftdep)",
         allow_empty=False,
+        allow_back=False,
     )
     overrides = (
         item_id_overrides_from_results(op_results) if op_results is not None else None
@@ -440,6 +286,315 @@ def prompt_save_manifest(
     typer.secho(f"Wrote manifest: {path}", fg=typer.colors.GREEN)
 
 
+def _needs_source_step(answers: dict[str, Any]) -> bool:
+    activity = answers.get("activity")
+    run_mode = answers.get("run_mode")
+    if activity is None or run_mode is None:
+        return False
+    mode = CommandMode(str(activity))
+    if mode is CommandMode.DELETE:
+        return False
+    return mode in {CommandMode.DEPLOY, CommandMode.COMPARE} and run_mode not in {
+        "dry_files",
+        "dry_targets",
+    }
+
+
+def _clear_from(answers: dict[str, Any], step: str) -> None:
+    started = False
+    for name in _STEPS:
+        if name == step:
+            started = True
+        if not started:
+            continue
+        for key in _STEP_KEYS[name]:
+            answers.pop(key, None)
+
+
+def _run_step(step: str, answers: dict[str, Any]) -> None:
+    if step == "tool":
+        answers["tool"] = _select(
+            "Select tool",
+            choices=[
+                "notebook",
+                "dataflow",
+                "dataflow-gen1",
+                "pipeline",
+                "udf",
+                "semantic-model",
+                "report",
+                "paginated-report",
+            ],
+            default=answers.get("tool") or "notebook",
+        )
+        return
+
+    if step == "activity":
+        answers["activity"] = _select(
+            "Select activity",
+            choices=["download", "deploy", "compare", "delete"],
+            default=answers.get("activity") or "download",
+        )
+        return
+
+    if step == "run_mode":
+        activity = str(answers["activity"])
+        mode = CommandMode(activity)
+        if mode is CommandMode.DELETE:
+            run_choices = [
+                Choice("Execute (delete)", value="execute"),
+                Choice("Dry-run: validate remote targets only", value="dry_targets"),
+            ]
+        else:
+            run_choices = [
+                Choice(f"Execute ({activity})", value="execute"),
+                Choice("Dry-run: validate targets and sources", value="dry_both"),
+                Choice("Dry-run: validate remote targets only", value="dry_targets"),
+                Choice("Dry-run: validate local files only", value="dry_files"),
+            ]
+        answers["run_mode"] = _select(
+            "How should this run?",
+            choices=run_choices,
+            default=answers.get("run_mode") or "execute",
+        )
+        return
+
+    if step == "source":
+        tool = str(answers["tool"])
+        origin_label = _origin_label(tool)
+        answers["source_kind"] = _select(
+            "Select source",
+            choices=[
+                Choice("Local file / folder", value="file"),
+                Choice(origin_label, value="origin"),
+            ],
+            default=answers.get("source_kind") or "file",
+        )
+        return
+
+    if step == "inputs":
+        _collect_inputs(answers)
+        return
+
+    if step == "options":
+        _collect_options(answers)
+        return
+
+    if step == "proceed":
+        if not _confirm("Proceed?", default=True):
+            typer.secho("Aborted by user.", fg=typer.colors.YELLOW, err=True)
+            raise typer.Exit(code=EXIT_USER)
+        return
+
+    raise RuntimeError(f"unknown wizard step: {step}")
+
+
+def _file_prompt(tool: str) -> str:
+    if tool == "dataflow-gen1":
+        return "Enter file (model.json)"
+    if tool == "paginated-report":
+        return "Enter file (.rdl)"
+    if tool == "dataflow":
+        return "Enter folder (*.Dataflow)"
+    if tool == "pipeline":
+        return "Enter folder (*.DataPipeline)"
+    if tool == "udf":
+        return "Enter folder (*.UserDataFunction)"
+    if tool == "semantic-model":
+        return "Enter folder (*.SemanticModel)"
+    if tool == "report":
+        return "Enter folder (*.Report) or .pbix path"
+    return "Enter file (.ipynb or *.Notebook folder)"
+
+
+def _origin_label(tool: str) -> str:
+    if tool in {"dataflow-gen1", "paginated-report"}:
+        return "Power BI origin (workspace:artifact)"
+    return "Fabric origin (workspace:artifact)"
+
+
+def _resolved_source_kind(answers: dict[str, Any]) -> str:
+    if "source_kind" in answers:
+        return str(answers["source_kind"])
+    mode = CommandMode(str(answers["activity"]))
+    run_mode = str(answers["run_mode"])
+    if mode is CommandMode.DELETE or run_mode == "dry_targets":
+        return "none"
+    return "file"
+
+
+def _collect_inputs(answers: dict[str, Any]) -> None:
+    tool = str(answers["tool"])
+    mode = CommandMode(str(answers["activity"]))
+    run_mode = str(answers["run_mode"])
+    source_kind = _resolved_source_kind(answers)
+    file_prompt = _file_prompt(tool)
+
+    targets: list[str] = []
+    files: list[str] = []
+    origins: list[str] = []
+    names: list[str] = []
+
+    if mode is CommandMode.DELETE or run_mode == "dry_targets":
+        while True:
+            target = _text(_target_prompt(mode, tool=tool), allow_empty=bool(targets))
+            if not target:
+                break
+            targets.append(target)
+            if not _confirm("Add another target?", default=False):
+                break
+    elif mode is CommandMode.DOWNLOAD and run_mode != "dry_files":
+        typer.echo("\nEnter target(s). Local path defaults to remote name + extension.")
+        while True:
+            target = _text(_target_prompt(mode, tool=tool), allow_empty=bool(targets))
+            if not target:
+                break
+            targets.append(target)
+            if not _confirm("Add another target?", default=False):
+                break
+        if _confirm("Specify local destination path(s)?", default=False):
+            for target in targets:
+                files.append(_text(f"{file_prompt} for {target}", allow_empty=False))
+    elif run_mode == "dry_files":
+        while True:
+            path = _text(file_prompt, allow_empty=bool(files))
+            if not path:
+                break
+            files.append(path)
+            if not _confirm("Add another file?", default=False):
+                break
+    elif source_kind == "origin":
+        typer.echo("\nEnter origin/target pairs.")
+        while True:
+            origin = _text(
+                "Enter origin workspace:artifact",
+                allow_empty=bool(origins and targets),
+            )
+            if not origin:
+                if origins and targets:
+                    break
+                typer.echo("Enter at least one origin/target pair.")
+                continue
+
+            target = _text(_target_prompt(mode, tool=tool), allow_empty=False)
+            origins.append(origin)
+            targets.append(target)
+
+            if mode is CommandMode.DEPLOY and ":" not in target:
+                name = _text(
+                    "Display name for create (leave blank to use origin name)",
+                    allow_empty=True,
+                )
+                names.append(name)
+
+            if not _confirm("Add another origin/target pair?", default=False):
+                break
+    else:
+        typer.echo("\nEnter file/target pairs.")
+        while True:
+            path = _text(
+                file_prompt,
+                allow_empty=bool(files and targets),
+            )
+            if not path:
+                if files and targets:
+                    break
+                typer.echo("Enter at least one file/target pair.")
+                continue
+
+            target = _text(_target_prompt(mode, tool=tool), allow_empty=False)
+            files.append(path)
+            targets.append(target)
+
+            if mode is CommandMode.DEPLOY and ":" not in target:
+                name = _text(
+                    "Display name for create (leave blank to derive from file)",
+                    allow_empty=True,
+                )
+                names.append(name)
+
+            if not _confirm("Add another file/target pair?", default=False):
+                break
+
+    answers["targets"] = targets
+    answers["files"] = files
+    answers["origins"] = origins
+    answers["names"] = names
+
+
+def _collect_options(answers: dict[str, Any]) -> None:
+    tool = str(answers["tool"])
+    activity = str(answers["activity"])
+    mode = CommandMode(activity)
+    run_mode = str(answers["run_mode"])
+    dry_run = run_mode != "execute"
+    targets: list[str] = list(answers.get("targets") or [])
+    files: list[str] = list(answers.get("files") or [])
+    origins: list[str] = list(answers.get("origins") or [])
+    names: list[str] = list(answers.get("names") or [])
+
+    silent = False
+    ignore_outputs = False
+    if not dry_run and mode is not CommandMode.COMPARE:
+        silent = _confirm("Silent mode (skip confirmation prompts)?", default=False)
+    if tool == "notebook" and mode is CommandMode.COMPARE and not dry_run:
+        ignore_outputs = _confirm(
+            "Ignore notebook cell outputs in .ipynb diffs?",
+            default=False,
+        )
+
+    resolved_names: list[str | None] | None = None
+    if names:
+        resolved_names = [n or None for n in names]
+
+    typer.echo("\nSummary:")
+    typer.echo(f"  tool:     {tool}")
+    typer.echo(f"  activity: {activity}")
+    typer.echo(f"  dry-run:  {dry_run}")
+    if mode is not CommandMode.COMPARE:
+        typer.echo(f"  silent:   {silent}")
+    if targets:
+        typer.echo(f"  targets:  {', '.join(targets)}")
+    if files:
+        typer.echo(f"  files:    {', '.join(files)}")
+    if origins:
+        typer.echo(f"  origins:  {', '.join(origins)}")
+    if resolved_names:
+        typer.echo(
+            f"  names:    {', '.join(n or '(from source)' for n in resolved_names)}"
+        )
+
+    independent = False
+    if tool == "report" and mode in {
+        CommandMode.DOWNLOAD,
+        CommandMode.DEPLOY,
+        CommandMode.COMPARE,
+    }:
+        independent = _confirm(
+            "Independent (report only — do not join semantic model)?",
+            default=False,
+        )
+        typer.echo(f"  independent: {independent}")
+
+    include_schedules = False
+    if tool == "pipeline" and mode in {
+        CommandMode.DOWNLOAD,
+        CommandMode.DEPLOY,
+        CommandMode.COMPARE,
+    }:
+        include_schedules = _confirm(
+            "Include schedules (.schedules)? "
+            "Default is pipeline-only (overwrite preserves remote schedules).",
+            default=False,
+        )
+        typer.echo(f"  include-schedules: {include_schedules}")
+
+    answers["silent"] = silent
+    answers["ignore_outputs"] = ignore_outputs
+    answers["independent"] = independent
+    answers["include_schedules"] = include_schedules
+
+
 def _target_prompt(mode: CommandMode, *, tool: str) -> str:
     if mode is CommandMode.DELETE:
         return "Enter target workspace:artifact"
@@ -455,28 +610,75 @@ def _target_prompt(mode: CommandMode, *, tool: str) -> str:
 _SELECT_STYLE = Style([("selected", "noreverse")])
 
 
+def _bind_escape_to_back(question: questionary.Question) -> None:
+    bindings = question.application.key_bindings
+    if bindings is None:
+        return
+
+    @bindings.add(Keys.Escape, eager=True)
+    def _on_escape(event: Any) -> None:
+        event.app.exit(result=_BACK_VALUE)
+
+
+def _escape_key_bindings() -> KeyBindings:
+    bindings = KeyBindings()
+
+    @bindings.add(Keys.Escape, eager=True)
+    def _on_escape(event: Any) -> None:
+        event.app.exit(result=_BACK_VALUE)
+
+    return bindings
+
+
 def _select(
     message: str,
     *,
     choices: list[str] | list[Choice],
     default: str | None = None,
-    instruction: str = "(use arrow keys or 1-9)",
+    instruction: str | None = None,
+    allow_back: bool = True,
 ) -> str:
-    result = questionary.select(
+    if instruction is None:
+        instruction = (
+            "(use arrow keys or 1-9; Esc/b back)"
+            if allow_back
+            else "(use arrow keys or 1-9)"
+        )
+    select_choices: list[str | Choice] = list(choices)
+    if allow_back:
+        select_choices.append(
+            Choice("← Back", value=_BACK_VALUE, shortcut_key="b"),
+        )
+    question = questionary.select(
         message,
-        choices=choices,
+        choices=select_choices,
         default=default,
         instruction=instruction,
         style=_SELECT_STYLE,
         use_shortcuts=True,
-    ).ask()
+    )
+    if getattr(question, "application", None) is not None:
+        _bind_escape_to_back(question)
+    result = question.ask()
     if result is None:
         raise typer.Exit(code=EXIT_USER)
+    if result == _BACK_VALUE:
+        raise _Back()
     return str(result)
 
 
-def _confirm(message: str, *, default: bool = False) -> bool:
+def _confirm(
+    message: str,
+    *,
+    default: bool = False,
+    allow_back: bool = True,
+) -> bool:
     # Same select UX as other prompts (arrows / shortcuts + Enter).
+    instruction = (
+        "(use arrow keys or y/n; Esc/b back)"
+        if allow_back
+        else "(use arrow keys or y/n)"
+    )
     return (
         _select(
             message,
@@ -485,18 +687,31 @@ def _confirm(message: str, *, default: bool = False) -> bool:
                 Choice("No", value="No", shortcut_key="n"),
             ],
             default="Yes" if default else "No",
-            instruction="(use arrow keys or y/n)",
+            instruction=instruction,
+            allow_back=allow_back,
         )
         == "Yes"
     )
 
 
-def _text(message: str, *, allow_empty: bool) -> str:
+def _text(
+    message: str,
+    *,
+    allow_empty: bool,
+    allow_back: bool = True,
+) -> str:
     while True:
-        result = questionary.text(message).ask()
+        kwargs: dict[str, Any] = {}
+        if allow_back:
+            kwargs["key_bindings"] = _escape_key_bindings()
+            kwargs["instruction"] = "(Esc back)"
+        question = questionary.text(message, **kwargs)
+        result = question.ask()
         if result is None:
             raise typer.Exit(code=EXIT_USER)
-        value = result.strip()
+        if result == _BACK_VALUE:
+            raise _Back()
+        value = str(result).strip()
         if value or allow_empty:
             return value
         typer.echo("Value required.")

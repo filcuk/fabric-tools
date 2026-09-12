@@ -97,7 +97,7 @@ fabric-tools env unset AZURE_CLIENT_SECRET
 | `--dry-run` | `-d` | Validate only (either side may be omitted); with `-m`, writes the manifest on success |
 | `--name` | `-n` | Display name for create deploys |
 | `--cells` | `-c` | Notebook overwrite only: listed 1-based cells (single local `.ipynb` only) |
-| `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`) |
+| `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`). Esc or ← Back returns one major step; Ctrl+C cancels |
 | `--independent` | `-i` | `report` download/deploy/compare and `semantic-model deploy`: act only on this command’s artifact; not on `semantic-model delete` |
 | `--include-schedules` | `-i` | `pipeline` download/deploy/compare: sync `.schedules` (default is pipeline-only; overwrite without `-i` preserves remote schedules; not on delete) |
 
@@ -253,6 +253,13 @@ For automation, set a service principal:
 $env:AZURE_TENANT_ID="..."
 $env:AZURE_CLIENT_ID="..."
 $env:AZURE_CLIENT_SECRET="..."
+```
+
+### Troubleshooting
+
+```powershell
+# Remove bad cached auth record
+Remove-Item "$env:LOCALAPPDATA\fabric-tools\msal-auth-record.json" -ErrorAction SilentlyContinue
 ```
 
 ### Exit codes

@@ -177,9 +177,7 @@ def test_interactive_abort_on_proceed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_interactive_notebook_delete(monkeypatch: pytest.MonkeyPatch) -> None:
-    selects = iter(
-        ["notebook", "delete", "execute", _yn(False), _yn(True), _yn(True)]
-    )
+    selects = iter(["notebook", "delete", "execute", _yn(False), _yn(True), _yn(True)])
     texts = iter(
         [
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
@@ -486,14 +484,15 @@ def test_select_disables_stuck_default_highlight(
 
     monkeypatch.setattr("questionary.select", fake_select)
 
-    assert _select("pick", choices=["a", "b"], default="a") == "b"
+    assert _select("pick", choices=["a", "b"], default="a", allow_back=False) == "b"
     assert captured["style"] is _SELECT_STYLE
     assert ("selected", "noreverse") in captured["style"].style_rules
     assert captured["use_shortcuts"] is True
+    assert captured["instruction"] == "(use arrow keys or 1-9)"
 
 
 def test_confirm_uses_yes_no_select(monkeypatch: pytest.MonkeyPatch) -> None:
-    from fabric_tools.interactive import _SELECT_STYLE, _confirm
+    from fabric_tools.interactive import _BACK_VALUE, _SELECT_STYLE, _confirm
 
     captured: dict[str, Any] = {}
 
@@ -505,14 +504,101 @@ def test_confirm_uses_yes_no_select(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert _confirm("ok?", default=False) is True
     assert captured["default"] == "No"
-    assert captured["instruction"] == "(use arrow keys or y/n)"
+    assert captured["instruction"] == "(use arrow keys or y/n; Esc/b back)"
     assert captured["style"] is _SELECT_STYLE
     assert captured["use_shortcuts"] is True
-    titles = [
-        c.title if isinstance(c, Choice) else c for c in captured["choices"]
-    ]
-    assert titles == ["Yes", "No"]
-    shortcuts = [
-        c.shortcut_key for c in captured["choices"] if isinstance(c, Choice)
-    ]
-    assert shortcuts == ["y", "n"]
+    titles = [c.title if isinstance(c, Choice) else c for c in captured["choices"]]
+    assert titles == ["Yes", "No", "← Back"]
+    values = [c.value if isinstance(c, Choice) else c for c in captured["choices"]]
+    assert values == ["Yes", "No", _BACK_VALUE]
+    shortcuts = [c.shortcut_key for c in captured["choices"] if isinstance(c, Choice)]
+    assert shortcuts == ["y", "n", "b"]
+
+
+def test_select_back_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fabric_tools.interactive import _BACK_VALUE, _Back, _select
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(_BACK_VALUE),
+    )
+
+    with pytest.raises(_Back):
+        _select("pick", choices=["a", "b"])
+
+
+def test_text_escape_raises_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fabric_tools.interactive import _BACK_VALUE, _Back, _text
+
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(_BACK_VALUE),
+    )
+
+    with pytest.raises(_Back):
+        _text("path", allow_empty=False)
+
+
+def test_interactive_back_on_first_step_exits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fabric_tools.interactive import _BACK_VALUE
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(_BACK_VALUE),
+    )
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == EXIT_USER
+
+
+def test_interactive_back_reprompts_previous_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fabric_tools.interactive import _BACK_VALUE
+
+    # tool; activity then Back; activity again; run_mode; add another?; silent?; proceed?
+    selects = iter(
+        [
+            "notebook",
+            "deploy",
+            _BACK_VALUE,
+            "download",
+            "execute",
+            _yn(False),
+            _yn(False),
+            _yn(False),
+            _yn(True),
+        ]
+    )
+    texts = iter(
+        [
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_notebook_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DOWNLOAD
+    assert captured["kwargs"]["dry_run"] is False
+    assert captured["kwargs"]["file_values"] is None
