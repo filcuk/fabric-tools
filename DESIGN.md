@@ -4,7 +4,7 @@ CLI visual and interaction design for `fabric-tools`. End-user usage is in [READ
 
 ## CLI colours
 
-Terminal output uses a fixed role → colour contract. Prefer the shared helpers in `fabric_tools.colours` (once present) over ad-hoc `typer.colors` / Rich style strings. Do not introduce new colours without updating this document.
+Terminal output uses a fixed role → colour contract. Prefer the shared helpers in `fabric_tools.colours` over ad-hoc `typer.colors` / Rich style strings. Do not introduce new colours without updating this document.
 
 ### Palette
 

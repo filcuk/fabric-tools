@@ -11,6 +11,7 @@ from typer.core import TyperGroup
 
 from fabric_tools import __version__
 from fabric_tools.auth import AuthError
+from fabric_tools.colours import apply_help_theme
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
@@ -134,6 +135,7 @@ def _install_description_before_usage() -> None:
     rich_utils.rich_format_help = rich_format_help  # type: ignore[assignment]
 
 
+apply_help_theme()
 _install_description_before_usage()
 
 
