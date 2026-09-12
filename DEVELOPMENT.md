@@ -72,11 +72,21 @@ Covered areas: parsing/pairing, definition pack/unpack, LRO client (mocked HTTP)
 
 Produces a single portable `dist/fabric-tools.exe` (one-file). `setup install` unpacks it to a fast onedir tree under `%LOCALAPPDATA%\fabric-tools\app`.
 
+**PyInstaller (current release path):**
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 ```
 
-The script builds onedir staging first, then a onefile release that embeds the thin onedir bootloader. Or manually:
+**Nuitka (onefile only — same `dist\fabric-tools.exe` output):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_exe_nuitka.ps1
+```
+
+Do not distribute Nuitka `.dist` folders or `dist\fabric-tools\` trees; only the single exe.
+
+The PyInstaller script builds onedir staging first, then a onefile release that embeds the thin onedir bootloader. Or manually:
 
 ```bash
 py -3 -m pip install -e ".[build]"

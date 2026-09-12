@@ -1,10 +1,10 @@
-# Build the Windows release executable for fabric-tools.
+# Build the Windows release executable for fabric-tools (PyInstaller).
 # Usage (from repo root):
 #   powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 #
 # 1) Build onedir (staging) to get a thin bootloader + _internal
 # 2) Build onefile release that embeds that bootloader for `setup install`
-# Ship: dist\fabric-tools.exe (portable as-is; setup install unpacks to a fast onedir)
+# Final artifact: dist\fabric-tools.exe
 
 $ErrorActionPreference = "Stop"
 
@@ -32,7 +32,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "Onedir PyInstaller failed with exit code $LASTEXITCODE"
 }
 
-$OnedirDir = Join-Path $RepoRoot "dist\fabric-tools"
+$DistDir = Join-Path $RepoRoot "dist"
+$OnedirDir = Join-Path $DistDir "fabric-tools"
 $OnedirExe = Join-Path $OnedirDir "fabric-tools.exe"
 if (-not (Test-Path $OnedirExe)) {
     throw "Expected onedir output not found: $OnedirExe"
@@ -50,7 +51,6 @@ finally {
     Remove-Item Env:FABRIC_TOOLS_ONEDIR_BOOTLOADER -ErrorAction SilentlyContinue
 }
 
-$DistDir = Join-Path $RepoRoot "dist"
 $ExePath = Join-Path $DistDir "fabric-tools.exe"
 if (-not (Test-Path $ExePath)) {
     throw "Expected onefile output not found: $ExePath"
@@ -75,9 +75,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "Build succeeded: $ExePath"
+Write-Host "Final artifact: $ExePath" -ForegroundColor Green
 Write-Host "Distribute that single exe. Users can run it portable, or:"
-Write-Host "  .\fabric-tools.exe setup install"
+Write-Host "  .\dist\fabric-tools.exe setup install"
 Write-Host "to unpack a fast onedir copy under %LOCALAPPDATA%\fabric-tools\app"
 Write-Host "Note: unsigned binaries may trigger SmartScreen warnings."
 Write-Host "Auth still uses interactive browser/device-code or AZURE_* service principal env vars."

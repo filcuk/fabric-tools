@@ -1,15 +1,15 @@
-# Build fabric-tools with Nuitka (standalone + onefile) for A/B vs PyInstaller.
+# Build fabric-tools as a single Nuitka onefile exe for distribution.
 # Usage (from repo root):
 #   powershell -ExecutionPolicy Bypass -File .\scripts\build_exe_nuitka.ps1
-#   powershell -ExecutionPolicy Bypass -File .\scripts\build_exe_nuitka.ps1 -StandaloneOnly
 #
 # Prefers Python 3.12 when available (MinGW works; 3.13+ requires MSVC).
-# Outputs under dist\nuitka\:
-#   fabric-tools.dist\fabric-tools.exe  (standalone — fast layout / install source)
-#   fabric-tools.exe                    (onefile — portable download)
+#
+# Final artifact (same as PyInstaller):
+#   dist\fabric-tools.exe
+#
+# Intermediate Nuitka output stays under dist\nuitka\ (not for distribution).
 
 param(
-    [switch]$StandaloneOnly,
     [switch]$SkipSmoke
 )
 
@@ -40,7 +40,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "pip install failed with exit code $LASTEXITCODE"
 }
 
-$OutputDir = Join-Path $RepoRoot "dist\nuitka"
+$DistDir = Join-Path $RepoRoot "dist"
+$OutputDir = Join-Path $DistDir "nuitka"
+$PublishOnefile = Join-Path $DistDir "fabric-tools.exe"
+$StaleStandalonePublish = Join-Path $DistDir "fabric-tools"
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 function Invoke-NuitkaBuild {
@@ -71,52 +74,51 @@ print('\n'.join(nuitka_command(Path(r'$RepoRoot'), mode='$Mode', output_dir=Path
 
 $BuildTimer = [System.Diagnostics.Stopwatch]::StartNew()
 
-Invoke-NuitkaBuild -Mode "standalone"
+# --mode=onefile already performs a standalone build internally, then packs it.
+Invoke-NuitkaBuild -Mode "onefile"
 
-# Prefer --output-folder-name=fabric-tools; fall back to entry-script stem (older Nuitka).
-$StandaloneCandidates = @(
-    (Join-Path $OutputDir "fabric-tools.dist\fabric-tools.exe"),
-    (Join-Path $OutputDir "nuitka_entry.dist\fabric-tools.exe")
-)
-$StandaloneExe = $StandaloneCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $StandaloneExe) {
-    throw "Expected standalone output not found under $OutputDir (tried fabric-tools.dist and nuitka_entry.dist)"
-}
-
-$OnefileExe = $null
-if (-not $StandaloneOnly) {
-    Invoke-NuitkaBuild -Mode "onefile"
-
-    $OnefileExe = Join-Path $OutputDir "fabric-tools.exe"
-    if (-not (Test-Path $OnefileExe)) {
-        throw "Expected onefile output not found: $OnefileExe"
-    }
+$OnefileSource = Join-Path $OutputDir "fabric-tools.exe"
+if (-not (Test-Path $OnefileSource)) {
+    throw "Expected onefile output not found: $OnefileSource"
 }
 
 $BuildTimer.Stop()
 Write-Host ("Build duration: {0:hh\:mm\:ss\.fff} ({1:N1}s)" -f $BuildTimer.Elapsed, $BuildTimer.Elapsed.TotalSeconds)
 
+Write-Host "Publishing single exe to dist\fabric-tools.exe..."
+Copy-Item -LiteralPath $OnefileSource -Destination $PublishOnefile -Force
+
+# Remove multi-file trees that are not for distribution.
+if (Test-Path $StaleStandalonePublish) {
+    Remove-Item -LiteralPath $StaleStandalonePublish -Recurse -Force
+}
+foreach ($bak in @(
+        "$PublishOnefile.previous.bak",
+        "$PublishOnefile.nuitka-orphan.bak"
+    )) {
+    if (Test-Path $bak) {
+        Remove-Item -LiteralPath $bak -Force
+    }
+}
+
 if (-not $SkipSmoke) {
-    Write-Host "Smoke-testing standalone --help..."
-    & $StandaloneExe --help
+    Write-Host "Smoke-testing onefile --help..."
+    & $PublishOnefile --help
     if ($LASTEXITCODE -ne 0) {
-        throw "Nuitka standalone --help failed with exit code $LASTEXITCODE"
+        throw "Nuitka onefile --help failed with exit code $LASTEXITCODE"
     }
 
-    if ($null -ne $OnefileExe) {
-        Write-Host "Smoke-testing onefile --help..."
-        & $OnefileExe --help
-        if ($LASTEXITCODE -ne 0) {
-            throw "Nuitka onefile --help failed with exit code $LASTEXITCODE"
-        }
+    Write-Host "Smoke-testing onefile setup status..."
+    & $PublishOnefile setup status
+    if ($LASTEXITCODE -ne 0) {
+        throw "Nuitka onefile setup status failed with exit code $LASTEXITCODE"
     }
 }
 
 Write-Host ""
-Write-Host "Nuitka build succeeded."
-Write-Host "  Standalone: $StandaloneExe"
-if ($null -ne $OnefileExe) {
-    Write-Host "  Onefile:    $OnefileExe"
-}
-Write-Host "PyInstaller baseline remains: scripts\build_exe.ps1 -> dist\fabric-tools.exe"
-Write-Host "Next: scripts\bench_startup.ps1 (after step 3) to compare cold starts."
+Write-Host "Nuitka onefile build succeeded." -ForegroundColor Green
+Write-Host "Final artifact: $PublishOnefile" -ForegroundColor Green
+Write-Host "Distribute that single exe. Portable runs extract on each launch;"
+Write-Host "  .\dist\fabric-tools.exe setup install"
+Write-Host "copies a fast unpacked tree under %LOCALAPPDATA%\fabric-tools\app"
+Write-Host "Intermediate build tree (not for distribution): $OutputDir"
