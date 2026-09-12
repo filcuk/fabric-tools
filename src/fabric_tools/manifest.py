@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +65,17 @@ def resolve_manifest_path(value: str | Path) -> Path:
     if path.suffix.lower() != MANIFEST_SUFFIX:
         path = path.with_name(path.name + MANIFEST_SUFFIX)
     return path
+
+
+def resolve_inspect_target(value: str | Path) -> Path:
+    """Resolve ``manifest inspect -m``: existing directory, else a ``.ftdep`` path."""
+    text = str(value).strip()
+    if not text:
+        raise ManifestError("manifest path/stem is empty")
+    path = Path(text)
+    if path.is_dir():
+        return path
+    return resolve_manifest_path(path)
 
 
 def load_manifest(path: str | Path) -> DeploymentManifest:
@@ -344,6 +356,43 @@ def list_manifest_paths(directory: str | Path | None = None) -> list[Path]:
     )
 
 
+def delete_manifest_file(path: str | Path) -> Path:
+    """Unlink an existing ``.ftdep`` file. Caller must confirm."""
+    resolved = resolve_manifest_path(path)
+    if not resolved.is_file():
+        raise ManifestError(f"manifest not found: {resolved}")
+    try:
+        resolved.unlink()
+    except OSError as exc:
+        raise ManifestError(f"failed to delete manifest {resolved}: {exc}") from exc
+    return resolved
+
+
+def move_manifest_file(
+    source: str | Path, destination: str | Path
+) -> tuple[Path, Path]:
+    """Move an existing ``.ftdep`` to *destination* (creates parent dirs).
+
+    Caller must confirm. Destination is a file path, not a drop-in directory.
+    """
+    src = resolve_manifest_path(source)
+    dst = resolve_manifest_path(destination)
+    if not src.is_file():
+        raise ManifestError(f"manifest not found: {src}")
+    if src.resolve() == dst.resolve():
+        raise ManifestError("source and destination are the same path")
+    if dst.is_dir():
+        raise ManifestError(f"destination is a directory: {dst}")
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if dst.is_file():
+            dst.unlink()
+        shutil.move(str(src), str(dst))
+    except OSError as exc:
+        raise ManifestError(f"failed to move manifest {src} to {dst}: {exc}") from exc
+    return src, dst
+
+
 def format_inspect_line(manifest: DeploymentManifest, *, path: Path) -> str:
     """One-line summary for listing manifests in a directory."""
     return (
@@ -353,7 +402,7 @@ def format_inspect_line(manifest: DeploymentManifest, *, path: Path) -> str:
 
 
 def format_inspect(manifest: DeploymentManifest, *, path: Path | None = None) -> str:
-    """Human-readable summary for ``fabric-tools inspect``."""
+    """Human-readable summary for ``fabric-tools manifest inspect``."""
     lines: list[str] = []
     if path is not None:
         lines.append(f"manifest: {path}")

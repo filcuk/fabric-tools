@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
@@ -20,6 +21,7 @@ from fabric_tools.manifest import (
     KIND_SEMANTIC_MODEL,
     KIND_UDF,
     ManifestError,
+    delete_manifest_file,
     delete_targets_from_manifest,
     format_inspect,
     format_inspect_line,
@@ -27,6 +29,8 @@ from fabric_tools.manifest import (
     list_manifest_paths,
     load_manifest,
     manifest_from_work_items,
+    move_manifest_file,
+    resolve_inspect_target,
     resolve_manifest_path,
     save_manifest,
     semantic_model_id_overrides_from_results,
@@ -120,12 +124,12 @@ _install_description_before_usage()
 class _BannerGroup(TyperGroup):
     """Root help: banner, then subtitle, then Usage / options."""
 
-    # Help list order: setup first, then inspect, then artifact groups
+    # Help list order: setup first, then manifest, then artifact groups
     # (dataflow-gen1 before dataflow; paginated-report before pipeline;
     # report before semantic-model).
     _COMMAND_ORDER = (
         "setup",
-        "inspect",
+        "manifest",
         "env",
         "dataflow-gen1",
         "dataflow",
@@ -258,6 +262,14 @@ env_app = typer.Typer(
 )
 app.add_typer(env_app, name="env", rich_help_panel="Local")
 
+manifest_app = typer.Typer(
+    name="manifest",
+    help="Inspect, list, delete, and move local deployment manifests (.ftdep).",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(manifest_app, name="manifest", rich_help_panel="Local")
+
 
 def _flush_update_notice(ctx: typer.Context) -> None:
     """Print a background update notice on stderr, if one is ready."""
@@ -341,32 +353,45 @@ def env_unset(
     raise typer.Exit(code=EXIT_OK)
 
 
-@app.command("inspect", rich_help_panel="Local")
-def inspect_manifest(
+@manifest_app.command("inspect")
+def manifest_inspect(
     manifest: str | None = typer.Option(
         None,
         "--manifest",
         "-m",
-        help="Deployment manifest stem or path (.ftdep). Omit to list all manifests in the current folder.",
+        help=(
+            "Manifest stem/path (.ftdep), or a folder of manifests. "
+            "Omit to inspect the current folder."
+        ),
     ),
 ) -> None:
-    """Show deployment manifest contents, or list manifests in the current folder."""
+    """Show one-line summaries for a folder, or the full contents of one manifest."""
     if not manifest:
-        _inspect_list_cwd()
+        _inspect_manifest_dir(None)
         raise typer.Exit(code=EXIT_OK)
 
     try:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
+        target = resolve_inspect_target(manifest)
     except ManifestError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
-    typer.echo(format_inspect(loaded, path=path))
+
+    if target.is_dir():
+        _inspect_manifest_dir(target)
+        raise typer.Exit(code=EXIT_OK)
+
+    try:
+        loaded = load_manifest(target)
+    except ManifestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    typer.echo(format_inspect(loaded, path=target))
     raise typer.Exit(code=EXIT_OK)
 
 
-def _inspect_list_cwd() -> None:
-    """Print one-line summaries for each ``.ftdep`` in the current directory."""
+@manifest_app.command("list")
+def manifest_list() -> None:
+    """List .ftdep filenames in the current folder."""
     try:
         paths = list_manifest_paths()
     except ManifestError as exc:
@@ -375,6 +400,114 @@ def _inspect_list_cwd() -> None:
 
     if not paths:
         typer.echo("No .ftdep manifests in the current folder.")
+        raise typer.Exit(code=EXIT_OK)
+
+    for path in paths:
+        typer.echo(path.name)
+    raise typer.Exit(code=EXIT_OK)
+
+
+@manifest_app.command("delete")
+def manifest_delete(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="Deployment manifest stem or path (.ftdep) to delete locally.",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+) -> None:
+    """Delete a local deployment manifest file (not a Fabric item)."""
+    from fabric_tools.confirm import ConfirmationAborted, confirm_or_abort
+
+    try:
+        path = resolve_manifest_path(manifest)
+        if not path.is_file():
+            raise ManifestError(f"manifest not found: {path}")
+        confirm_or_abort(
+            f"Delete local manifest file {path}?",
+            silent=silent,
+        )
+        delete_manifest_file(path)
+    except ConfirmationAborted as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except ManifestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    typer.secho(f"Deleted local manifest file {path}", fg=typer.colors.GREEN)
+    raise typer.Exit(code=EXIT_OK)
+
+
+@manifest_app.command("move")
+def manifest_move(
+    destination: str = typer.Argument(
+        help="Destination stem or path (.ftdep). Parent folders are created.",
+    ),
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="Deployment manifest stem or path (.ftdep) to move.",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+) -> None:
+    """Move or rename a local deployment manifest file."""
+    from fabric_tools.confirm import ConfirmationAborted, confirm_or_abort
+
+    try:
+        source = resolve_manifest_path(manifest)
+        dest = resolve_manifest_path(destination)
+        if not source.is_file():
+            raise ManifestError(f"manifest not found: {source}")
+        overwrite = dest.is_file()
+        if overwrite:
+            message = (
+                f"Move local manifest file {source} to {dest} "
+                f"(overwrite existing {dest})?"
+            )
+        else:
+            message = f"Move local manifest file {source} to {dest}?"
+        confirm_or_abort(message, silent=silent)
+        move_manifest_file(source, dest)
+    except ConfirmationAborted as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except ManifestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    typer.secho(
+        f"Moved local manifest file {source} to {dest}",
+        fg=typer.colors.GREEN,
+    )
+    raise typer.Exit(code=EXIT_OK)
+
+
+def _inspect_manifest_dir(directory: Path | None) -> None:
+    """Print one-line summaries for each ``.ftdep`` in *directory* (default: cwd)."""
+    try:
+        paths = list_manifest_paths(directory)
+    except ManifestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    if not paths:
+        if directory is None:
+            typer.echo("No .ftdep manifests in the current folder.")
+        else:
+            typer.echo(f"No .ftdep manifests in {directory}.")
         return
 
     for path in paths:
