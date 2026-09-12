@@ -223,24 +223,8 @@ def format_nuitka_orphan_exe_error() -> str | None:
             return None
     return (
         "This Nuitka fabric-tools.exe is missing its runtime payload. "
-        "Use the onefile build from scripts\\build_exe_nuitka.ps1 "
+        "Use the onefile build from scripts\\build_exe.ps1 "
         "(dist\\fabric-tools.exe)."
-    )
-
-
-def format_install_speed_notice() -> str | None:
-    """Warn portable one-file users to install for faster startup."""
-    if not is_portable_onefile():
-        return None
-    try:
-        # Installed onefile still uses a cache extract; don't nag after setup install.
-        if Path(sys.argv[0]).resolve().parent == default_install_dir().resolve():
-            return None
-    except PathSetupError:
-        pass
-    return (
-        "Warning: portable one-file exe extracts on every launch (slow startup). "
-        "Install for up to 20x faster launches: fabric-tools setup install"
     )
 
 

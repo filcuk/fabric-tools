@@ -26,12 +26,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
-#   Usually these files are written by a python script from a template
-#   before PyInstaller builds the exe, so as to inject date/other infos into it.
+# Frozen / packaging leftovers
 *.manifest
 *.spec
-!packaging/*.spec
 
 # Installer logs
 pip-log.txt

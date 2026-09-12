@@ -15,7 +15,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `semantic-model` \| `report` \| `paginated-report`)
   - `inspect_cmd.py` — Fabric workspace/item list/get helpers (filters, formatters, `--target` shapes)
-  - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; onefile unpacks to onedir under `%LOCALAPPDATA%\fabric-tools\app`; `setup update` downloads release exe and deferred-installs)
+  - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; Nuitka onefile unpacks under `%LOCALAPPDATA%\fabric-tools\app`; `setup update` downloads release exe and deferred-installs)
   - `update_check.py` — GitHub Releases check (`setup update --check`); once-per-day background notice; release asset download
   - `auth.py` — Azure token acquisition (Fabric + Power BI scopes; SP env, timed WAM broker, browser/device code; persistent cache)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`, `list_workspaces`, `list_items`)
@@ -37,9 +37,9 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `report/` — report folder + PBIX (`definition.py`); join/bind rewrite; download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `paginated_report/` — `.rdl` helpers (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
 - `tests/` — unit tests
-- `packaging/fabric-tools.spec` — PyInstaller onedir staging build
-- `packaging/fabric-tools-onefile.spec` — PyInstaller one-file release (embeds onedir bootloader)
-- `scripts/build_exe.ps1` — two-pass build → `dist/fabric-tools.exe`
+- `packaging/nuitka_options.py` — shared Nuitka onefile flags
+- `packaging/nuitka_entry.py` — Nuitka compilation entrypoint
+- `scripts/build_exe.ps1` — Nuitka onefile build → `dist/fabric-tools.exe`
 
 ## Conventions
 
@@ -63,7 +63,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Auth: interactive default; Windows WAM silent reuse, then interactive WAM (skipped in IDE/non-TTY, otherwise 45s timeout) then browser then device code; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` (not supported for `udf`)
 - Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute and `setup install` / `setup update` (install) / `setup uninstall`. Allows download, compare, `inspect`, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, `setup update --check`. `--silent` does not override.
 - Env report: `fabric-tools env list` lists supported env vars (`FABRIC_TOOLS_*`, `AZURE_*`) and current process values (`AZURE_CLIENT_SECRET` redacted). `env set` / `env unset` persist catalogued names in the Windows user environment (new terminal needed for other shells; secret values never echoed). Allowed under read-only.
-- Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only. Portable one-file runs warn on stderr to install for up to ~20× faster startup (skipped under `setup install` / `setup update`).
+- Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only. Release builds use Nuitka onefile (`scripts/build_exe.ps1`).
 
 ### Inspect (`inspect`)
 
@@ -175,4 +175,4 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
 
 Prefer `py -3` on this machine when the default `python` is not 3.11+.
 
-Do not commit `dist/` or `build/`. Keep `packaging/fabric-tools.spec` checked in.
+Do not commit `dist/` or `build/`. Keep `packaging/nuitka_options.py` and `packaging/nuitka_entry.py` checked in.

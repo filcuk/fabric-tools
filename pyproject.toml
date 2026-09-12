@@ -29,7 +29,6 @@ dev = [
     "ruff>=0.9",
 ]
 build = [
-    "pyinstaller>=6",
     "nuitka>=2.4",
 ]
 

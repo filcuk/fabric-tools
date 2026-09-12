@@ -236,37 +236,3 @@ def test_notebook_delete_help() -> None:
     result = CliRunner().invoke(app, ["notebook", "delete", "--help"])
     assert result.exit_code == 0
     assert "Soft-delete" in result.stdout or "delete" in result.stdout.lower()
-
-
-def test_portable_onefile_warns_to_install(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "fabric_tools.path_setup.format_install_speed_notice",
-        lambda: (
-            "Warning: portable one-file exe extracts on every launch (slow startup). "
-            "Install for up to 20x faster launches: fabric-tools setup install"
-        ),
-    )
-    result = CliRunner().invoke(app, ["notebook", "--help"])
-    assert result.exit_code == 0
-    assert "20x" in result.stderr
-    assert "setup install" in result.stderr
-
-
-def test_setup_install_skips_portable_speed_warning(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "fabric_tools.path_setup.format_install_speed_notice",
-        lambda: "Warning: should not appear during install",
-    )
-    monkeypatch.setattr(
-        "fabric_tools.path_setup.install_to_user_path",
-        lambda: {
-            "launcher": r"C:\fake\fabric-tools.exe",
-            "install_dir": r"C:\fake",
-            "layout": "onefile",
-            "path_added": False,
-            "already_on_path": True,
-        },
-    )
-    result = CliRunner().invoke(app, ["setup", "install"])
-    assert result.exit_code == 0
-    assert "should not appear during install" not in result.stderr

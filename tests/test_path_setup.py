@@ -22,7 +22,6 @@ from fabric_tools.path_setup import (
     _runtime_present,
     _split_path,
     _write_deferred_install_helper,
-    format_install_speed_notice,
     format_nuitka_orphan_exe_error,
     frozen_app_root,
     is_frozen,
@@ -300,7 +299,6 @@ def test_is_portable_onefile_false_when_not_frozen(
 ) -> None:
     monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: False)
     assert is_portable_onefile() is False
-    assert format_install_speed_notice() is None
 
 
 def test_is_portable_onefile_true_for_pyinstaller_onefile(
@@ -313,10 +311,6 @@ def test_is_portable_onefile_true_for_pyinstaller_onefile(
     )
     monkeypatch.setattr("fabric_tools.path_setup.frozen_onedir_root", lambda: None)
     assert is_portable_onefile() is True
-    notice = format_install_speed_notice()
-    assert notice is not None
-    assert "20x" in notice
-    assert "setup install" in notice
 
 
 def test_is_portable_onefile_false_for_pyinstaller_onedir(
@@ -331,7 +325,6 @@ def test_is_portable_onefile_false_for_pyinstaller_onedir(
         "fabric_tools.path_setup.frozen_onedir_root", lambda: tmp_path / "app"
     )
     assert is_portable_onefile() is False
-    assert format_install_speed_notice() is None
 
 
 def test_is_portable_onefile_true_for_nuitka_onefile(
@@ -360,7 +353,6 @@ def test_is_portable_onefile_true_for_nuitka_onefile(
     )
     assert frozen_app_root() == extract.resolve()
     assert is_portable_onefile() is True
-    assert format_install_speed_notice() is not None
     assert format_nuitka_orphan_exe_error() is None
 
 
@@ -381,7 +373,6 @@ def test_is_portable_onefile_false_for_nuitka_standalone(
         [str(app / EXE_NAME), "-h"],
     )
     assert is_portable_onefile() is False
-    assert format_install_speed_notice() is None
 
 
 def test_format_nuitka_orphan_exe_error(
