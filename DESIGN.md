@@ -11,7 +11,7 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Role | Style | Mechanism | Typical use |
 |------|--------|-----------|-------------|
 | Error / failure | red | Typer `fg=RED` / Rich `"red"` | Exceptions, failed ops, dry-run failures |
-| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"` | User cancel, notices, soft errors, partial env state |
+| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"` | User cancel, notices, soft errors, partial env state; **Power BI** in help text |
 | Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare `identical`, enabled/set |
 | Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands, compare headers, **Usage** command path and `COMMAND` placeholder |
 | Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Option/argument placeholders in `--help` (e.g. `<PATH>`, `<DEST>`, `<manifest>`, **Usage** `[ARGS]...`) |
@@ -21,8 +21,9 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Secondary columns / keys | dim | Rich `"dim"` | Inspect list non-name columns; inspect get / setup status keys |
 | Table headers | blue | Rich `"blue"` | Inspect list header row |
 | Root help — Fabric panel | teal (`#8acfb3`) | Typer Rich `STYLE_COMMANDS_PANEL_BORDER` (patched) | Root `--help` Fabric panel title and frame only (`Local` stays dim) |
-| Root help — banner FABRIC | `#1d8e7a` | Rich truecolor | ASCII art ``FABRIC`` in root `--help` |
-| Root help — banner - / TOOLS | teal (`#8acfb3`) | Rich truecolor | ASCII art hyphen gap and ``TOOLS`` in root `--help` |
+| Fabric in help | teal (`#8acfb3`) | Help highlighter `fabric` | The word **Fabric** in help prose (not `fabric-tools`) |
+| Root help — banner FABRIC | teal (`#8acfb3`) | Rich truecolor | ASCII art ``FABRIC`` in root `--help` |
+| Root help — banner - / TOOLS | `#1d8e7a` | Rich truecolor | ASCII art hyphen gap and ``TOOLS`` in root `--help` |
 | Primary text | default | no colour | Names, values, plain echoes, spinner messages, unified diffs |
 
 ### Aligned key / value and table layout
@@ -57,7 +58,9 @@ At CLI startup, Typer Rich help styles are set so **long options** (`--target`) 
 
 **Usage** lines are highlighted the same way: dim `Usage:` label, cyan command path (`fabric-tools notebook …`) and `COMMAND` placeholder, magenta `[OPTIONS]` / `--flags`, bright yellow argument placeholders (`[ARGS]...`, `<…>`).
 
-On **root** `--help` only, the **Fabric** commands panel title and frame use teal (`#8acfb3`); the **Local** panel keeps the default dim border. The ASCII banner colours ``FABRIC`` as `#1d8e7a` and the hyphen gap plus ``TOOLS`` as `#8acfb3`. The subtitle under the banner is **dim**. Subcommand help is unchanged.
+In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is yellow (`fabric-tools` is left alone).
+
+On **root** `--help` only, the **Fabric** commands panel title and frame use teal (`#8acfb3`); the **Local** panel keeps the default dim border. The ASCII banner colours ``FABRIC`` as `#8acfb3` and the hyphen gap plus ``TOOLS`` as `#1d8e7a`. The subtitle under the banner is **dim**. Subcommand help is unchanged.
 
 ### Visual swatch
 

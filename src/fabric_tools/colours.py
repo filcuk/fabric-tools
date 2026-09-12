@@ -33,9 +33,9 @@ STYLE_HEADER = "blue"
 # Rich has no named ``teal``; truecolor keeps the Fabric panel distinct from cyan.
 STYLE_PANEL_FABRIC = "#8acfb3"
 # Root help ASCII banner: ``FABRIC`` / ``-`` / ``TOOLS``.
-STYLE_BANNER_FABRIC = "#1d8e7a"
-STYLE_BANNER_SEP = STYLE_PANEL_FABRIC
-STYLE_BANNER_TOOLS = STYLE_PANEL_FABRIC
+STYLE_BANNER_FABRIC = STYLE_PANEL_FABRIC
+STYLE_BANNER_SEP = "#1d8e7a"
+STYLE_BANNER_TOOLS = "#1d8e7a"
 
 # Column splits for the figlet banner (``FABRIC`` | ``-`` gap | ``TOOLS``).
 _BANNER_FABRIC_END = 25
@@ -54,11 +54,14 @@ HELP_STYLE_METAVAR = STYLE_METAVAR
 HELP_STYLE_USAGE = STYLE_DIM
 HELP_STYLE_USAGE_COMMAND = ""
 HELP_STYLE_COMMAND = STYLE_ID
+HELP_STYLE_FABRIC = STYLE_PANEL_FABRIC
+HELP_STYLE_POWERBI = STYLE_WARN
 HELP_PANEL_FABRIC = "Fabric"
 
 # Highlighter patterns: long options before short, and short must not match
 # inside ``--dry-run`` / ``--target`` (Typer's defaults style both as switch).
 # Usage-line tokens: command path cyan, [OPTIONS] magenta, placeholders yellow.
+# Product names in help prose: Fabric teal, Power BI yellow.
 _HELP_OPTION_HIGHLIGHTS = [
     r"(?P<option>\-\-[\w\-]+)",
     r"(?P<switch>(?<![\w\-])\-[a-zA-Z0-9]+)(?![\w\-])",
@@ -67,8 +70,10 @@ _HELP_OPTION_HIGHLIGHTS = [
     r"(?P<option>\[OPTIONS\])",
     r"(?P<metavar>\[ARGS\]\.\.\.)",
     r"(?P<command>\bCOMMAND\b)",
-    r"(?P<metavar>\b(?!OPTIONS\b|ARGS\b|COMMAND\b)[A-Z][A-Z0-9_]+\b)",
+    r"(?P<metavar>\b(?!OPTIONS\b|ARGS\b|COMMAND\b|BI\b)[A-Z][A-Z0-9_]+\b)",
     r"(?P<metavar>\[(?!OPTIONS\b|ARGS\b)[A-Z][^\]]*\])",
+    r"(?P<powerbi>Power BI)",
+    r"(?P<fabric>\bFabric\b)",
 ]
 _HELP_NEGATIVE_HIGHLIGHTS = [
     r"(?P<negative_option>\-\-[\w\-]+)",
@@ -92,7 +97,7 @@ class PaletteRow:
 
 PALETTE_ROWS: tuple[PaletteRow, ...] = (
     PaletteRow("red", STYLE_ERROR, "Error / failure"),
-    PaletteRow("yellow", STYLE_WARN, "Warning / cancel / soft fail"),
+    PaletteRow("yellow", STYLE_WARN, "Warning / cancel / soft fail; Power BI in help"),
     PaletteRow(
         "bright yellow",
         STYLE_METAVAR,
@@ -116,8 +121,12 @@ PALETTE_ROWS: tuple[PaletteRow, ...] = (
         "Muted hint; secondary columns / keys; root help subtitle; Usage: label",
     ),
     PaletteRow("blue", STYLE_HEADER, "Table header"),
-    PaletteRow("#1d8e7a", STYLE_BANNER_FABRIC, "Root help — banner FABRIC"),
-    PaletteRow("teal", STYLE_PANEL_FABRIC, "Root help — Fabric panel; banner - / TOOLS"),
+    PaletteRow(
+        "teal",
+        STYLE_PANEL_FABRIC,
+        "Root help — Fabric panel; banner FABRIC; Fabric in help",
+    ),
+    PaletteRow("#1d8e7a", STYLE_BANNER_TOOLS, "Root help — banner - / TOOLS"),
     PaletteRow("default", None, "Primary text"),
 )
 
@@ -165,6 +174,8 @@ def apply_help_theme() -> None:
                     "metavar_sep": rich_utils.STYLE_METAVAR_SEPARATOR,
                     "usage": rich_utils.STYLE_USAGE,
                     "command": HELP_STYLE_COMMAND,
+                    "fabric": HELP_STYLE_FABRIC,
+                    "powerbi": HELP_STYLE_POWERBI,
                 },
             ),
             highlighter=rich_utils.highlighter,
