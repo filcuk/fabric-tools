@@ -236,3 +236,31 @@ def test_notebook_delete_help() -> None:
     result = CliRunner().invoke(app, ["notebook", "delete", "--help"])
     assert result.exit_code == 0
     assert "Soft-delete" in result.stdout or "delete" in result.stdout.lower()
+
+
+def test_setup_status_user_facing_output(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.path_status",
+        lambda: {
+            "install_dir": r"C:\Users\demo\AppData\Local\fabric-tools\app",
+            "bin_dir": r"C:\Users\demo\AppData\Local\fabric-tools\app",
+            "exe_present": True,
+            "cmd_present": False,
+            "internal_present": False,
+            "runtime_present": True,
+            "bin_dir_on_user_path": True,
+            "which_fabric_tools": "",
+            "frozen": False,
+            "cache_present": False,
+            "install_state": "installed",
+        },
+    )
+    result = CliRunner().invoke(app, ["setup", "status"])
+    assert result.exit_code == 0
+    assert "Status:  installed" in result.stdout
+    assert "Install: C:\\Users\\demo\\AppData\\Local\\fabric-tools\\app" in result.stdout
+    assert "PATH:    registered" in result.stdout
+    assert "open a new terminal" in result.stdout
+    assert "Cache:   no" in result.stdout
+    assert "_internal" not in result.stdout
+    assert "shutil.which" not in result.stdout

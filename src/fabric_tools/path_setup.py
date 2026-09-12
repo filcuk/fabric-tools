@@ -337,17 +337,54 @@ def path_status(*, install_dir: Path | None = None) -> dict[str, str | bool]:
     internal = target_dir / INTERNAL_DIR_NAME
     on_path = _user_path_contains(str(target_dir))
     which = shutil.which("fabric-tools")
+    exe_present = exe.is_file()
+    cmd_present = cmd.is_file()
+    internal_present = internal.is_dir()
+    runtime_present = _runtime_present(target_dir)
     return {
         "install_dir": str(target_dir),
         "bin_dir": str(target_dir),
-        "exe_present": exe.is_file(),
-        "cmd_present": cmd.is_file(),
-        "internal_present": internal.is_dir(),
-        "runtime_present": _runtime_present(target_dir),
+        "exe_present": exe_present,
+        "cmd_present": cmd_present,
+        "internal_present": internal_present,
+        "runtime_present": runtime_present,
         "bin_dir_on_user_path": on_path,
         "which_fabric_tools": which or "",
         "frozen": is_frozen(),
+        "cache_present": _onefile_cache_present(),
+        "install_state": _install_state(
+            exe_present=exe_present,
+            cmd_present=cmd_present,
+            runtime_present=runtime_present,
+            internal_present=internal_present,
+        ),
     }
+
+
+def _onefile_cache_present() -> bool:
+    """True when a onefile extract cache directory exists (current or legacy)."""
+    for directory in _onefile_cache_dirs():
+        try:
+            if directory.is_dir() and any(directory.iterdir()):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _install_state(
+    *,
+    exe_present: bool,
+    cmd_present: bool,
+    runtime_present: bool,
+    internal_present: bool,
+) -> str:
+    """Return ``installed``, ``incomplete``, or ``not installed``."""
+    if (exe_present and runtime_present) or (cmd_present and not exe_present):
+        return "installed"
+    if exe_present or cmd_present or runtime_present or internal_present:
+        return "incomplete"
+    return "not installed"
 
 
 def update_staging_dir() -> Path:

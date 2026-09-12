@@ -929,16 +929,38 @@ def setup_status_cmd() -> None:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    typer.echo(f"Install directory: {status['install_dir']}")
-    typer.echo(f"Exe present:       {status['exe_present']}")
-    typer.echo(f"Cmd present:       {status['cmd_present']}")
-    typer.echo(f"_internal present: {status['internal_present']}")
-    typer.echo(f"Runtime present:   {status['runtime_present']}")
-    typer.echo(f"On user PATH:      {status['bin_dir_on_user_path']}")
-    typer.echo(f"Running frozen exe: {status['frozen']}")
-    which = status["which_fabric_tools"]
-    typer.echo(
-        f"shutil.which('fabric-tools'): {which or '(not found in this process PATH)'}"
+    def label(name: str) -> str:
+        # Align values under an invisible column after the longest label ("Install:").
+        return f"{name}:".ljust(8) + " "
+
+    state = str(status["install_state"])
+    if state == "installed":
+        state_color = typer.colors.GREEN
+    elif state == "incomplete":
+        state_color = typer.colors.YELLOW
+    else:
+        state_color = typer.colors.RED
+
+    typer.echo(label("Status"), nl=False)
+    typer.secho(state, fg=state_color)
+    typer.echo(f"{label('Install')}{status['install_dir']}")
+
+    typer.echo(label("PATH"), nl=False)
+    if status["bin_dir_on_user_path"]:
+        which = str(status["which_fabric_tools"] or "")
+        typer.secho("registered", fg=typer.colors.GREEN, nl=False)
+        if which:
+            typer.echo(f" → {which}")
+        else:
+            typer.echo(" (open a new terminal if 'fabric-tools' is not found)")
+    else:
+        typer.secho("not registered", fg=typer.colors.RED)
+
+    cache_present = bool(status["cache_present"])
+    typer.echo(label("Cache"), nl=False)
+    typer.secho(
+        "yes" if cache_present else "no",
+        fg=typer.colors.YELLOW if cache_present else typer.colors.GREEN,
     )
     raise typer.Exit(code=EXIT_OK)
 

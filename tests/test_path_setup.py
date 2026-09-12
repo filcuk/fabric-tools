@@ -235,10 +235,48 @@ def test_path_status_reports_runtime_present(
         lambda _directory: False,
     )
     monkeypatch.setattr("fabric_tools.path_setup.shutil.which", lambda _name: None)
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._onefile_cache_present",
+        lambda: False,
+    )
     status = path_status(install_dir=app)
     assert status["exe_present"] is True
     assert status["internal_present"] is False
     assert status["runtime_present"] is True
+    assert status["install_state"] == "installed"
+    assert status["cache_present"] is False
+
+
+def test_install_state_incomplete_and_not_installed() -> None:
+    from fabric_tools.path_setup import _install_state
+
+    assert (
+        _install_state(
+            exe_present=True,
+            cmd_present=False,
+            runtime_present=False,
+            internal_present=False,
+        )
+        == "incomplete"
+    )
+    assert (
+        _install_state(
+            exe_present=False,
+            cmd_present=False,
+            runtime_present=False,
+            internal_present=False,
+        )
+        == "not installed"
+    )
+    assert (
+        _install_state(
+            exe_present=False,
+            cmd_present=True,
+            runtime_present=False,
+            internal_present=False,
+        )
+        == "installed"
+    )
 
 
 def test_write_deferred_install_helper(tmp_path: Path) -> None:
