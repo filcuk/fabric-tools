@@ -561,16 +561,20 @@ def inspect_workspace_list(
         help="Workspace type filter (Personal, Workspace, AdminWorkspace).",
     ),
 ) -> None:
-    """List accessible Fabric workspaces (one line each)."""
+    """List accessible Fabric workspaces (aligned table)."""
     from fabric_tools.client import FabricApiError, FabricClient
-    from fabric_tools.inspect_cmd import InspectError, list_workspace_lines
+    from fabric_tools.inspect_cmd import (
+        InspectError,
+        list_workspaces,
+        print_workspace_table,
+    )
     from fabric_tools.status import busy
 
     try:
         with busy("Listing workspaces..."):
             client = FabricClient()
             _authenticate_client(client)
-            lines = list_workspace_lines(
+            rows = list_workspaces(
                 client,
                 name_filter=name_filter,
                 type_filter=item_type,
@@ -582,11 +586,10 @@ def inspect_workspace_list(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
 
-    if not lines:
+    if not rows:
         typer.echo("No workspaces matched.")
     else:
-        for line in lines:
-            typer.echo(line)
+        print_workspace_table(rows)
     raise typer.Exit(code=EXIT_OK)
 
 
@@ -608,6 +611,7 @@ def inspect_workspace_get(
         InspectError,
         get_workspace_detail,
         parse_workspace_get_target,
+        print_workspace_detail,
     )
     from fabric_tools.status import busy
 
@@ -616,7 +620,7 @@ def inspect_workspace_get(
         with busy("Getting workspace..."):
             client = FabricClient()
             _authenticate_client(client)
-            detail = get_workspace_detail(client, parsed)
+            row = get_workspace_detail(client, parsed)
     except InspectError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
@@ -624,7 +628,7 @@ def inspect_workspace_get(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
 
-    typer.echo(detail)
+    print_workspace_detail(row)
     raise typer.Exit(code=EXIT_OK)
 
 
@@ -652,12 +656,13 @@ def inspect_item_list(
         help="Fabric item type filter (Notebook, Dataflow, Report, …).",
     ),
 ) -> None:
-    """List Fabric items in a workspace (one line each)."""
+    """List Fabric items in a workspace (aligned table)."""
     from fabric_tools.client import FabricApiError, FabricClient
     from fabric_tools.inspect_cmd import (
         InspectError,
-        list_item_lines,
+        list_items,
         parse_item_list_target,
+        print_item_table,
     )
     from fabric_tools.status import busy
 
@@ -666,7 +671,7 @@ def inspect_item_list(
         with busy("Listing items..."):
             client = FabricClient()
             _authenticate_client(client)
-            lines = list_item_lines(
+            rows = list_items(
                 client,
                 parsed,
                 name_filter=name_filter,
@@ -679,11 +684,10 @@ def inspect_item_list(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
 
-    if not lines:
+    if not rows:
         typer.echo("No items matched.")
     else:
-        for line in lines:
-            typer.echo(line)
+        print_item_table(rows)
     raise typer.Exit(code=EXIT_OK)
 
 
@@ -705,6 +709,7 @@ def inspect_item_get(
         InspectError,
         get_item_detail,
         parse_item_get_target,
+        print_item_detail,
     )
     from fabric_tools.status import busy
 
@@ -713,7 +718,7 @@ def inspect_item_get(
         with busy("Getting item..."):
             client = FabricClient()
             _authenticate_client(client)
-            detail = get_item_detail(client, parsed)
+            row = get_item_detail(client, parsed)
     except InspectError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
@@ -721,7 +726,7 @@ def inspect_item_get(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_API) from exc
 
-    typer.echo(detail)
+    print_item_detail(row)
     raise typer.Exit(code=EXIT_OK)
 
 

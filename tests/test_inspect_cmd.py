@@ -10,9 +10,9 @@ from fabric_tools.inspect_cmd import (
     filter_by_name,
     filter_by_type,
     format_item_detail,
-    format_item_line,
+    format_item_table,
     format_workspace_detail,
-    format_workspace_line,
+    format_workspace_table,
     parse_item_get_target,
     parse_item_list_target,
     parse_workspace_get_target,
@@ -58,42 +58,88 @@ def test_apply_filters_name_then_type() -> None:
     assert matched == [rows[0]]
 
 
-def test_format_workspace_line() -> None:
-    line = format_workspace_line(
-        {
-            "displayName": "Finance",
-            "id": WS,
-            "type": "Workspace",
-            "capacityId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "domainId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-        }
+def test_format_workspace_table() -> None:
+    table = format_workspace_table(
+        [
+            {
+                "displayName": "Finance",
+                "id": WS,
+                "type": "Workspace",
+                "capacityId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "domainId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            }
+        ]
     )
-    assert line.startswith("Finance  id=")
-    assert f"id={WS}" in line
-    assert "type=Workspace" in line
-    assert "capacityId=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" in line
-    assert "domainId=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" in line
+    lines = table.splitlines()
+    assert lines[0].startswith("NAME")
+    assert "ID" in lines[0]
+    assert "TYPE" in lines[0]
+    assert "CAPACITY" in lines[0]
+    assert "DOMAIN" in lines[0]
+    assert "Finance" in lines[1]
+    assert WS in lines[1]
+    assert "Workspace" in lines[1]
+    assert "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" in lines[1]
+    assert "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" in lines[1]
 
 
-def test_format_workspace_line_missing_optional() -> None:
-    line = format_workspace_line(
-        {"displayName": "My workspace", "id": WS, "type": "Personal"}
+def test_format_workspace_table_missing_optional() -> None:
+    table = format_workspace_table(
+        [{"displayName": "My workspace", "id": WS, "type": "Personal"}]
     )
-    assert "capacityId=-" in line
-    assert "domainId=-" in line
+    body = table.splitlines()[1]
+    assert "My workspace" in body
+    assert "Personal" in body
+    # Trailing capacity and domain placeholders.
+    assert body.rstrip().endswith("-")
+    cells = body.split()
+    assert cells[-2:] == ["-", "-"]
 
 
-def test_format_item_line_includes_target() -> None:
-    line = format_item_line(
-        {
-            "displayName": "ETL",
-            "id": ITEM,
-            "type": "Notebook",
-            "workspaceId": WS,
-        }
+def test_format_item_table_includes_target() -> None:
+    table = format_item_table(
+        [
+            {
+                "displayName": "ETL",
+                "id": ITEM,
+                "type": "Notebook",
+                "workspaceId": WS,
+            }
+        ]
     )
-    assert f"target={WS}:{ITEM}" in line
-    assert "type=Notebook" in line
+    lines = table.splitlines()
+    assert lines[0].startswith("NAME")
+    assert "TARGET" in lines[0]
+    assert "TYPE" in lines[0]
+    assert "ETL" in lines[1]
+    assert f"{WS}:{ITEM}" in lines[1]
+    assert "Notebook" in lines[1]
+    # Item id appears once (inside TARGET), not as a separate column.
+    assert lines[1].count(ITEM) == 1
+
+
+def test_format_tables_align_columns() -> None:
+    table = format_item_table(
+        [
+            {
+                "displayName": "A",
+                "id": ITEM,
+                "type": "Notebook",
+                "workspaceId": WS,
+            },
+            {
+                "displayName": "Longer name",
+                "id": ITEM,
+                "type": "Report",
+                "workspaceId": WS,
+            },
+        ]
+    )
+    lines = table.splitlines()
+    # Invisible columns: same character positions for TARGET start.
+    target_col = lines[0].index("TARGET")
+    assert lines[1][target_col : target_col + len(f"{WS}:{ITEM}")] == f"{WS}:{ITEM}"
+    assert lines[2][target_col : target_col + len(f"{WS}:{ITEM}")] == f"{WS}:{ITEM}"
 
 
 def test_format_workspace_detail_skips_empty() -> None:
@@ -106,7 +152,12 @@ def test_format_workspace_detail_skips_empty() -> None:
             "capacityId": None,
         }
     )
-    assert detail == f"id: {WS}\ndisplayName: Finance\ntype: Workspace"
+    key_w = len("displayName")
+    assert detail == (
+        f"{'id':<{key_w}}  {WS}\n"
+        f"{'displayName':<{key_w}}  Finance\n"
+        f"{'type':<{key_w}}  Workspace"
+    )
 
 
 def test_format_item_detail() -> None:
@@ -118,9 +169,13 @@ def test_format_item_detail() -> None:
             "workspaceId": WS,
         }
     )
-    assert f"id: {ITEM}" in detail
-    assert "type: Notebook" in detail
-    assert f"workspaceId: {WS}" in detail
+    key_w = len("displayName")
+    assert detail == (
+        f"{'id':<{key_w}}  {ITEM}\n"
+        f"{'displayName':<{key_w}}  ETL\n"
+        f"{'type':<{key_w}}  Notebook\n"
+        f"{'workspaceId':<{key_w}}  {WS}"
+    )
 
 
 def test_parse_workspace_get_target_ok() -> None:

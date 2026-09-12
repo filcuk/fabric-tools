@@ -2,12 +2,35 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from fabric_tools.parsing import ParseError, Target, parse_target_values
 
 if TYPE_CHECKING:
     from fabric_tools.client import FabricClient
+
+_COL_GAP = "  "
+_DIM_STYLE = "dim"
+_HEADER_STYLE = "bold cyan"
+_WORKSPACE_DETAIL_KEYS = (
+    "id",
+    "displayName",
+    "description",
+    "type",
+    "capacityId",
+    "capacityRegion",
+    "capacityAssignmentProgress",
+    "domainId",
+)
+_ITEM_DETAIL_KEYS = (
+    "id",
+    "displayName",
+    "description",
+    "type",
+    "workspaceId",
+    "folderId",
+)
 
 
 class InspectError(ValueError):
@@ -47,21 +70,19 @@ def apply_filters(
     return filter_by_type(filter_by_name(rows, name_filter), type_filter)
 
 
-def format_workspace_line(workspace: dict[str, Any]) -> str:
-    """One-line workspace summary for ``inspect workspace list``."""
-    name = _field(workspace, "displayName")
-    workspace_id = _field(workspace, "id")
-    workspace_type = _field(workspace, "type")
-    capacity_id = _field(workspace, "capacityId")
-    domain_id = _field(workspace, "domainId")
+def workspace_table_cells(workspace: dict[str, Any]) -> tuple[str, str, str, str, str]:
+    """Column values for one workspace list row."""
     return (
-        f"{name}  id={workspace_id}  type={workspace_type}  "
-        f"capacityId={capacity_id}  domainId={domain_id}"
+        _field(workspace, "displayName"),
+        _field(workspace, "id"),
+        _field(workspace, "type"),
+        _field(workspace, "capacityId"),
+        _field(workspace, "domainId"),
     )
 
 
-def format_item_line(item: dict[str, Any]) -> str:
-    """One-line item summary for ``inspect item list``."""
+def item_table_cells(item: dict[str, Any]) -> tuple[str, str, str]:
+    """Column values for one item list row (NAME, TARGET, TYPE)."""
     name = _field(item, "displayName")
     item_id = _field(item, "id")
     item_type = _field(item, "type")
@@ -70,42 +91,59 @@ def format_item_line(item: dict[str, Any]) -> str:
         target = f"{workspace_id}:{item_id}"
     else:
         target = "-"
-    return (
-        f"{name}  id={item_id}  type={item_type}  "
-        f"workspaceId={workspace_id}  target={target}"
+    return (name, target, item_type)
+
+
+def format_workspace_table(rows: Sequence[dict[str, Any]]) -> str:
+    """Plain aligned workspace table (header + rows) for tests."""
+    return _format_plain_table(
+        ("NAME", "ID", "TYPE", "CAPACITY", "DOMAIN"),
+        [workspace_table_cells(row) for row in rows],
+    )
+
+
+def format_item_table(rows: Sequence[dict[str, Any]]) -> str:
+    """Plain aligned item table (header + rows) for tests."""
+    return _format_plain_table(
+        ("NAME", "TARGET", "TYPE"),
+        [item_table_cells(row) for row in rows],
+    )
+
+
+def print_workspace_table(rows: Sequence[dict[str, Any]]) -> None:
+    """Print aligned workspace list with dim id/type/capacity/domain."""
+    _print_table(
+        ("NAME", "ID", "TYPE", "CAPACITY", "DOMAIN"),
+        [workspace_table_cells(row) for row in rows],
+    )
+
+
+def print_item_table(rows: Sequence[dict[str, Any]]) -> None:
+    """Print aligned item list with dim target/type."""
+    _print_table(
+        ("NAME", "TARGET", "TYPE"),
+        [item_table_cells(row) for row in rows],
     )
 
 
 def format_workspace_detail(workspace: dict[str, Any]) -> str:
-    """Multi-line workspace detail for ``inspect workspace get``."""
-    return _format_detail(
-        workspace,
-        (
-            "id",
-            "displayName",
-            "description",
-            "type",
-            "capacityId",
-            "capacityRegion",
-            "capacityAssignmentProgress",
-            "domainId",
-        ),
-    )
+    """Aligned key/value workspace detail for ``inspect workspace get``."""
+    return _format_detail(workspace, _WORKSPACE_DETAIL_KEYS)
 
 
 def format_item_detail(item: dict[str, Any]) -> str:
-    """Multi-line item detail for ``inspect item get``."""
-    return _format_detail(
-        item,
-        (
-            "id",
-            "displayName",
-            "description",
-            "type",
-            "workspaceId",
-            "folderId",
-        ),
-    )
+    """Aligned key/value item detail for ``inspect item get``."""
+    return _format_detail(item, _ITEM_DETAIL_KEYS)
+
+
+def print_workspace_detail(workspace: dict[str, Any]) -> None:
+    """Print aligned workspace detail (dim keys, default values)."""
+    _print_detail(workspace, _WORKSPACE_DETAIL_KEYS)
+
+
+def print_item_detail(item: dict[str, Any]) -> None:
+    """Print aligned item detail (dim keys, default values)."""
+    _print_detail(item, _ITEM_DETAIL_KEYS)
 
 
 def parse_workspace_get_target(raw: str) -> Target:
@@ -136,34 +174,33 @@ def parse_item_get_target(raw: str) -> Target:
     return target
 
 
-def list_workspace_lines(
+def list_workspaces(
     client: FabricClient,
     *,
     name_filter: str | None = None,
     type_filter: str | None = None,
-) -> list[str]:
-    """List accessible workspaces as one-line summaries."""
-    rows = apply_filters(
+) -> list[dict[str, Any]]:
+    """List accessible workspaces (filtered dict rows)."""
+    return apply_filters(
         client.list_workspaces(),
         name_filter=name_filter,
         type_filter=type_filter,
     )
-    return [format_workspace_line(row) for row in rows]
 
 
-def get_workspace_detail(client: FabricClient, target: Target) -> str:
-    """Return multi-line detail for one workspace."""
-    return format_workspace_detail(client.get_workspace(target.workspace_id))
+def get_workspace_detail(client: FabricClient, target: Target) -> dict[str, Any]:
+    """Return the Fabric payload for one workspace."""
+    return client.get_workspace(target.workspace_id)
 
 
-def list_item_lines(
+def list_items(
     client: FabricClient,
     target: Target,
     *,
     name_filter: str | None = None,
     type_filter: str | None = None,
-) -> list[str]:
-    """List items in a workspace as one-line summaries.
+) -> list[dict[str, Any]]:
+    """List items in a workspace (filtered dict rows).
 
     When *type_filter* is set, it is passed to the Fabric list API as ``type``
     and also applied client-side for consistency.
@@ -175,17 +212,14 @@ def list_item_lines(
         entry = dict(row)
         entry.setdefault("workspaceId", target.workspace_id)
         normalized.append(entry)
-    normalized = apply_filters(
-        normalized, name_filter=name_filter, type_filter=type_filter
-    )
-    return [format_item_line(row) for row in normalized]
+    return apply_filters(normalized, name_filter=name_filter, type_filter=type_filter)
 
 
-def get_item_detail(client: FabricClient, target: Target) -> str:
-    """Return multi-line detail for one item."""
+def get_item_detail(client: FabricClient, target: Target) -> dict[str, Any]:
+    """Return the Fabric payload for one item."""
     if target.item_id is None:
         raise InspectError("inspect item get requires --target <workspaceId>:<itemId>")
-    return format_item_detail(client.get_item(target.workspace_id, target.item_id))
+    return client.get_item(target.workspace_id, target.item_id)
 
 
 def _parse_single_target(raw: str) -> Target:
@@ -208,15 +242,95 @@ def _field(row: dict[str, Any], key: str) -> str:
     return str(value)
 
 
-def _format_detail(row: dict[str, Any], keys: tuple[str, ...]) -> str:
-    lines: list[str] = []
+def _detail_pairs(
+    row: dict[str, Any], keys: tuple[str, ...]
+) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
     for key in keys:
         if key not in row:
             continue
         value = row.get(key)
         if value is None or value == "":
             continue
-        lines.append(f"{key}: {value}")
-    if not lines:
+        pairs.append((key, str(value)))
+    return pairs
+
+
+def _format_detail(row: dict[str, Any], keys: tuple[str, ...]) -> str:
+    pairs = _detail_pairs(row, keys)
+    if not pairs:
         return "(no fields)"
+    key_w = max(len(key) for key, _ in pairs)
+    return "\n".join(f"{key:<{key_w}}{_COL_GAP}{value}" for key, value in pairs)
+
+
+def _print_detail(row: dict[str, Any], keys: tuple[str, ...]) -> None:
+    from rich.console import Console
+    from rich.text import Text
+
+    pairs = _detail_pairs(row, keys)
+    if not pairs:
+        Console().print("(no fields)")
+        return
+    key_w = max(len(key) for key, _ in pairs)
+    console = Console()
+    for key, value in pairs:
+        line = Text()
+        line.append(f"{key:<{key_w}}", style=_DIM_STYLE)
+        line.append(_COL_GAP)
+        line.append(value)
+        console.print(line)
+
+
+def _column_widths(
+    headers: Sequence[str],
+    rows: Sequence[Sequence[str]],
+) -> list[int]:
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+    return widths
+
+
+def _pad_row(cells: Sequence[str], widths: Sequence[int]) -> list[str]:
+    return [f"{cell:<{widths[i]}}" for i, cell in enumerate(cells)]
+
+
+def _format_plain_table(
+    headers: Sequence[str],
+    rows: Sequence[Sequence[str]],
+) -> str:
+    widths = _column_widths(headers, rows)
+    lines = [_COL_GAP.join(_pad_row(headers, widths))]
+    for row in rows:
+        lines.append(_COL_GAP.join(_pad_row(row, widths)))
     return "\n".join(lines)
+
+
+def _print_table(
+    headers: Sequence[str],
+    rows: Sequence[Sequence[str]],
+) -> None:
+    from rich.console import Console
+    from rich.text import Text
+
+    widths = _column_widths(headers, rows)
+    console = Console()
+
+    header_line = Text()
+    for i, cell in enumerate(_pad_row(headers, widths)):
+        if i:
+            header_line.append(_COL_GAP)
+        header_line.append(cell, style=_HEADER_STYLE)
+    console.print(header_line)
+
+    for row in rows:
+        line = Text()
+        padded = _pad_row(row, widths)
+        for i, cell in enumerate(padded):
+            if i:
+                line.append(_COL_GAP)
+            # Column 0 (NAME) default; remaining columns dim (id/target/type/…).
+            line.append(cell, style=_DIM_STYLE if i > 0 else None)
+        console.print(line)
