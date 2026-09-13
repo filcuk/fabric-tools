@@ -17,6 +17,7 @@ def test_root_help_lists_dataflow_gen1() -> None:
     assert "udf" in result.stdout
     assert "semantic-model" in result.stdout
     assert "report" in result.stdout
+    assert "variable-library" in result.stdout
     assert "paginated-report" in result.stdout
     assert "setup" in result.stdout
     assert "Local" in result.stdout
@@ -53,12 +54,15 @@ def test_root_help_orders_help_and_setup_first() -> None:
         "inspect",
         "dataflow-gen1",
         "dataflow",
+        "environment",
         "notebook",
+        "org-app",
         "paginated-report",
         "pipeline",
         "report",
         "semantic-model",
         "udf",
+        "variable-library",
     ]
     assert names[: len(expected)] == expected
     for name in expected:
@@ -217,6 +221,16 @@ def test_paginated_report_help_lists_commands() -> None:
     for name in ("download", "deploy", "compare", "delete"):
         assert name in result.stdout
     assert "paginated" in result.stdout.lower() or ".rdl" in result.stdout.lower()
+
+
+def test_variable_library_help_lists_commands_without_remap() -> None:
+    result = CliRunner().invoke(app, ["variable-library", "--help"])
+    assert result.exit_code == 0
+    for name in ("download", "deploy", "compare", "delete"):
+        assert name in result.stdout
+    deploy = CliRunner().invoke(app, ["variable-library", "deploy", "--help"])
+    assert deploy.exit_code == 0
+    assert "--remap" not in deploy.stdout
 
 
 def test_report_independent_on_download_deploy_compare_not_delete() -> None:

@@ -16,7 +16,7 @@ from fabric_tools.semantic_model.definition import (
     pack_definition,
     unpack_definition,
 )
-from fabric_tools.status import update as update_status
+from fabric_tools.status import BatchProgress, status_detail
 
 ITEM_TYPE = "SemanticModel"
 
@@ -238,14 +238,12 @@ def update_semantic_model_definition(
 
 
 def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        dest = item.file
-        if target is not None and dest is not None:
-            update_status(f"Downloading {target.label()} -> {dest}...")
-        else:
-            update_status("Downloading semantic model...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Downloading", "semantic model", item_id))
         results.append(download_semantic_model(client, item))
     return results
 
@@ -256,6 +254,7 @@ def run_deploy_batch(
     *,
     display_names: list[str] | None = None,
 ) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(items):
@@ -264,16 +263,13 @@ def run_deploy_batch(
             name = display_names[index]
         target = item.target
         if target is not None and target.is_create:
-            label = name or (
-                display_name_from_path(item.file)
-                if item.file is not None
-                else "semantic model"
-            )
-            update_status(f"Creating '{label}' in {target.workspace_id}...")
+            progress.advance(status_detail("Creating", "semantic model"))
         elif target is not None:
-            update_status(f"Deploying to {target.label()}...")
+            progress.advance(
+                status_detail("Deploying", "semantic model", target.item_id)
+            )
         else:
-            update_status("Deploying semantic model...")
+            progress.advance(status_detail("Deploying", "semantic model"))
         results.append(
             deploy_semantic_model(
                 client,
@@ -286,13 +282,12 @@ def run_deploy_batch(
 
 
 def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        if target is not None:
-            update_status(f"Deleting {target.label()}...")
-        else:
-            update_status("Deleting semantic model...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Deleting", "semantic model", item_id))
         results.append(delete_semantic_model(client, item))
     return results
 

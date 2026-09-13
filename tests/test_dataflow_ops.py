@@ -93,6 +93,7 @@ class FakeClient:
         self,
         *,
         definitions_by_item: dict[str, dict[str, Any]] | None = None,
+        apply_changes_error: FabricApiError | None = None,
     ) -> None:
         self.calls: list[tuple[str, str, dict[str, Any] | None, Any]] = []
         self.definitions_by_item = definitions_by_item or {
@@ -109,6 +110,8 @@ class FakeClient:
         self.last_update_definition: dict[str, Any] | None = None
         self.last_update_params: dict[str, Any] | None = None
         self.deleted: list[tuple[str, str]] = []
+        self.apply_changes: list[tuple[str, str]] = []
+        self.apply_changes_error = apply_changes_error
 
     def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
         return {
@@ -117,6 +120,17 @@ class FakeClient:
             "displayName": "Origin Flow",
             "type": "Dataflow",
         }
+
+    def run_dataflow_apply_changes(self, workspace_id: str, dataflow_id: str) -> Any:
+        path = (
+            f"/workspaces/{workspace_id}/dataflows/{dataflow_id}"
+            "/jobs/applyChanges/instances"
+        )
+        self.calls.append(("POST", path, None, None))
+        self.apply_changes.append((workspace_id, dataflow_id))
+        if self.apply_changes_error is not None:
+            raise self.apply_changes_error
+        return None
 
     def request(
         self,
@@ -265,3 +279,47 @@ def test_deploy_create_applies_guid_map_to_mashup(tmp_path: Path) -> None:
     assert lh_dst in parts["mashup.pq"]
     assert lh_src not in parts["mashup.pq"]
     assert lh_src in (src / "mashup.pq").read_text(encoding="utf-8")
+
+
+def test_deploy_publish_after_create(tmp_path: Path) -> None:
+    client = FakeClient()
+    src = _write_local_dataflow(tmp_path / "Sales.Dataflow")
+    item = WorkItem(Target(WS), src)
+    result = deploy_dataflow(client, item, display_name="Sales", publish=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert "(published)" in result.message
+    assert client.apply_changes == [(WS, CREATED)]
+
+
+def test_deploy_publish_after_overwrite(tmp_path: Path) -> None:
+    client = FakeClient()
+    src = _write_local_dataflow(tmp_path / "Sales.Dataflow")
+    item = WorkItem(Target(WS, DF), src)
+    result = deploy_dataflow(client, item, publish=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert "(published)" in result.message
+    assert client.apply_changes == [(WS, DF)]
+
+
+def test_deploy_publish_failure_keeps_definition_applied(tmp_path: Path) -> None:
+    client = FakeClient(
+        apply_changes_error=FabricApiError("apply failed", status_code=400)
+    )
+    src = _write_local_dataflow(tmp_path / "Sales.Dataflow")
+    item = WorkItem(Target(WS, DF), src)
+    result = deploy_dataflow(client, item, publish=True)  # type: ignore[arg-type]
+    assert not result.ok
+    assert "updated" in result.message
+    assert "publish (Apply Changes) failed" in result.message
+    assert client.last_update_definition is not None
+    assert client.apply_changes == [(WS, DF)]
+
+
+def test_deploy_without_publish_skips_apply_changes(tmp_path: Path) -> None:
+    client = FakeClient()
+    src = _write_local_dataflow(tmp_path / "Sales.Dataflow")
+    item = WorkItem(Target(WS, DF), src)
+    result = deploy_dataflow(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert "(published)" not in result.message
+    assert client.apply_changes == []

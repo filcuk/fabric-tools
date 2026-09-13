@@ -16,7 +16,7 @@ from fabric_tools.dataflow.definition import (
 )
 from fabric_tools.guid_map import GuidMapError, apply_guid_map_to_definition
 from fabric_tools.parsing import WorkItem
-from fabric_tools.status import update as update_status
+from fabric_tools.status import BatchProgress, status_detail
 
 ITEM_TYPE = "Dataflow"
 
@@ -67,11 +67,15 @@ def deploy_dataflow(
     display_name: str | None = None,
     origin_definition_cache: dict[str, dict[str, Any]] | None = None,
     guid_map: dict[str, str] | None = None,
+    publish: bool = False,
 ) -> OpResult:
     """Create or overwrite one Dataflow Gen2 from a local folder or Fabric origin.
 
     When *guid_map* is set, source→target GUID tokens in definition text parts
     are rewritten in memory before create/update (local folders are not edited).
+
+    When *publish* is True, run Apply Changes after a successful create/update
+    so the definition is ready for refresh (same preparation as UI Save).
     """
     if item.target is None:
         return OpResult(False, "deploy requires a --target")
@@ -130,12 +134,16 @@ def deploy_dataflow(
                 target.workspace_id,
             )
         item_id = str(created.get("id") or "")
-        return OpResult(
-            True,
+        base = (
             f"created {target.workspace_id}:{item_id} from {source_label} "
-            f"(name='{name}'){remap_suffix}",
-            target.workspace_id,
-            item_id or None,
+            f"(name='{name}'){remap_suffix}"
+        )
+        return _maybe_publish(
+            client,
+            workspace_id=target.workspace_id,
+            item_id=item_id or None,
+            base_message=base,
+            publish=publish,
         )
 
     assert target.item_id is not None
@@ -154,11 +162,13 @@ def deploy_dataflow(
             target.workspace_id,
             target.item_id,
         )
-    return OpResult(
-        True,
-        f"updated {target.label()} from {source_label}{remap_suffix}",
-        target.workspace_id,
-        target.item_id,
+    base = f"updated {target.label()} from {source_label}{remap_suffix}"
+    return _maybe_publish(
+        client,
+        workspace_id=target.workspace_id,
+        item_id=target.item_id,
+        base_message=base,
+        publish=publish,
     )
 
 
@@ -243,14 +253,12 @@ def update_dataflow_definition(
 
 
 def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        dest = item.file
-        if target is not None and dest is not None:
-            update_status(f"Downloading {target.label()} -> {dest}...")
-        else:
-            update_status("Downloading dataflow...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Downloading", "dataflow", item_id))
         results.append(download_dataflow(client, item))
     return results
 
@@ -261,7 +269,9 @@ def run_deploy_batch(
     *,
     display_names: list[str] | None = None,
     guid_maps: list[dict[str, str] | None] | None = None,
+    publish: bool = False,
 ) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(items):
@@ -273,16 +283,11 @@ def run_deploy_batch(
             guid_map = guid_maps[index]
         target = item.target
         if target is not None and target.is_create:
-            label = name or (
-                display_name_from_path(item.file)
-                if item.file is not None
-                else "dataflow"
-            )
-            update_status(f"Creating '{label}' in {target.workspace_id}...")
+            progress.advance(status_detail("Creating", "dataflow"))
         elif target is not None:
-            update_status(f"Deploying to {target.label()}...")
+            progress.advance(status_detail("Deploying", "dataflow", target.item_id))
         else:
-            update_status("Deploying dataflow...")
+            progress.advance(status_detail("Deploying", "dataflow"))
         results.append(
             deploy_dataflow(
                 client,
@@ -290,19 +295,53 @@ def run_deploy_batch(
                 display_name=name,
                 origin_definition_cache=origin_cache,
                 guid_map=guid_map,
+                publish=publish,
             )
         )
     return results
 
 
+def _maybe_publish(
+    client: FabricClient,
+    *,
+    workspace_id: str,
+    item_id: str | None,
+    base_message: str,
+    publish: bool,
+) -> OpResult:
+    if not publish:
+        return OpResult(True, base_message, workspace_id, item_id)
+    if not item_id:
+        return OpResult(
+            False,
+            f"{base_message}; publish skipped: missing dataflow id after deploy",
+            workspace_id,
+            None,
+        )
+    try:
+        client.run_dataflow_apply_changes(workspace_id, item_id)
+    except FabricApiError as exc:
+        return OpResult(
+            False,
+            f"{base_message}; publish (Apply Changes) failed: {exc}",
+            workspace_id,
+            item_id,
+        )
+    return OpResult(
+        True,
+        f"{base_message} (published)",
+        workspace_id,
+        item_id,
+    )
+
+
 def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        if target is not None:
-            update_status(f"Deleting {target.label()}...")
-        else:
-            update_status("Deleting dataflow...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Deleting", "dataflow", item_id))
         results.append(delete_dataflow(client, item))
     return results
 

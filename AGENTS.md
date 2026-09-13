@@ -6,14 +6,15 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 
 ## Project goal
 
-`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), semantic model sync (`semantic-model`), report sync (`report`; joins a packable model by default), paginated report sync (`paginated-report`; `.rdl` via Power BI), and read-only `inspect` (list/get workspaces and items).
+`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), Environment sync (`environment`), Variable Library sync (`variable-library`), Org App sync (`org-app`), semantic model sync (`semantic-model`), report sync (`report`; joins a packable model by default), paginated report sync (`paginated-report`; `.rdl` via Power BI), and read-only `inspect` (list/get workspaces and items).
 
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` + `report` + `paginated-report` + `inspect` groups, `env` (list/set/unset), `manifest` (inspect/list/delete/move), `setup`, hidden `debug` (`debug color` palette swatch)
+  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `environment` + `variable-library` + `org-app` + `semantic-model` + `report` + `paginated-report` + `inspect` groups, `env` (list/set/unset), `manifest` (inspect/list/delete/move), `pack` (download/deploy/compare/delete), `setup`, hidden `debug` (`debug color` palette swatch)
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
-  - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (`kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `semantic-model` \| `report` \| `paginated-report`)
+  - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (schema v3 packs: top-level `kind: "pack"`; per-entry `kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `environment` \| `variable-library` \| `org-app` \| `semantic-model` \| `report` \| `paginated-report`; optional pack/entry `remap` path refs)
+  - `pack_run.py` — multi-kind pack orchestration (`fabric-tools pack …`)
   - `colours.py` — CLI colour roles, help theme, `debug color` swatch (see [DESIGN.md](DESIGN.md))
   - `inspect_cmd.py` — Fabric workspace/item list/get helpers (filters, formatters, `--target` shapes)
   - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; Nuitka onefile extracts under `%LOCALAPPDATA%\fabric-tools\cache`, install copies to `app\`; `setup update` downloads release exe and deferred-installs)
@@ -24,7 +25,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `definition_parts.py` — recursive folder ↔ InlineBase64 definition parts
   - `guid_map.py` — deploy `--remap` / `-r` JSON (source GUID → target GUID) load/pair/apply to definition text parts
   - `parsing.py` — `--target` / `--file` / `--origin` parsing and mode validation (`download` \| `deploy` \| `compare` \| `delete`; `deploy_create_only` for Gen1)
-  - `validate.py` — `--dry-run` remote/local checks (Fabric notebooks + Dataflow Gen2 + Power BI Gen1 + DataPipeline + UDF + semantic model + report + paginated-report)
+  - `validate.py` — `--dry-run` remote/local checks (Fabric notebooks + Dataflow Gen2 + Power BI Gen1 + DataPipeline + UDF + Environment + Variable Library + Org App + semantic model + report + paginated-report)
   - `confirm.py` — overwrite / create / delete prompts
   - `status.py` — Rich spinner / status line for auth and long-running work
   - `exit_codes.py` — CLI exit code constants
@@ -35,6 +36,9 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `dataflow_gen1/` — `model.json` helpers (`definition.py`); download/create/delete (`ops.py`); compare (`compare.py`)
   - `pipeline/` — DataPipeline Git-style folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `udf/` — User Data Function folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
+  - `environment/` — Environment recursive folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
+  - `variable_library/` — Variable Library known-part folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
+  - `org_app/` — Org App folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `semantic_model/` — semantic model folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `report/` — report folder + PBIX (`definition.py`); join/bind rewrite; download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `paginated_report/` — `.rdl` helpers (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
@@ -58,15 +62,15 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 ### Shared
 
 - Targets: `--target <workspaceId>:<artifactId>` (create: `--target <workspaceId>` only). Repeatable or comma-separated. Overwrite CSV is one workspace per flag value (bare artifact GUIDs inherit that workspace; use separate `-t` for other workspaces). Create CSV may list multiple workspaces.
-- Files: `--file` paired 1:1 with targets, or one file broadcast to N targets (deploy/download). Download may omit `--file` (defaults to remote display name + `.ipynb` / `.Dataflow` / `.json` / `.DataPipeline` / `.UserDataFunction` / `.rdl` in the current folder).
+- Files: `--file` paired 1:1 with targets, or one file broadcast to N targets (deploy/download). Download may omit `--file` (defaults to remote display name + the kind's local extension, including `.VariableLibrary`, in the current folder).
 - Origins: `--origin` / `-o` `<workspaceId>:<artifactId>` for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as targets; deploy may broadcast one origin to N targets; compare is 1:1)
 - Delete: `--target` workspace:artifact only (no `--file`/`--origin`); optional `-m` load when entries have `itemId` (manifest not rewritten after delete)
-- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites (create execute backfills `itemId`). Schema v1 = file sources; v2 adds origin fields. `manifest inspect` one-line summaries in cwd; `manifest inspect -m` dumps one file, or one-line summaries when `-m` is a folder; `manifest list` filenames only; `manifest delete` / `move` local `.ftdep` files (confirm unless `-s`). Interactive may offer save after execute or dry-run.
+- Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites when content changed (create execute backfills `itemId`; identical content is left alone with no “Wrote manifest” line). **Schema v3 only** (`kind: "pack"`; each entry has its own `kind`; schemaVersion 1/2 unsupported). Optional pack-level and per-entry `remap` path refs to GUID map JSON (relative to the `.ftdep`); CLI `--remap` / `-r` overrides for that run. Homogeneous packs work with kind-specific commands; mixed packs use `pack download|deploy|compare|delete`. Deploy order starts semantic-model → report → variable-library → environment, then consumers and other kinds; delete reverses kind groups. `manifest inspect` one-line summaries in cwd; `manifest inspect -m` dumps one file, or one-line summaries when `-m` is a folder; `manifest list` filenames only; `manifest delete` / `move` local `.ftdep` files (confirm unless `-s`). Interactive may offer save after execute or dry-run (optional pack-level remap path).
 - Flags: `--silent`, `--dry-run`
 - Auth: interactive default; Windows WAM silent reuse, then interactive WAM (skipped in IDE/non-TTY, otherwise 45s timeout) then browser then device code; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` (not supported for `udf`)
 - Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute and `setup install` / `setup update` (install) / `setup uninstall` / `setup clean`. Allows download, compare, `inspect`, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, `setup update --check`. `--silent` does not override.
 - Env report: `fabric-tools env list` lists supported env vars (`FABRIC_TOOLS_*`, `AZURE_*`) and current process values (`AZURE_CLIENT_SECRET` redacted). `env set` / `env unset` persist catalogued names in the Windows user environment (new terminal needed for other shells; secret values never echoed). Allowed under read-only.
-- Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup clean` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` (install) is frozen exe only. Release builds use Nuitka onefile (`scripts/build_exe.ps1`). `setup status` uses the same key/value layout as inspect get (dim right-aligned keys, no colons; see [DESIGN.md](DESIGN.md)); it shows a Version row (installed PE version when available) and runs an async GitHub update check (yellow `installed < latest` when behind).
+- Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup clean` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` downloads the release `fabric-tools.exe` and deferred-installs into `%LOCALAPPDATA%\fabric-tools\app` (works from the installed/portable exe or a Python install; install dir is prepended on user PATH). Release builds use Nuitka onefile (`scripts/build_exe.ps1`). `setup status` uses the same key/value layout as inspect get (dim right-aligned keys, no colons; see [DESIGN.md](DESIGN.md)); it shows a Version row (installed PE version when available) and runs an async GitHub update check (yellow `installed < latest` when behind).
 
 ### Inspect (`inspect`)
 
@@ -95,7 +99,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Compare: multi-part unified diff (JSON parts pretty-printed with `sort_keys`; mashup as text)
 - Delete: Fabric soft delete (`DELETE .../dataflows/{id}`)
 - Connection IDs / lakehouse GUIDs in mashup and metadata are environment-specific; use deploy `--remap` / `-r` to rewrite source→target GUIDs in memory (skips `.platform`)
-- Publish is not auto-triggered after definition sync; UI save / Publish may still be needed before refresh
+- Deploy alone does not publish; opt-in `--publish` / `-p` runs Fabric Apply Changes after each successful create/update (prepare for refresh; same preparation as UI Save). User identity only (not service principal)
 - Deploy `--remap` / `-r`: JSON object of GUID→GUID; one file may broadcast to all targets, or pair 1:1 with targets (not on download/compare/delete)
 
 ### Dataflow Gen1
@@ -127,6 +131,33 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Deploy `--remap` / `-r`: rewrite source→target GUIDs in definition text before create/update (skips `.platform` / `.whl`); overwrite `connectedDataSources` preserve still runs after remap
 - Compare: multi-part unified diff (JSON pretty-printed; `.whl` parts reported as `<binary N bytes>`)
 - Delete: Fabric soft delete (`DELETE .../userDataFunctions/{id}`)
+
+### Org Apps (`org-app`)
+
+- Format: Fabric Git-style `*.OrgApp` folder (`definition.json` required; optional `.platform`)
+- API: Fabric Org App (`/workspaces/{ws}/orgApps/...` + create via `/items` with type `OrgApp`)
+- Deploy: create or overwrite (`updateDefinition`; `updateMetadata=true` when `.platform` is present)
+- Compare: normalized JSON unified diff of `definition.json`
+- Delete: Fabric soft delete (`DELETE .../orgApps/{id}`)
+- No GUID remap or publish option
+
+### Variable Libraries (`variable-library`)
+
+- Format: Fabric Git-style `*.VariableLibrary` folder with required `variables.json` and `settings.json`; optional `valueSets/*.json` and `.platform`. Legacy `valueSet/` input is accepted and normalized to `valueSets/`.
+- API: Fabric Variable Library (`/workspaces/{ws}/variableLibraries/...` + create via `/items` with type `VariableLibrary`)
+- Deploy: create or overwrite (`updateDefinition`; `updateMetadata=true` when `.platform` is present)
+- Compare: stable multi-part JSON diff; `.platform` excluded and JSON keys sorted
+- Delete: Fabric soft delete (`DELETE .../variableLibraries/{id}`)
+- No GUID remap or publish option. Variable Library is the service-native promotion path for values; `--remap` remains for GUID rewriting in other item definitions. Sync does not bind or apply library values to pipelines or notebooks automatically.
+
+### Environments (`environment`)
+
+- Format: Fabric Git-style `*.Environment` folder with one or more definition files under `Libraries/`, `Setting/Sparkcompute.yml`, or `.platform`
+- API: Fabric Environment (`/workspaces/{ws}/environments/...` + create via `/items` with type `Environment`)
+- Deploy: create or overwrite (`updateDefinition`; `updateMetadata=true` when `.platform` is present)
+- Compare: stable multi-part diff; `.platform` excluded, text normalized, binary libraries shown as `<binary N bytes>`
+- Delete: Fabric soft delete (`DELETE .../environments/{id}`)
+- No GUID remap or publish option. Definition sync updates staging content only; it does not publish. Users may still need `POST .../environments/{id}/staging/publish?beta=false` (or the Fabric UI) after deploy for changes to become effective.
 
 ### Semantic models (`semantic-model`)
 
@@ -167,6 +198,9 @@ py -3 -m fabric_tools --version
 py -3 -m fabric_tools inspect --help
 py -3 -m fabric_tools notebook --help
 py -3 -m fabric_tools dataflow --help
+py -3 -m fabric_tools environment --help
+py -3 -m fabric_tools org-app --help
+py -3 -m fabric_tools variable-library --help
 py -3 -m fabric_tools semantic-model --help
 py -3 -m fabric_tools report --help
 py -3 -m fabric_tools paginated-report --help
