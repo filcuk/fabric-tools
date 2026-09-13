@@ -56,6 +56,7 @@ _STEP_KEYS: dict[str, tuple[str, ...]] = {
         "ignore_outputs",
         "independent",
         "include_schedules",
+        "publish",
         "remap_values",
     ),
     "proceed": (),
@@ -125,6 +126,7 @@ def run_interactive_wizard() -> None:
     ignore_outputs = bool(answers.get("ignore_outputs", False))
     independent = bool(answers.get("independent", False))
     include_schedules = bool(answers.get("include_schedules", False))
+    publish = bool(answers.get("publish", False))
     remap_values: list[str] | None = answers.get("remap_values")
     if remap_values is not None and not remap_values:
         remap_values = None
@@ -171,6 +173,7 @@ def run_interactive_wizard() -> None:
             dry_run=dry_run,
             names=resolved_names,
             remap_values=remap_values,
+            publish=publish,
             on_success=on_success,
         )
     elif tool == "pipeline":
@@ -597,6 +600,14 @@ def _collect_options(answers: dict[str, Any]) -> None:
         )
         typer.echo(f"  include-schedules: {include_schedules}")
 
+    publish = False
+    if tool == "dataflow" and mode is CommandMode.DEPLOY:
+        publish = _confirm(
+            "Publish after deploy (Fabric Apply Changes / prepare for refresh)?",
+            default=False,
+        )
+        typer.echo(f"  publish: {publish}")
+
     remap_values: list[str] | None = None
     if (
         mode is CommandMode.DEPLOY
@@ -619,6 +630,7 @@ def _collect_options(answers: dict[str, Any]) -> None:
     answers["ignore_outputs"] = ignore_outputs
     answers["independent"] = independent
     answers["include_schedules"] = include_schedules
+    answers["publish"] = publish
     answers["remap_values"] = remap_values
 
 

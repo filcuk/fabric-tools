@@ -508,6 +508,7 @@ def confirm_deploy_actions_dataflow(
     silent: bool,
     display_names: list[str] | None = None,
     guid_map_line: str | None = None,
+    publish: bool = False,
 ) -> None:
     """Confirm create or remote overwrite before Dataflow Gen2 deploy."""
     if silent or not items:
@@ -541,6 +542,8 @@ def confirm_deploy_actions_dataflow(
                 lines.append(f"  - '{name}' in {workspace}{source}")
         if guid_map_line:
             lines.append(guid_map_line)
+        if publish:
+            lines.append("Will publish (Apply Changes) after each successful deploy.")
         lines.append("Are you sure?")
         confirm_or_abort("\n".join(lines), silent=False)
         return
@@ -555,6 +558,8 @@ def confirm_deploy_actions_dataflow(
             lines.append(f"  - {remote} in {workspace}{source}")
     if guid_map_line:
         lines.append(guid_map_line)
+    if publish:
+        lines.append("Will publish (Apply Changes) after each successful deploy.")
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 

@@ -1572,6 +1572,13 @@ def dataflow_deploy(
         "-r",
         help=_GUID_REMAP_HELP,
     ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        "-p",
+        help="(optional) After successful create/update, run Fabric Apply Changes "
+        "(prepare for refresh; same preparation as UI Save). User identity only.",
+    ),
 ) -> None:
     """Deploy Dataflow Gen2 item(s) from local folders or a Fabric origin."""
     run_dataflow_command(
@@ -1584,6 +1591,7 @@ def dataflow_deploy(
         names=name,
         manifest=manifest,
         remap_values=remap,
+        publish=publish,
     )
 
 
@@ -3225,6 +3233,7 @@ def run_dataflow_command(
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
     remap_values: list[str] | None = None,
+    publish: bool = False,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for dataflow (Gen2) CLI commands and the interactive wizard."""
@@ -3253,6 +3262,8 @@ def run_dataflow_command(
 
     if remap_values and mode is not CommandMode.DEPLOY:
         _exit_error("--remap / -r is only valid with deploy")
+    if publish and mode is not CommandMode.DEPLOY:
+        _exit_error("--publish / -p is only valid with deploy")
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -3317,6 +3328,11 @@ def run_dataflow_command(
                 typer.secho(f"remap ok: {map_line}", fg=FG_OK)
             else:
                 typer.secho("remap ok: GUID remap file(s) valid", fg=FG_OK)
+        if publish and not failed:
+            typer.secho(
+                "publish: would run Apply Changes after each successful deploy",
+                fg=FG_OK,
+            )
         if not failed and has_targets and (has_files or has_origins):
             try:
                 display_names = (
@@ -3379,6 +3395,7 @@ def run_dataflow_command(
                 silent=silent,
                 display_names=display_names,
                 guid_map_line=map_line,
+                publish=publish,
             )
             with busy("Deploying..."):
                 op_results = run_df_deploy(
@@ -3386,6 +3403,7 @@ def run_dataflow_command(
                     items,
                     display_names=display_names,
                     guid_maps=guid_maps or None,
+                    publish=publish,
                 )
             _print_op_results(op_results)  # type: ignore[arg-type]
             for result in op_results:

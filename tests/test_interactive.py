@@ -486,6 +486,54 @@ def test_interactive_notebook_deploy_remap(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured["kwargs"]["file_values"] == [r".\etl.ipynb"]
 
 
+def test_interactive_dataflow_deploy_publish(monkeypatch: pytest.MonkeyPatch) -> None:
+    # another pair? silent? publish? apply remap? proceed?
+    selects = iter(
+        [
+            "dataflow",
+            "deploy",
+            "execute",
+            "file",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(False),
+            _yn(True),
+        ]
+    )
+    texts = iter(
+        [
+            r".\Sales.Dataflow",
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_dataflow_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DEPLOY
+    assert captured["kwargs"]["publish"] is True
+    assert captured["kwargs"]["remap_values"] is None
+    assert captured["kwargs"]["file_values"] == [r".\Sales.Dataflow"]
+
+
 def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:
     selects = iter(
         ["udf", "download", "execute", _yn(False), _yn(False), _yn(True), _yn(True)]

@@ -155,6 +155,22 @@ class FabricClient:
             params=params,
         )
 
+    def run_dataflow_apply_changes(
+        self,
+        workspace_id: str,
+        dataflow_id: str,
+    ) -> Any:
+        """POST Dataflow Apply Changes job and wait (UI Save / publish for refresh).
+
+        Uses ``/dataflows/{id}/jobs/applyChanges/instances``. Requires user
+        identity today (service principal is not supported by this Fabric API).
+        """
+        return self.request(
+            "POST",
+            f"/workspaces/{workspace_id}/dataflows/{dataflow_id}"
+            "/jobs/applyChanges/instances",
+        )
+
     def _list_paginated(
         self,
         path: str,

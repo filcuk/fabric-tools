@@ -63,7 +63,7 @@ fabric-tools notebook deploy -m etl
 | Item|One-way|Two-way|Notes|
 |---|---|---|---|
 | Notebook|✅|✅|Can update individual cells.|
-| Dataflow Gen2|✅|✅||
+| Dataflow Gen2|✅|✅|Opt-in `--publish` / `-p` after deploy (Apply Changes).|
 | Dataflow Gen1|✅|🚫|Deploy is create-only[^1].|
 | Data Pipeline|✅|✅||
 | User Data Function|✅|✅||

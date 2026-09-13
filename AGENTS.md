@@ -95,7 +95,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Compare: multi-part unified diff (JSON parts pretty-printed with `sort_keys`; mashup as text)
 - Delete: Fabric soft delete (`DELETE .../dataflows/{id}`)
 - Connection IDs / lakehouse GUIDs in mashup and metadata are environment-specific; use deploy `--remap` / `-r` to rewrite source→target GUIDs in memory (skips `.platform`)
-- Publish is not auto-triggered after definition sync; UI save / Publish may still be needed before refresh
+- Deploy alone does not publish; opt-in `--publish` / `-p` runs Fabric Apply Changes after each successful create/update (prepare for refresh; same preparation as UI Save). User identity only (not service principal)
 - Deploy `--remap` / `-r`: JSON object of GUID→GUID; one file may broadcast to all targets, or pair 1:1 with targets (not on download/compare/delete)
 
 ### Dataflow Gen1

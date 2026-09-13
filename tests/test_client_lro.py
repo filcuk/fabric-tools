@@ -133,3 +133,32 @@ def test_lro_does_not_overwrite_activity_status(
         client.request("POST", "/workspaces/ws/notebooks/nb/getDefinition")
 
     assert messages == []
+
+
+def test_run_dataflow_apply_changes_polls_job_instance() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(f"{request.method} {request.url.path}")
+        if request.method == "POST" and request.url.path.endswith(
+            "/jobs/applyChanges/instances"
+        ):
+            return httpx.Response(
+                202,
+                headers={
+                    "Location": (
+                        "https://api.fabric.microsoft.com/v1/workspaces/ws/"
+                        "items/df/jobs/instances/job-1"
+                    ),
+                    "Retry-After": "1",
+                },
+            )
+        if request.url.path.endswith("/jobs/instances/job-1"):
+            return httpx.Response(200, json={"status": "Succeeded"})
+        return httpx.Response(404)
+
+    with _client(httpx.MockTransport(handler)) as client:
+        result = client.run_dataflow_apply_changes("ws", "df")
+
+    assert result is None or result.get("status") == "Succeeded"
+    assert any(c.startswith("POST ") and "applyChanges" in c for c in calls)
