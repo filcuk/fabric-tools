@@ -19,7 +19,6 @@ from fabric_tools.pipeline.definition import (
     unpack_definition,
 )
 from fabric_tools.status import BatchProgress, status_detail
-from fabric_tools.status import update as update_status
 
 ITEM_TYPE = "DataPipeline"
 
@@ -324,13 +323,12 @@ def run_deploy_batch(
 
 
 def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        if target is not None:
-            update_status(f"Deleting {target.label()}...")
-        else:
-            update_status("Deleting pipeline...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Deleting", "pipeline", item_id))
         results.append(delete_pipeline(client, item))
     return results
 

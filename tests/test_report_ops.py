@@ -14,6 +14,7 @@ from fabric_tools.report.ops import (
     delete_report,
     deploy_report,
     download_report,
+    run_delete_batch,
     run_deploy_batch,
     run_download_batch,
 )
@@ -444,4 +445,24 @@ def test_run_deploy_batch_status_joined_overwrite(
     assert messages == [
         f"1 of 2 · Deploying semantic model ({short_guid(MODEL)})…",
         f"2 of 2 · Deploying report ({short_guid(REPORT)})…",
+    ]
+
+
+def test_run_delete_batch_status(monkeypatch: Any) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.status.update",
+        lambda msg: messages.append(msg),
+    )
+    report_b = "33333333-3333-3333-3333-333333333333"
+    run_delete_batch(
+        FakeClient(),
+        [
+            WorkItem(Target(WS, REPORT), None),  # type: ignore[arg-type]
+            WorkItem(Target(WS, report_b), None),  # type: ignore[arg-type]
+        ],
+    )
+    assert messages == [
+        f"1 of 2 · Deleting report ({short_guid(REPORT)})…",
+        f"2 of 2 · Deleting report ({short_guid(report_b)})…",
     ]

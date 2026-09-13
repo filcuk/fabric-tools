@@ -45,7 +45,6 @@ from fabric_tools.semantic_model.ops import (
     unpack_definition as unpack_semantic_model_definition,
 )
 from fabric_tools.status import BatchProgress, status_detail
-from fabric_tools.status import update as update_status
 
 ITEM_TYPE = "Report"
 
@@ -398,13 +397,12 @@ def run_deploy_batch(
 
 
 def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        if target is not None:
-            update_status(f"Deleting {target.label()}...")
-        else:
-            update_status("Deleting report...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Deleting", "report", item_id))
         results.append(delete_report(client, item))
     return results
 
