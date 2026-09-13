@@ -10,8 +10,8 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 
 | Role | Style | Mechanism | Typical use |
 |------|--------|-----------|-------------|
-| Error / failure | red | Typer `fg=RED` / Rich `"red"`; **Error** panel | Exit-causing failures (`print_error_panel` / `_exit_error`); per-item op/compare lines still use plain red `secho` |
-| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | Command-level warnings and cancel (`print_warn_panel` / `_exit_warn`); inline status tokens (e.g. setup status) stay Rich yellow text |
+| Error / failure | red | Typer `fg=RED` / Rich `"red"`; **Error** panel | All error messages (`print_error_panel` / `_exit_error`), including per-item op/compare failures |
+| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | All warning messages (`print_warn_panel` / `_exit_warn`), including compare soft messages and update notices; inline status tokens (e.g. setup status values) stay Rich yellow text only |
 | Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare `identical`, enabled/set |
 | Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands, compare headers, **Usage** command path and `COMMAND` placeholder |
 | Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Option/argument placeholders in `--help` (e.g. `<PATH>`, `<DEST>`, `<manifest>`, **Usage** `[ARGS]...`); **Power BI** in help text |
@@ -28,12 +28,12 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 
 ### Error and warning panels
 
-Command-level failure and warning messages use a Rich `Panel` on stderr, matching Typer’s usage-error box:
+Every error and warning **message** uses a Rich `Panel` on stderr, matching Typer’s usage-error box:
 
 - **Error** — red border, title `Error`, left-aligned (`fabric_tools.colours.print_error_panel` / `cli._exit_error`).
-- **Warning** — yellow border, title `Warning`, left-aligned (`print_warn_panel` / `_exit_warn`) for cancel, soft abort, update notices, and other command-level soft fails.
+- **Warning** — yellow border, title `Warning`, left-aligned (`print_warn_panel` / `_exit_warn`).
 
-Do not invent a different boxed style. Per-item status lines in multi-target runs (`_print_op_results`, compare `identical` / `differences found` / result messages) stay unboxed coloured `secho` so a batch does not spam panels. Inline value colours in tables (setup status, env list) stay Rich styles, not panels.
+Do not print error/warning prose with plain coloured `secho`. Success / identifier lines (`identical`, GUIDs, remap ok) stay unboxed `secho`. Inline value colours in tables (setup status, env list) stay Rich styles, not panels. Diff body text stays primary (uncoloured).
 
 ### Aligned key / value and table layout
 

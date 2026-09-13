@@ -12,10 +12,8 @@ from typer.core import TyperGroup
 from fabric_tools import __version__
 from fabric_tools.auth import AuthError
 from fabric_tools.colours import (
-    FG_ERROR,
     FG_ID,
     FG_OK,
-    FG_WARN,
     STYLE_DIM,
     STYLE_ERROR,
     STYLE_OK,
@@ -3060,9 +3058,10 @@ def run_notebook_command(
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if remap_values and not failed:
             if map_line:
@@ -3308,9 +3307,10 @@ def run_dataflow_command(
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if remap_values and not failed:
             if map_line:
@@ -3555,9 +3555,10 @@ def run_semantic_model_command(
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if not failed and has_targets and (has_files or has_origins):
             try:
@@ -3789,9 +3790,10 @@ def run_report_command(
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if not failed and has_targets and (has_files or has_origins):
             try:
@@ -4032,9 +4034,10 @@ def run_dataflow_gen1_command(
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if not failed and has_targets and (has_files or has_origins):
             try:
@@ -4255,9 +4258,10 @@ def run_paginated_report_command(
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if not failed and has_targets and (has_files or has_origins):
             try:
@@ -4491,9 +4495,10 @@ def run_pipeline_command(
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if remap_values and not failed:
             if map_line:
@@ -4748,9 +4753,10 @@ def run_udf_command(
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if remap_values and not failed:
             if map_line:
@@ -5776,8 +5782,10 @@ def _write_manifest_after_success(
 
 def _print_op_results(results: list[OpResult]) -> None:
     for result in results:
-        color = FG_OK if result.ok else FG_ERROR
-        typer.secho(result.message, fg=color, err=not result.ok)
+        if result.ok:
+            typer.secho(result.message, fg=FG_OK)
+        else:
+            print_error_panel(result.message)
 
 
 def _exit_from_op_results(results: list[OpResult]) -> None:
@@ -5790,17 +5798,17 @@ def _print_compare_results(results: list[CompareResult]) -> None:
     for result in results:
         typer.secho(result.header, fg=FG_ID, bold=True)
         if result.error:
-            typer.secho(result.error, fg=FG_ERROR, err=True)
+            print_error_panel(result.error)
             continue
         if result.identical:
             typer.secho("identical", fg=FG_OK)
         else:
-            typer.secho("differences found", fg=FG_WARN)
+            print_warn_panel("differences found")
             if result.diff_text:
                 typer.echo(result.diff_text.rstrip())
         messages = getattr(result, "messages", None) or []
         for message in messages:
-            typer.secho(message, fg=FG_WARN)
+            print_warn_panel(message)
         typer.echo("")
 
 

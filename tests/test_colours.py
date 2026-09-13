@@ -79,6 +79,30 @@ def test_print_warn_panel_uses_warning_title(capsys) -> None:
     assert "Cancelled." in err
 
 
+def test_print_compare_results_uses_warning_panel(capsys) -> None:
+    from types import SimpleNamespace
+
+    from fabric_tools.cli import _print_compare_results
+
+    _print_compare_results(
+        [
+            SimpleNamespace(
+                header="remote vs local",
+                error=None,
+                identical=True,
+                ok=True,
+                diff_text=None,
+                messages=[
+                    "local packable model present; joined model compare requires a bound id"
+                ],
+            )
+        ]
+    )
+    err = capsys.readouterr().err
+    assert "Warning" in err
+    assert "joined model compare" in err
+
+
 def test_cli_exit_error_renders_error_panel(monkeypatch) -> None:
     from fabric_tools.exit_codes import EXIT_USER
 
