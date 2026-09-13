@@ -140,17 +140,13 @@ def load_manifest(path: str | Path) -> DeploymentManifest:
     schema_version = raw.get("schemaVersion")
     if schema_version is None:
         raise ManifestError(
-            f"manifest missing schemaVersion in {resolved} "
-            f"(required: {SCHEMA_VERSION_V3}; schemaVersion 1/2 are unsupported — "
-            "rewrite as a v3 pack)"
+            f"manifest missing schemaVersion (required: v{SCHEMA_VERSION_V3})"
         )
     if not isinstance(schema_version, int):
         raise ManifestError(f"invalid schemaVersion in {resolved}")
     if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ManifestError(
-            f"unsupported schemaVersion {schema_version} in {resolved} "
-            f"(supported: {SCHEMA_VERSION_V3} only; schemaVersion 1/2 are "
-            "unsupported — rewrite as a v3 pack with kind 'pack')"
+            f"This schema version is no longer supported (provided: v{schema_version}, minimum: v{SCHEMA_VERSION_V3})"
         )
 
     kind = raw.get("kind")

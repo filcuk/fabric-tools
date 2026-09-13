@@ -859,7 +859,9 @@ def test_legacy_v1_manifest_rejected(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    with pytest.raises(ManifestError, match="unsupported schemaVersion 1"):
+    with pytest.raises(
+        ManifestError, match="Unsupported schema version. Requires v3 or higher."
+    ):
         load_manifest(path)
 
 
