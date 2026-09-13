@@ -19,7 +19,7 @@ from fabric_tools.report.definition import (
 )
 from fabric_tools.report.ops import get_report_definition, resolve_bound_model_id
 from fabric_tools.semantic_model.compare import compare_semantic_model
-from fabric_tools.status import BatchProgress, short_guid
+from fabric_tools.status import BatchProgress, status_detail
 
 
 @dataclass
@@ -91,7 +91,8 @@ def compare_report(
 
     plans_model = _plans_model_step(item, independent=independent)
     if progress is not None:
-        progress.advance(f"Comparing report ({short_guid(item.target.item_id)})…")
+        name = item_display_name(client, item.target)
+        progress.advance(status_detail("Comparing", "report", name))
 
     if item.origin is not None:
         report_result, origin_def, target_def = _compare_origin_to_target(client, item)
@@ -339,7 +340,10 @@ def _joined_file_model_results(
         return []
 
     if progress is not None:
-        progress.advance(f"Comparing semantic model ({short_guid(model_id)})…")
+        model_name = item_display_name(
+            client, Target(item.target.workspace_id, model_id)
+        )
+        progress.advance(status_detail("Comparing", "semantic model", model_name))
     # semantic_model.compare.CompareResult is structurally identical.
     model_result = compare_semantic_model(
         client,
@@ -399,7 +403,10 @@ def _joined_origin_model_results(
         return []
 
     if progress is not None:
-        progress.advance(f"Comparing semantic model ({short_guid(target_model_id)})…")
+        model_name = item_display_name(
+            client, Target(item.target.workspace_id, target_model_id)
+        )
+        progress.advance(status_detail("Comparing", "semantic model", model_name))
     model_result = compare_semantic_model(
         client,
         WorkItem(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -14,6 +15,10 @@ _console = Console(stderr=True)
 _active: ContextVar[Status | None] = ContextVar("fabric_tools_status", default=None)
 _message: ContextVar[str | None] = ContextVar(
     "fabric_tools_status_message", default=None
+)
+_GUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 
 
@@ -29,11 +34,23 @@ def progress_message(current: int, total: int, detail: str) -> str:
     return f"{current} of {total} · {detail}"
 
 
-def status_detail(verb: str, kind: str, item_id: str | None = None) -> str:
-    """Build spinner detail text: ``Downloading notebook (a1b2c3d4…)…``."""
-    if item_id:
-        return f"{verb} {kind} ({short_guid(item_id)})…"
+def status_detail(verb: str, kind: str, label: str | None = None) -> str:
+    """Build spinner detail text: ``Comparing report (Sales)…``.
+
+    Full GUIDs are shortened; other labels (display names) are shown clipped.
+    """
+    if label:
+        return f"{verb} {kind} ({_format_label(label)})…"
     return f"{verb} {kind}…"
+
+
+def _format_label(label: str, *, max_length: int = 48) -> str:
+    text = label.strip()
+    if _GUID_RE.fullmatch(text):
+        return short_guid(text)
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 1]}…"
 
 
 @dataclass

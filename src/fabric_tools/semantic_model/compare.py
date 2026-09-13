@@ -69,8 +69,10 @@ def run_compare_batch(
     progress = BatchProgress(total=len(items))
     results: list[CompareResult] = []
     for item in items:
-        item_id = item.target.item_id if item.target is not None else None
-        progress.advance(status_detail("Comparing", "semantic model", item_id))
+        label = None
+        if item.target is not None and item.target.item_id is not None:
+            label = item_display_name(client, item.target)
+        progress.advance(status_detail("Comparing", "semantic model", label))
         results.append(compare_semantic_model(client, item))
     return results
 

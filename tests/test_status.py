@@ -22,8 +22,13 @@ def test_progress_message() -> None:
 
 def test_status_detail() -> None:
     assert (
-        status.status_detail("Downloading", "notebook", "a1b2c3d4-xxxx")
+        status.status_detail(
+            "Downloading", "notebook", "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        )
         == "Downloading notebook (a1b2c3d4…)…"
+    )
+    assert status.status_detail("Comparing", "report", "Sales") == (
+        "Comparing report (Sales)…"
     )
     assert status.status_detail("Creating", "report") == "Creating report…"
 

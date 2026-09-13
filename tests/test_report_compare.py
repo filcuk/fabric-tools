@@ -11,7 +11,6 @@ from fabric_tools.client import FabricApiError
 from fabric_tools.definition_parts import PAYLOAD_TYPE
 from fabric_tools.parsing import Target, WorkItem
 from fabric_tools.report.compare import compare_report, run_compare_batch
-from fabric_tools.status import short_guid
 
 WS = "11111111-1111-1111-1111-111111111111"
 REPORT = "22222222-2222-2222-2222-222222222222"
@@ -323,10 +322,10 @@ def test_run_compare_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> No
         ],
     )
     assert messages == [
-        f"1 of 4 · Comparing report ({short_guid(REPORT)})…",
-        f"2 of 4 · Comparing semantic model ({short_guid(MODEL)})…",
-        f"3 of 4 · Comparing report ({short_guid(report_id_b)})…",
-        f"4 of 4 · Comparing semantic model ({short_guid(model_id_b)})…",
+        "1 of 4 · Comparing report (Sales)…",
+        "2 of 4 · Comparing semantic model (Sales)…",
+        "3 of 4 · Comparing report (Sales)…",
+        "4 of 4 · Comparing semantic model (Sales)…",
     ]
 
 
@@ -343,7 +342,7 @@ def test_run_compare_batch_status_independent(tmp_path: Path, monkeypatch: Any) 
         [WorkItem(Target(WS, REPORT), report)],  # type: ignore[arg-type]
         independent=True,
     )
-    assert messages == [f"1 of 1 · Comparing report ({short_guid(REPORT)})…"]
+    assert messages == ["1 of 1 · Comparing report (Sales)…"]
 
 
 def test_run_compare_batch_status_skipped_join(
@@ -412,7 +411,7 @@ def test_run_compare_batch_status_skipped_join(
         powerbi_client=FakePowerBi(dataset_id=None),
     )
     assert messages == [
-        f"1 of 4 · Comparing report ({short_guid(REPORT)})…",
-        f"2 of 3 · Comparing report ({short_guid(report_id_b)})…",
-        f"3 of 3 · Comparing semantic model ({short_guid(MODEL)})…",
+        "1 of 4 · Comparing report (Sales)…",
+        "2 of 3 · Comparing report (Sales)…",
+        "3 of 3 · Comparing semantic model (Sales)…",
     ]
