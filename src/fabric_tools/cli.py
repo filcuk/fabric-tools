@@ -394,7 +394,7 @@ def _flush_update_notice(ctx: typer.Context) -> None:
 
     notice = consume_update_notice()
     if notice:
-        typer.secho(notice, fg=FG_WARN, err=True)
+        print_warn_panel(notice)
 
 
 def _start_bg_update_check(ctx: typer.Context) -> None:
@@ -800,7 +800,7 @@ def _inspect_manifest_dir(directory: Path | None) -> None:
         try:
             loaded = load_manifest(path)
         except ManifestError as exc:
-            typer.secho(f"{path.name}  error: {exc}", fg=FG_WARN, err=True)
+            print_warn_panel(f"{path.name}  error: {exc}")
             continue
         typer.echo(format_inspect_line(loaded, path=path))
 
@@ -5769,7 +5769,7 @@ def _write_manifest_after_success(
         )
         path = save_manifest(manifest, built)
     except ManifestError as exc:
-        typer.secho(f"manifest not written: {exc}", fg=FG_WARN, err=True)
+        print_warn_panel(f"manifest not written: {exc}")
         return
     typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
 

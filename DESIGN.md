@@ -11,7 +11,7 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Role | Style | Mechanism | Typical use |
 |------|--------|-----------|-------------|
 | Error / failure | red | Typer `fg=RED` / Rich `"red"`; **Error** panel | Exit-causing failures (`print_error_panel` / `_exit_error`); per-item op/compare lines still use plain red `secho` |
-| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | Exit-causing cancel/abort (`print_warn_panel` / `_exit_warn`); notices and soft non-exit lines stay plain yellow `secho` |
+| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | Command-level warnings and cancel (`print_warn_panel` / `_exit_warn`); inline status tokens (e.g. setup status) stay Rich yellow text |
 | Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare `identical`, enabled/set |
 | Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands, compare headers, **Usage** command path and `COMMAND` placeholder |
 | Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Option/argument placeholders in `--help` (e.g. `<PATH>`, `<DEST>`, `<manifest>`, **Usage** `[ARGS]...`); **Power BI** in help text |
@@ -28,12 +28,12 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 
 ### Error and warning panels
 
-CLI exits that report a failure or cancel use a Rich `Panel` on stderr, matching Typer’s usage-error box:
+Command-level failure and warning messages use a Rich `Panel` on stderr, matching Typer’s usage-error box:
 
 - **Error** — red border, title `Error`, left-aligned (`fabric_tools.colours.print_error_panel` / `cli._exit_error`).
-- **Warning** — yellow border, title `Warning`, left-aligned (`print_warn_panel` / `_exit_warn`) for user cancel and soft abort.
+- **Warning** — yellow border, title `Warning`, left-aligned (`print_warn_panel` / `_exit_warn`) for cancel, soft abort, update notices, and other command-level soft fails.
 
-Do not invent a different boxed failure style. Per-item status lines in multi-target runs (`_print_op_results`, compare result errors) stay unboxed coloured `secho` so a batch does not spam panels.
+Do not invent a different boxed style. Per-item status lines in multi-target runs (`_print_op_results`, compare `identical` / `differences found` / result messages) stay unboxed coloured `secho` so a batch does not spam panels. Inline value colours in tables (setup status, env list) stay Rich styles, not panels.
 
 ### Aligned key / value and table layout
 
