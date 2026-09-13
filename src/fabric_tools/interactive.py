@@ -56,6 +56,7 @@ _STEP_KEYS: dict[str, tuple[str, ...]] = {
         "ignore_outputs",
         "independent",
         "include_schedules",
+        "remap_values",
     ),
     "proceed": (),
 }
@@ -124,6 +125,9 @@ def run_interactive_wizard() -> None:
     ignore_outputs = bool(answers.get("ignore_outputs", False))
     independent = bool(answers.get("independent", False))
     include_schedules = bool(answers.get("include_schedules", False))
+    remap_values: list[str] | None = answers.get("remap_values")
+    if remap_values is not None and not remap_values:
+        remap_values = None
 
     resolved_names: list[str | None] | None = None
     if names:
@@ -166,6 +170,7 @@ def run_interactive_wizard() -> None:
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
+            remap_values=remap_values,
             on_success=on_success,
         )
     elif tool == "pipeline":
@@ -178,6 +183,7 @@ def run_interactive_wizard() -> None:
             dry_run=dry_run,
             names=resolved_names,
             include_schedules=include_schedules,
+            remap_values=remap_values,
             on_success=on_success,
         )
     elif tool == "udf":
@@ -189,6 +195,7 @@ def run_interactive_wizard() -> None:
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
+            remap_values=remap_values,
             on_success=on_success,
         )
     elif tool == "semantic-model":
@@ -235,6 +242,7 @@ def run_interactive_wizard() -> None:
             dry_run=dry_run,
             names=resolved_names,
             ignore_outputs=ignore_outputs,
+            remap_values=remap_values,
             on_success=on_success,
         )
 
@@ -589,10 +597,29 @@ def _collect_options(answers: dict[str, Any]) -> None:
         )
         typer.echo(f"  include-schedules: {include_schedules}")
 
+    remap_values: list[str] | None = None
+    if (
+        mode is CommandMode.DEPLOY
+        and tool in {"notebook", "dataflow", "pipeline", "udf"}
+        and _confirm("Apply GUID remap file(s)?", default=False)
+    ):
+        paths: list[str] = []
+        while True:
+            path = _text(
+                "GUID remap JSON path (--remap / -r)",
+                allow_empty=False,
+            )
+            paths.append(path)
+            if not _confirm("Add another remap file?", default=False):
+                break
+        remap_values = paths
+        typer.echo(f"  remap: {', '.join(paths)}")
+
     answers["silent"] = silent
     answers["ignore_outputs"] = ignore_outputs
     answers["independent"] = independent
     answers["include_schedules"] = include_schedules
+    answers["remap_values"] = remap_values
 
 
 def _target_prompt(mode: CommandMode, *, tool: str) -> str:
