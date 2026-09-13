@@ -66,10 +66,10 @@ def test_debug_hidden_from_root_help() -> None:
 
 
 def test_print_error_panel_uses_error_title(capsys) -> None:
-    colours.print_error_panel("setup update requires the Windows .exe build")
+    colours.print_error_panel("Refusing setup update: FABRIC_TOOLS_READONLY is set.")
     err = capsys.readouterr().err
     assert "Error" in err
-    assert "setup update requires the Windows .exe build" in err
+    assert "FABRIC_TOOLS_READONLY" in err
 
 
 def test_print_warn_panel_uses_warning_title(capsys) -> None:

@@ -556,14 +556,13 @@ def update_staging_dir() -> Path:
 
 
 def perform_setup_update(*, silent: bool = False) -> dict[str, str | bool]:
-    """Download the latest release exe and schedule install after this process exits."""
+    """Download the latest release exe and schedule install after this process exits.
+
+    Works from both the Windows ``.exe`` and a Python install: the downloaded
+    release binary runs ``setup install`` after this process exits.
+    """
     if os.name != "nt":
         raise PathSetupError("setup update is currently supported on Windows only.")
-    if not is_frozen():
-        raise PathSetupError(
-            "setup update requires the Windows .exe build; "
-            "use: fabric-tools setup update --check"
-        )
 
     from fabric_tools.confirm import confirm_or_abort
     from fabric_tools.status import busy
@@ -793,13 +792,23 @@ def clean_onefile_caches() -> dict[str, bool]:
 
 
 def ensure_user_path_contains(directory: str) -> bool:
-    """Add directory to the current user PATH if missing. Returns True if modified."""
+    """Ensure directory is first on the user PATH. Returns True if modified.
+
+    Prepends when missing, and moves an existing entry to the front (so the
+    install wins over other ``fabric-tools`` shims such as pip Scripts).
+    """
     current = _read_user_path()
     normalized = _normalize_dir(directory)
     parts = _split_path(current)
-    if any(_normalize_dir(part) == normalized for part in parts):
+    others = [part for part in parts if _normalize_dir(part) != normalized]
+    already_first = (
+        bool(parts)
+        and _normalize_dir(parts[0]) == normalized
+        and len(others) == len(parts) - 1
+    )
+    if already_first:
         return False
-    updated = _join_path([*parts, directory]) if current else directory
+    updated = _join_path([directory, *others]) if others else directory
     _write_user_path(updated)
     _broadcast_env_change()
     return True

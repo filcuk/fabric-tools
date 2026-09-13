@@ -358,17 +358,14 @@ def result_from_cache(payload: dict[str, Any]) -> UpdateCheckResult | None:
     )
 
 
-def format_update_notice(result: UpdateCheckResult, *, frozen: bool) -> str | None:
+def format_update_notice(result: UpdateCheckResult) -> str | None:
     """Build a user-facing notice, or ``None`` when no update is available."""
     if not result.update_available:
         return None
     lines = [
         f"Update available: {result.latest} (you have {result.current}).",
+        "Run: fabric-tools setup update",
     ]
-    if frozen:
-        lines.append("Run: fabric-tools setup update")
-    else:
-        lines.append("Run: fabric-tools setup update --check")
     if result.release_url:
         lines.append(result.release_url)
     return "\n".join(lines)
@@ -400,7 +397,6 @@ def start_background_update_check(
     cache_path: Path | None = None,
     today: date | None = None,
     check: Callable[..., UpdateCheckResult] | None = None,
-    frozen: bool | None = None,
 ) -> None:
     """Start at most one background GitHub check for this process.
 
@@ -425,11 +421,7 @@ def start_background_update_check(
             if payload:
                 cached = result_from_cache(payload)
                 if cached is not None:
-                    if frozen is None:
-                        from fabric_tools.path_setup import is_frozen
-
-                        frozen = is_frozen()
-                    _bg_notice_from_cache = format_update_notice(cached, frozen=frozen)
+                    _bg_notice_from_cache = format_update_notice(cached)
             return
 
         check_fn = check or check_for_update
@@ -454,7 +446,6 @@ def start_background_update_check(
 
 def consume_update_notice(
     *,
-    frozen: bool | None = None,
     cache_path: Path | None = None,
     today: date | None = None,
 ) -> str | None:
@@ -468,11 +459,6 @@ def consume_update_notice(
 
     if _update_check_disabled():
         return None
-
-    if frozen is None:
-        from fabric_tools.path_setup import is_frozen
-
-        frozen = is_frozen()
 
     with _bg_lock:
         cached_notice = _bg_notice_from_cache
@@ -497,4 +483,4 @@ def consume_update_notice(
         path=cache_path,
         checked_on=(today or date.today()).isoformat(),
     )
-    return format_update_notice(result, frozen=frozen)
+    return format_update_notice(result)

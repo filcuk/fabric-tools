@@ -26,7 +26,14 @@ Have you ever wanted to:
   ```
 
   _Restart your terminal or IDE to capture PATH change._
-3. See avialable commands or use interactive wizzard to get started:
+3. Keep up to date (downloads the release exe and installs over `%LOCALAPPDATA%\fabric-tools\app`; works from the installed exe or a Python install):
+
+  ```powershell
+  fabric-tools setup update --check
+  fabric-tools setup update
+  ```
+
+4. See available commands or use interactive wizard to get started:
 
   ```powershell
   fabric-tools --help

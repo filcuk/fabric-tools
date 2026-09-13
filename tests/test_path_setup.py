@@ -26,6 +26,7 @@ from fabric_tools.path_setup import (
     _split_path,
     _write_deferred_cache_cleanup_helper,
     _write_deferred_install_helper,
+    ensure_user_path_contains,
     format_nuitka_orphan_exe_error,
     frozen_app_root,
     is_frozen,
@@ -49,6 +50,38 @@ def test_normalize_dir() -> None:
     left = _normalize_dir("C:\\Foo\\Bar\\")
     right = _normalize_dir("C:\\Foo\\Bar")
     assert left == right
+
+
+def test_ensure_user_path_contains_prepends_and_moves_to_front(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = {"path": r"C:\Python\Scripts;C:\Windows"}
+
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._read_user_path",
+        lambda: state["path"],
+    )
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._write_user_path",
+        lambda value: state.__setitem__("path", value),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._broadcast_env_change",
+        lambda: None,
+    )
+
+    install = r"C:\Users\me\AppData\Local\fabric-tools\app"
+    assert ensure_user_path_contains(install) is True
+    assert state["path"].startswith(install + ";")
+    assert r"C:\Python\Scripts" in state["path"]
+
+    assert ensure_user_path_contains(install) is False
+    assert state["path"].startswith(install + ";")
+
+    # Present but not first → move to front.
+    state["path"] = rf"C:\Python\Scripts;{install};C:\Windows"
+    assert ensure_user_path_contains(install) is True
+    assert state["path"] == rf"{install};C:\Python\Scripts;C:\Windows"
 
 
 def test_install_frozen_tree_copies_exe_and_internal(tmp_path: Path) -> None:
@@ -603,11 +636,54 @@ def test_format_nuitka_orphan_exe_error_none_when_siblings_present(
     assert _has_nuitka_runtime_siblings(app) is True
 
 
-def test_perform_setup_update_requires_frozen(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_perform_setup_update_downloads_and_schedules_when_not_frozen(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr("fabric_tools.path_setup.os.name", "nt")
     monkeypatch.setattr("fabric_tools.path_setup.is_frozen", lambda: False)
-    with pytest.raises(PathSetupError, match="Windows .exe"):
-        perform_setup_update(silent=True)
+    monkeypatch.setattr(
+        "fabric_tools.path_setup.install_root",
+        lambda: tmp_path / "fabric-tools",
+    )
+    monkeypatch.setattr(
+        "fabric_tools.update_check.check_for_update",
+        lambda: UpdateCheckResult(
+            current="0.2.0",
+            latest="0.3.0",
+            update_available=True,
+            release_url="https://example/release",
+            tag_name="v0.3.0",
+            asset_url="https://example/fabric-tools.exe",
+        ),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.update_check.save_update_cache",
+        lambda *args, **kwargs: None,
+    )
+
+    def fake_download(url: str, destination: Path, **kwargs: object) -> Path:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"exe")
+        return destination
+
+    monkeypatch.setattr(
+        "fabric_tools.update_check.download_release_asset",
+        fake_download,
+    )
+    spawned: list[tuple[Path, int, Path]] = []
+
+    def fake_spawn(helper: Path, pid: int, exe: Path) -> None:
+        spawned.append((helper, pid, exe))
+
+    monkeypatch.setattr(
+        "fabric_tools.path_setup._spawn_deferred_install",
+        fake_spawn,
+    )
+
+    result = perform_setup_update(silent=True)
+    assert result["scheduled"] is True
+    assert Path(str(result["exe_path"])).is_file()
+    assert len(spawned) == 1
 
 
 def test_perform_setup_update_up_to_date(
