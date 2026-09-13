@@ -26,21 +26,14 @@ Have you ever wanted to:
   ```
 
   _Restart your terminal or IDE to capture PATH change._
-3. Keep up to date (downloads the release exe and installs over `%LOCALAPPDATA%\fabric-tools\app`; works from the installed exe or a Python install):
-
-  ```powershell
-  fabric-tools setup update --check
-  fabric-tools setup update
-  ```
-
-4. See available commands or use interactive wizard to get started:
+3. See available commands or use interactive wizard to get started:
 
   ```powershell
   fabric-tools --help
   fabric-tools --interactive
   ```
 
-> [!success]
+> [!TIP]
 > Are you working with agents? Use `fabric-tools env` to set `FABRIC_TOOLS_READONLY=1` to block any destructive commands.
 
 ## Example workflow
@@ -108,7 +101,7 @@ $env:AZURE_CLIENT_SECRET="..."
 fabric-tools env -h
 ```
 
-> [!warning]
+> [!WARNING]
 > User Data Function APIs do **not** support service principals.
 
 ## Troubleshooting
