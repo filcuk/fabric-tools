@@ -71,6 +71,7 @@ fabric-tools notebook deploy -m etl
 | Report|✅|✅|Standalone or model-joined operations.|
 | Paginated Report|✅|✅|No API support for sources & credentials.|
 | Inspect|✅ (Read)|🚫|Browse workspaces and items.|
+| Pack manifests|✅|✅|Schema v3 multi-kind `.ftdep`; `pack …` for mixed.|
 | Org App|📅|📅||
 | Environment|📅|📅||
 | Variable Library|📅|📅||

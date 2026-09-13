@@ -273,6 +273,17 @@ def prompt_save_manifest(
         allow_empty=False,
         allow_back=False,
     )
+    pack_remap: str | None = None
+    if kind in {"notebook", "dataflow", "pipeline", "udf"} and _confirm(
+        "Store a pack-level GUID remap path in the manifest?",
+        default=False,
+        allow_back=False,
+    ):
+        pack_remap = _text(
+            "GUID remap JSON path (stored relative to the .ftdep)",
+            allow_empty=False,
+            allow_back=False,
+        )
     overrides = (
         item_id_overrides_from_results(op_results) if op_results is not None else None
     )
@@ -288,6 +299,7 @@ def prompt_save_manifest(
             display_names=display_names,
             item_id_overrides=overrides,
             semantic_model_id_overrides=sm_overrides,
+            remap=pack_remap,
         )
         path, written = save_manifest(stem, built)
     except ManifestError as exc:

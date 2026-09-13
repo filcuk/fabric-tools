@@ -116,7 +116,7 @@ def test_prompt_save_manifest_writes_file(
     from fabric_tools.interactive import prompt_save_manifest
     from fabric_tools.parsing import Target, WorkItem
 
-    selects = iter([_yn(True)])
+    selects = iter([_yn(True), _yn(False)])
     texts = iter([str(tmp_path / "deploy")])
 
     monkeypatch.setattr(

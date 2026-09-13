@@ -99,29 +99,48 @@ def _resolve_deploy_guid_maps(
     *,
     n_targets: int,
     has_targets: bool,
+    manifest: str | None = None,
+    expected_kind: str | None = None,
 ) -> list:
-    """Load and pair ``--remap`` / ``-r`` files for deploy / deploy dry-run.
+    """Load GUID maps for deploy / deploy dry-run.
 
-    When there are no targets (file-only dry-run), validates that each file
-    loads and returns an empty list of per-target specs.
+    Precedence: CLI ``--remap`` / ``-r`` wins when set; otherwise pack/entry
+    ``remap`` path refs from *manifest* (when *expected_kind* is set).
     """
     from fabric_tools.guid_map import GuidMapError, load_guid_map, resolve_guid_maps
+    from fabric_tools.manifest import entry_guid_maps_from_manifest
 
-    if not remap_values:
-        return []
-    try:
-        if has_targets and n_targets > 0:
-            return resolve_guid_maps(remap_values, n_targets)
-        # Validate maps load even when dry-run has no targets yet.
-        for raw in remap_values:
-            for piece in raw.split(","):
-                piece = piece.strip()
-                if piece:
-                    load_guid_map(piece)
-        return []
-    except GuidMapError as exc:
-        _exit_error(str(exc))
+    if remap_values:
+        try:
+            if has_targets and n_targets > 0:
+                return resolve_guid_maps(remap_values, n_targets)
+            # Validate maps load even when dry-run has no targets yet.
+            for raw in remap_values:
+                for piece in raw.split(","):
+                    piece = piece.strip()
+                    if piece:
+                        load_guid_map(piece)
+            return []
+        except GuidMapError as exc:
+            _exit_error(str(exc))
 
+    if (
+        manifest
+        and expected_kind
+        and has_targets
+        and n_targets > 0
+    ):
+        try:
+            path = resolve_manifest_path(manifest)
+            if not path.is_file():
+                return []
+            loaded = load_manifest(path)
+            return entry_guid_maps_from_manifest(
+                loaded, expected_kind=expected_kind
+            )
+        except ManifestError as exc:
+            _exit_error(str(exc))
+    return []
 
 def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
     """Exit if ``FABRIC_TOOLS_READONLY`` blocks this mode (unless dry-run)."""
@@ -365,6 +384,14 @@ manifest_app = typer.Typer(
 )
 app.add_typer(manifest_app, name="manifest", rich_help_panel="Local")
 
+pack_app = typer.Typer(
+    name="pack",
+    help="Multi-kind deployment packs (.ftdep schema v3).",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(pack_app, name="pack", rich_help_panel="Local")
+
 debug_app = typer.Typer(
     name="debug",
     help="Internal debug helpers.",
@@ -599,6 +626,181 @@ def manifest_move(
         fg=FG_OK,
     )
     raise typer.Exit(code=EXIT_OK)
+
+
+@pack_app.command("download")
+def pack_download(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate only; do not download.",
+    ),
+    include_schedules: bool = typer.Option(
+        False,
+        "--include-schedules",
+        "-i",
+        help="(optional) Include pipeline .schedules when present in the pack.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        help="(optional) Report-only (do not join semantic model).",
+    ),
+) -> None:
+    """Download all items in a multi-kind pack (ordered by kind)."""
+    from fabric_tools.pack_run import run_pack_command
+
+    run_pack_command(
+        CommandMode.DOWNLOAD,
+        manifest=manifest,
+        silent=silent,
+        dry_run=dry_run,
+        include_schedules=include_schedules,
+        independent=independent,
+    )
+
+
+@pack_app.command("deploy")
+def pack_deploy(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate only; do not deploy.",
+    ),
+    remap: list[str] | None = typer.Option(
+        None,
+        "--remap",
+        "-r",
+        help=_GUID_REMAP_HELP + " Overrides pack/entry remap path refs for this run.",
+    ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        "-p",
+        help="(optional) After dataflow create/update, run Apply Changes.",
+    ),
+    include_schedules: bool = typer.Option(
+        False,
+        "--include-schedules",
+        "-i",
+        help="(optional) Include pipeline .schedules when present in the pack.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        help="(optional) Report-only (do not join semantic model).",
+    ),
+) -> None:
+    """Deploy all items in a multi-kind pack (models before reports)."""
+    from fabric_tools.pack_run import run_pack_command
+
+    run_pack_command(
+        CommandMode.DEPLOY,
+        manifest=manifest,
+        silent=silent,
+        dry_run=dry_run,
+        remap_values=remap,
+        publish=publish,
+        include_schedules=include_schedules,
+        independent=independent,
+    )
+
+
+@pack_app.command("compare")
+def pack_compare(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate only; do not compare.",
+    ),
+    include_schedules: bool = typer.Option(
+        False,
+        "--include-schedules",
+        "-i",
+        help="(optional) Include pipeline .schedules when present in the pack.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        help="(optional) Report-only (do not join semantic model).",
+    ),
+) -> None:
+    """Compare all items in a multi-kind pack."""
+    from fabric_tools.pack_run import run_pack_command
+
+    run_pack_command(
+        CommandMode.COMPARE,
+        manifest=manifest,
+        silent=True,
+        dry_run=dry_run,
+        include_schedules=include_schedules,
+        independent=independent,
+    )
+
+
+@pack_app.command("delete")
+def pack_delete(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate only; do not delete.",
+    ),
+) -> None:
+    """Delete all items in a multi-kind pack (reports before models)."""
+    from fabric_tools.pack_run import run_pack_command
+
+    run_pack_command(
+        CommandMode.DELETE,
+        manifest=manifest,
+        silent=silent,
+        dry_run=dry_run,
+    )
 
 
 @inspect_workspace_app.command(
@@ -2975,6 +3177,7 @@ def run_notebook_command(
     ignore_outputs: bool = False,
     manifest: str | None = None,
     remap_values: list[str] | None = None,
+    guid_maps_override: list[dict[str, str] | None] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry used by CLI commands and the interactive wizard.
@@ -3028,16 +3231,32 @@ def run_notebook_command(
         _exit_error(str(exc))
 
     guid_map_specs = (
-        _resolve_deploy_guid_maps(
-            remap_values,
-            n_targets=len(items),
-            has_targets=has_targets,
+        []
+        if guid_maps_override is not None
+        else (
+            _resolve_deploy_guid_maps(
+                remap_values,
+                n_targets=len(items),
+                has_targets=has_targets,
+                manifest=manifest,
+                expected_kind=KIND_NOTEBOOK,
+            )
+            if mode is CommandMode.DEPLOY
+            else []
         )
-        if mode is CommandMode.DEPLOY
-        else []
     )
-    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
-    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
+    guid_maps = (
+        list(guid_maps_override)
+        if guid_maps_override is not None
+        else [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    )
+    map_line = (
+        None
+        if guid_maps_override is not None
+        else (guid_map_confirm_line(guid_map_specs) if guid_map_specs else None)
+    )
+    if guid_maps_override is not None and any(guid_maps_override):
+        map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
         client: FabricClient | None = None
@@ -3071,7 +3290,7 @@ def run_notebook_command(
             else:
                 print_error_panel(result.message)
                 failed = True
-        if remap_values and not failed:
+        if (remap_values or map_line) and not failed:
             if map_line:
                 typer.secho(f"remap ok: {map_line}", fg=FG_OK)
             else:
@@ -3234,6 +3453,7 @@ def run_dataflow_command(
     manifest: str | None = None,
     remap_values: list[str] | None = None,
     publish: bool = False,
+    guid_maps_override: list[dict[str, str] | None] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for dataflow (Gen2) CLI commands and the interactive wizard."""
@@ -3281,16 +3501,32 @@ def run_dataflow_command(
         _exit_error(str(exc))
 
     guid_map_specs = (
-        _resolve_deploy_guid_maps(
-            remap_values,
-            n_targets=len(items),
-            has_targets=has_targets,
+        []
+        if guid_maps_override is not None
+        else (
+            _resolve_deploy_guid_maps(
+                remap_values,
+                n_targets=len(items),
+                has_targets=has_targets,
+                manifest=manifest,
+                expected_kind=KIND_DATAFLOW,
+            )
+            if mode is CommandMode.DEPLOY
+            else []
         )
-        if mode is CommandMode.DEPLOY
-        else []
     )
-    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
-    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
+    guid_maps = (
+        list(guid_maps_override)
+        if guid_maps_override is not None
+        else [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    )
+    map_line = (
+        None
+        if guid_maps_override is not None
+        else (guid_map_confirm_line(guid_map_specs) if guid_map_specs else None)
+    )
+    if guid_maps_override is not None and any(guid_maps_override):
+        map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
         client: FabricClient | None = None
@@ -3323,7 +3559,7 @@ def run_dataflow_command(
             else:
                 print_error_panel(result.message)
                 failed = True
-        if remap_values and not failed:
+        if (remap_values or map_line) and not failed:
             if map_line:
                 typer.secho(f"remap ok: {map_line}", fg=FG_OK)
             else:
@@ -4431,6 +4667,7 @@ def run_pipeline_command(
     manifest: str | None = None,
     include_schedules: bool = False,
     remap_values: list[str] | None = None,
+    guid_maps_override: list[dict[str, str] | None] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for pipeline CLI commands and the interactive wizard."""
@@ -4476,16 +4713,32 @@ def run_pipeline_command(
         _exit_error(str(exc))
 
     guid_map_specs = (
-        _resolve_deploy_guid_maps(
-            remap_values,
-            n_targets=len(items),
-            has_targets=has_targets,
+        []
+        if guid_maps_override is not None
+        else (
+            _resolve_deploy_guid_maps(
+                remap_values,
+                n_targets=len(items),
+                has_targets=has_targets,
+                manifest=manifest,
+                expected_kind=KIND_PIPELINE,
+            )
+            if mode is CommandMode.DEPLOY
+            else []
         )
-        if mode is CommandMode.DEPLOY
-        else []
     )
-    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
-    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
+    guid_maps = (
+        list(guid_maps_override)
+        if guid_maps_override is not None
+        else [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    )
+    map_line = (
+        None
+        if guid_maps_override is not None
+        else (guid_map_confirm_line(guid_map_specs) if guid_map_specs else None)
+    )
+    if guid_maps_override is not None and any(guid_maps_override):
+        map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
         client: FabricClient | None = None
@@ -4518,7 +4771,7 @@ def run_pipeline_command(
             else:
                 print_error_panel(result.message)
                 failed = True
-        if remap_values and not failed:
+        if (remap_values or map_line) and not failed:
             if map_line:
                 typer.secho(f"remap ok: {map_line}", fg=FG_OK)
             else:
@@ -4680,6 +4933,7 @@ def run_udf_command(
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
     remap_values: list[str] | None = None,
+    guid_maps_override: list[dict[str, str] | None] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for User Data Function CLI commands and the interactive wizard."""
@@ -4734,16 +4988,32 @@ def run_udf_command(
         _exit_error(str(exc))
 
     guid_map_specs = (
-        _resolve_deploy_guid_maps(
-            remap_values,
-            n_targets=len(items),
-            has_targets=has_targets,
+        []
+        if guid_maps_override is not None
+        else (
+            _resolve_deploy_guid_maps(
+                remap_values,
+                n_targets=len(items),
+                has_targets=has_targets,
+                manifest=manifest,
+                expected_kind=KIND_UDF,
+            )
+            if mode is CommandMode.DEPLOY
+            else []
         )
-        if mode is CommandMode.DEPLOY
-        else []
     )
-    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
-    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
+    guid_maps = (
+        list(guid_maps_override)
+        if guid_maps_override is not None
+        else [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    )
+    map_line = (
+        None
+        if guid_maps_override is not None
+        else (guid_map_confirm_line(guid_map_specs) if guid_map_specs else None)
+    )
+    if guid_maps_override is not None and any(guid_maps_override):
+        map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
         client: FabricClient | None = None
@@ -4776,7 +5046,7 @@ def run_udf_command(
             else:
                 print_error_panel(result.message)
                 failed = True
-        if remap_values and not failed:
+        if (remap_values or map_line) and not failed:
             if map_line:
                 typer.secho(f"remap ok: {map_line}", fg=FG_OK)
             else:
