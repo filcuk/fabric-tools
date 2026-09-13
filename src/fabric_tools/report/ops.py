@@ -97,7 +97,7 @@ def download_report(
     model_id: str | None = None
 
     if not independent:
-        model_id = _resolve_bound_model_id(
+        model_id = resolve_bound_model_id(
             client,
             target.workspace_id,
             target.item_id,
@@ -507,7 +507,7 @@ def _deploy_joined_folder(
             )
         else:
             if not model_id:
-                model_id = _resolve_bound_model_id(
+                model_id = resolve_bound_model_id(
                     client,
                     target.workspace_id,
                     target.item_id or "",
@@ -805,7 +805,7 @@ def _rewrite_definition_pbir(
     return out
 
 
-def _resolve_bound_model_id(
+def resolve_bound_model_id(
     client: FabricClient,
     workspace_id: str,
     report_id: str,

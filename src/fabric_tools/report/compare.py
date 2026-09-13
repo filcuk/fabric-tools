@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import difflib
 from dataclasses import dataclass, field
+from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
 from fabric_tools.confirm import resolve_item_name, resolve_workspace_name
-from fabric_tools.parsing import WorkItem
+from fabric_tools.parsing import Target, WorkItem
 from fabric_tools.report.definition import (
     DefinitionError,
     definition_to_diff_text,
@@ -16,7 +17,8 @@ from fabric_tools.report.definition import (
     packable_local_model,
     validate_local_report,
 )
-from fabric_tools.report.ops import get_report_definition
+from fabric_tools.report.ops import get_report_definition, resolve_bound_model_id
+from fabric_tools.semantic_model.compare import compare_semantic_model
 from fabric_tools.status import update as update_status
 
 
@@ -35,56 +37,82 @@ def compare_report(
     item: WorkItem,
     *,
     independent: bool = False,
-) -> CompareResult:
-    """Diff target report against a local folder or another remote."""
+    powerbi_client: Any | None = None,
+) -> list[CompareResult]:
+    """Diff target report against a local folder or another remote.
+
+    When not ``independent``, also compares a packable local (or origin-bound)
+    semantic model using the same bind resolution as report download.
+    """
     if item.target is None or item.target.item_id is None:
-        return CompareResult(
-            ok=False,
-            identical=False,
-            header="compare",
-            error="compare requires workspace:artifact target",
-        )
+        return [
+            CompareResult(
+                ok=False,
+                identical=False,
+                header="compare",
+                error="compare requires workspace:artifact target",
+            )
+        ]
     if item.file is None and item.origin is None:
-        return CompareResult(
-            ok=False,
-            identical=False,
-            header="compare",
-            error="compare requires a local --file or --origin",
-        )
+        return [
+            CompareResult(
+                ok=False,
+                identical=False,
+                header="compare",
+                error="compare requires a local --file or --origin",
+            )
+        ]
     if item.file is not None and item.origin is not None:
-        return CompareResult(
-            ok=False,
-            identical=False,
-            header="compare",
-            error="compare cannot use both --file and --origin",
-        )
+        return [
+            CompareResult(
+                ok=False,
+                identical=False,
+                header="compare",
+                error="compare cannot use both --file and --origin",
+            )
+        ]
     if item.file is not None and is_pbix_path(item.file):
-        return CompareResult(
-            ok=False,
-            identical=False,
-            header=str(item.file),
-            error="compare does not support .pbix (use a *.Report folder or --origin)",
-        )
+        return [
+            CompareResult(
+                ok=False,
+                identical=False,
+                header=str(item.file),
+                error="compare does not support .pbix (use a *.Report folder or --origin)",
+            )
+        ]
 
     if item.origin is not None:
-        report_result = _compare_origin_to_target(client, item)
-    else:
-        report_result = _compare_file_to_target(client, item)
+        report_result, origin_def, target_def = _compare_origin_to_target(client, item)
+        results = [report_result]
+        if not independent and report_result.ok and report_result.error is None:
+            model_results = _joined_origin_model_results(
+                client,
+                item,
+                report_result=report_result,
+                origin_definition=origin_def,
+                target_definition=target_def,
+                powerbi_client=powerbi_client,
+            )
+            results.extend(model_results)
+        return results
 
+    report_result, remote_definition = _compare_file_to_target(client, item)
+    results = [report_result]
     if (
         not independent
         and item.file is not None
         and report_result.ok
         and report_result.error is None
     ):
-        model_path = packable_local_model(item.file)
-        if model_path is not None:
-            report_result.messages.append(
-                f"local packable model present at {model_path}; "
-                "joined model compare requires a bound semantic model id "
-                "(use semantic-model compare, or pass semanticModelId)"
-            )
-    return report_result
+        model_results = _joined_file_model_results(
+            client,
+            item,
+            report_result=report_result,
+            remote_definition=remote_definition,
+            powerbi_client=powerbi_client,
+        )
+        results.extend(model_results)
+    return results
 
 
 def run_compare_batch(
@@ -92,6 +120,7 @@ def run_compare_batch(
     items: list[WorkItem],
     *,
     independent: bool = False,
+    powerbi_client: Any | None = None,
 ) -> list[CompareResult]:
     results: list[CompareResult] = []
     for item in items:
@@ -103,11 +132,20 @@ def run_compare_batch(
             )
         else:
             update_status("Comparing report...")
-        results.append(compare_report(client, item, independent=independent))
+        results.extend(
+            compare_report(
+                client,
+                item,
+                independent=independent,
+                powerbi_client=powerbi_client,
+            )
+        )
     return results
 
 
-def _compare_file_to_target(client: FabricClient, item: WorkItem) -> CompareResult:
+def _compare_file_to_target(
+    client: FabricClient, item: WorkItem
+) -> tuple[CompareResult, dict[str, Any] | None]:
     assert item.target is not None and item.target.item_id is not None
     assert item.file is not None
     target = item.target
@@ -117,11 +155,14 @@ def _compare_file_to_target(client: FabricClient, item: WorkItem) -> CompareResu
         validate_local_report(local_path)
         local_text = folder_to_diff_text(local_path)
     except DefinitionError as exc:
-        return CompareResult(
-            ok=False,
-            identical=False,
-            header=str(local_path),
-            error=str(exc),
+        return (
+            CompareResult(
+                ok=False,
+                identical=False,
+                header=str(local_path),
+                error=str(exc),
+            ),
+            None,
         )
 
     remote_label = resolve_item_name(client, target)
@@ -134,23 +175,31 @@ def _compare_file_to_target(client: FabricClient, item: WorkItem) -> CompareResu
         )
         remote_text = definition_to_diff_text(remote_definition)
     except (FabricApiError, DefinitionError) as exc:
-        return CompareResult(
-            ok=False,
-            identical=False,
-            header=header,
-            error=f"failed to fetch remote definition: {exc}",
+        return (
+            CompareResult(
+                ok=False,
+                identical=False,
+                header=header,
+                error=f"failed to fetch remote definition: {exc}",
+            ),
+            None,
         )
 
-    return _diff_texts(
-        header,
-        left_text=remote_text,
-        right_text=local_text,
-        left_label=f"remote:{target.label()}",
-        right_label=f"local:{local_path}",
+    return (
+        _diff_texts(
+            header,
+            left_text=remote_text,
+            right_text=local_text,
+            left_label=f"remote:{target.label()}",
+            right_label=f"local:{local_path}",
+        ),
+        remote_definition,
     )
 
 
-def _compare_origin_to_target(client: FabricClient, item: WorkItem) -> CompareResult:
+def _compare_origin_to_target(
+    client: FabricClient, item: WorkItem
+) -> tuple[CompareResult, dict[str, Any] | None, dict[str, Any] | None]:
     assert item.target is not None and item.target.item_id is not None
     assert item.origin is not None and item.origin.item_id is not None
     target = item.target
@@ -175,20 +224,139 @@ def _compare_origin_to_target(client: FabricClient, item: WorkItem) -> CompareRe
         origin_text = definition_to_diff_text(origin_definition)
         target_text = definition_to_diff_text(target_definition)
     except (FabricApiError, DefinitionError) as exc:
-        return CompareResult(
-            ok=False,
-            identical=False,
-            header=header,
-            error=f"failed to fetch remote definition: {exc}",
+        return (
+            CompareResult(
+                ok=False,
+                identical=False,
+                header=header,
+                error=f"failed to fetch remote definition: {exc}",
+            ),
+            None,
+            None,
         )
 
-    return _diff_texts(
-        header,
-        left_text=target_text,
-        right_text=origin_text,
-        left_label=f"target:{target.label()}",
-        right_label=f"origin:{origin.label()}",
+    return (
+        _diff_texts(
+            header,
+            left_text=target_text,
+            right_text=origin_text,
+            left_label=f"target:{target.label()}",
+            right_label=f"origin:{origin.label()}",
+        ),
+        origin_definition,
+        target_definition,
     )
+
+
+def _joined_file_model_results(
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    report_result: CompareResult,
+    remote_definition: dict[str, Any] | None,
+    powerbi_client: Any | None,
+) -> list[CompareResult]:
+    assert item.target is not None and item.target.item_id is not None
+    assert item.file is not None
+
+    model_path = packable_local_model(item.file)
+    if model_path is None:
+        return []
+
+    model_id = resolve_bound_model_id(
+        client,
+        item.target.workspace_id,
+        item.target.item_id,
+        definition=remote_definition,
+        powerbi_client=powerbi_client,
+    )
+    if not model_id:
+        report_result.messages.append(
+            f"local packable model present at {model_path}; "
+            "semantic model not compared "
+            "(thin/live-connect or unbound — use semantic-model compare if needed)"
+        )
+        return []
+
+    update_status(
+        f"Comparing joined semantic model {item.target.workspace_id}:{model_id} "
+        f"<-> {model_path}..."
+    )
+    # semantic_model.compare.CompareResult is structurally identical.
+    model_result = compare_semantic_model(
+        client,
+        WorkItem(Target(item.target.workspace_id, model_id), model_path),
+    )
+    return [
+        CompareResult(
+            ok=model_result.ok,
+            identical=model_result.identical,
+            header=model_result.header,
+            diff_text=model_result.diff_text,
+            error=model_result.error,
+            messages=list(model_result.messages),
+        )
+    ]
+
+
+def _joined_origin_model_results(
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    report_result: CompareResult,
+    origin_definition: dict[str, Any] | None,
+    target_definition: dict[str, Any] | None,
+    powerbi_client: Any | None,
+) -> list[CompareResult]:
+    assert item.target is not None and item.target.item_id is not None
+    assert item.origin is not None and item.origin.item_id is not None
+
+    origin_model_id = resolve_bound_model_id(
+        client,
+        item.origin.workspace_id,
+        item.origin.item_id,
+        definition=origin_definition,
+        powerbi_client=powerbi_client,
+    )
+    target_model_id = resolve_bound_model_id(
+        client,
+        item.target.workspace_id,
+        item.target.item_id,
+        definition=target_definition,
+        powerbi_client=powerbi_client,
+    )
+    if not origin_model_id or not target_model_id:
+        if origin_model_id or target_model_id:
+            report_result.messages.append(
+                "joined semantic model not compared "
+                "(one side is thin/live-connect or unbound — "
+                "use semantic-model compare if needed)"
+            )
+        return []
+
+    update_status(
+        f"Comparing joined semantic models "
+        f"{item.origin.workspace_id}:{origin_model_id} <-> "
+        f"{item.target.workspace_id}:{target_model_id}..."
+    )
+    model_result = compare_semantic_model(
+        client,
+        WorkItem(
+            Target(item.target.workspace_id, target_model_id),
+            None,
+            origin=Target(item.origin.workspace_id, origin_model_id),
+        ),
+    )
+    return [
+        CompareResult(
+            ok=model_result.ok,
+            identical=model_result.identical,
+            header=model_result.header,
+            diff_text=model_result.diff_text,
+            error=model_result.error,
+            messages=list(model_result.messages),
+        )
+    ]
 
 
 def _diff_texts(

@@ -2044,7 +2044,7 @@ def report_compare(
         False,
         "--independent",
         "-i",
-        help="(optional) Compare the report definition only (skip joined-model notes).",
+        help="(optional) Compare the report definition only (skip joined semantic model).",
     ),
 ) -> None:
     """Compare target report to a local *.Report folder or Fabric origin."""
