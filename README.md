@@ -56,18 +56,16 @@ fabric-tools notebook deploy -m etl
 | Item|One-way|Two-way|Notes|
 |---|---|---|---|
 | Notebook|✅|✅|Can update individual cells.|
-| Dataflow Gen2|✅|✅|Opt-in `--publish` / `-p` after deploy (Apply Changes).|
-| Dataflow Gen1|✅|🚫|Deploy is create-only[^1].|
+| Dataflow Gen2|✅|✅||
+| Dataflow Gen1|✅|🚫|No API support for overwrite.|
 | Data Pipeline|✅|✅||
 | User Data Function|✅|✅||
 | Semantic Model|✅|✅||
 | Report|✅|✅|Standalone or model-joined operations.|
 | Paginated Report|✅|✅|No API support for sources & credentials.|
-| Org App|✅|✅|`definition.json` in a `*.OrgApp` folder.|
-| Environment|✅|✅|Libraries and Spark compute settings in a `*.Environment` folder.|
-| Variable Library|✅|✅|`variables.json`, `settings.json`, and optional `valueSets/` in a `*.VariableLibrary` folder.|
-| Inspect|✅ (Read)|🚫|Browse workspaces and items.|
-| Pack manifests|✅|✅|Schema v3 multi-kind `.ftdep`; `pack …` for mixed.|
+| Org App|✅|✅||
+| Environment|✅|✅||
+| Variable Library|✅|✅||
 | Lakehouse|🚫|🚫|No API support.|
 | Warehouse|❔|❔||
 | Eventhouse|❔|❔||
@@ -83,8 +81,6 @@ fabric-tools notebook deploy -m etl
 ✅ = Supported  
 📅 = Planned  
 🚫 = Not supported  
-
-[^1]: Dataflow Gen1 don't support overwrite, and credentials must be handled separately.
 
 ## Authentication
 
