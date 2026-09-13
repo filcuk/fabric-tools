@@ -129,8 +129,12 @@ def load_manifest(path: str | Path) -> DeploymentManifest:
     )
 
 
-def save_manifest(path: str | Path, manifest: DeploymentManifest) -> Path:
-    """Write *manifest* as JSON; returns the path written."""
+def save_manifest(path: str | Path, manifest: DeploymentManifest) -> tuple[Path, bool]:
+    """Write *manifest* as JSON if content differs from the existing file.
+
+    Returns ``(path, written)``. *written* is False when the file already
+    matches the serialized payload (no disk write).
+    """
     resolved = resolve_manifest_path(path)
     if not manifest.entries:
         raise ManifestError("cannot save manifest with no entries")
@@ -142,15 +146,19 @@ def save_manifest(path: str | Path, manifest: DeploymentManifest) -> Path:
             _entry_to_json(entry, base=resolved.parent) for entry in manifest.entries
         ],
     }
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    if resolved.is_file():
+        try:
+            if resolved.read_text(encoding="utf-8") == text:
+                return resolved, False
+        except OSError as exc:
+            raise ManifestError(f"failed to read manifest {resolved}: {exc}") from exc
     try:
         resolved.parent.mkdir(parents=True, exist_ok=True)
-        resolved.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        resolved.write_text(text, encoding="utf-8")
     except OSError as exc:
         raise ManifestError(f"failed to write manifest {resolved}: {exc}") from exc
-    return resolved
+    return resolved, True
 
 
 def work_items_from_manifest(

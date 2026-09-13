@@ -5749,7 +5749,10 @@ def _write_manifest_after_success(
     kind: str = KIND_NOTEBOOK,
     semantic_model_ids: list[str | None] | None = None,
 ) -> None:
-    """Rewrite ``.ftdep`` when ``-m`` is set and the operation or dry-run succeeded."""
+    """Rewrite ``.ftdep`` when ``-m`` is set and the operation or dry-run succeeded.
+
+    Skips the write (and the “Wrote manifest” line) when content is unchanged.
+    """
     if not manifest:
         return
     if op_results is not None and not all(result.ok for result in op_results):
@@ -5773,11 +5776,12 @@ def _write_manifest_after_success(
             item_id_overrides=overrides,
             semantic_model_id_overrides=sm_overrides,
         )
-        path = save_manifest(manifest, built)
+        path, written = save_manifest(manifest, built)
     except ManifestError as exc:
         print_warn_panel(f"manifest not written: {exc}")
         return
-    typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
+    if written:
+        typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
 
 
 def _print_op_results(results: list[OpResult]) -> None:

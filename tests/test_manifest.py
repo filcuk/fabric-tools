@@ -59,7 +59,8 @@ def test_save_load_round_trip_relative_paths(tmp_path: Path) -> None:
     nb.write_text("{}", encoding="utf-8")
     items = [WorkItem(Target(WS, ITEM), nb)]
     built = manifest_from_work_items(items, display_names=["ETL"])
-    path = save_manifest(tmp_path / "deploy", built)
+    path, written = save_manifest(tmp_path / "deploy", built)
+    assert written
 
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["schemaVersion"] == 1
@@ -117,7 +118,7 @@ def test_report_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_REPORT,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "rpt", built)
+    path, _ = save_manifest(tmp_path / "rpt", built)
     loaded = load_manifest(path)
     assert loaded.kind == KIND_REPORT
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_REPORT)
@@ -134,7 +135,7 @@ def test_semantic_model_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_SEMANTIC_MODEL,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "sm", built)
+    path, _ = save_manifest(tmp_path / "sm", built)
     loaded = load_manifest(path)
     assert loaded.kind == KIND_SEMANTIC_MODEL
     work_items, names = work_items_from_manifest(
@@ -159,7 +160,7 @@ def test_report_semantic_model_id_round_trip(tmp_path: Path) -> None:
             ),
         ),
     )
-    path = save_manifest(tmp_path / "rpt_sm", built)
+    path, _ = save_manifest(tmp_path / "rpt_sm", built)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["entries"][0]["semanticModelId"] == ITEM2
     loaded = load_manifest(path)
@@ -177,7 +178,7 @@ def test_dataflow_gen1_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_DATAFLOW_GEN1,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "df", built)
+    path, _ = save_manifest(tmp_path / "df", built)
     loaded = load_manifest(path)
     assert loaded.kind == KIND_DATAFLOW_GEN1
     work_items, names = work_items_from_manifest(
@@ -196,7 +197,7 @@ def test_paginated_report_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_PAGINATED_REPORT,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "pr", built)
+    path, _ = save_manifest(tmp_path / "pr", built)
     loaded = load_manifest(path)
     assert loaded.kind == KIND_PAGINATED_REPORT
     work_items, names = work_items_from_manifest(
@@ -215,7 +216,7 @@ def test_dataflow_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_DATAFLOW,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "df2", built)
+    path, _ = save_manifest(tmp_path / "df2", built)
     loaded = load_manifest(path)
     assert loaded.kind == KIND_DATAFLOW
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_DATAFLOW)
@@ -232,7 +233,7 @@ def test_udf_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_UDF,
         display_names=["Demo"],
     )
-    path = save_manifest(tmp_path / "udf", built)
+    path, _ = save_manifest(tmp_path / "udf", built)
     loaded = load_manifest(path)
     assert loaded.kind == KIND_UDF
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_UDF)
@@ -249,7 +250,7 @@ def test_pipeline_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_PIPELINE,
         display_names=["ETL"],
     )
-    path = save_manifest(tmp_path / "pipe", built)
+    path, _ = save_manifest(tmp_path / "pipe", built)
     loaded = load_manifest(path)
     assert loaded.kind == KIND_PIPELINE
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_PIPELINE)
@@ -265,7 +266,7 @@ def test_delete_targets_from_manifest(tmp_path: Path) -> None:
         WorkItem(Target(WS, ITEM2), model),
     ]
     built = manifest_from_work_items(items, kind=KIND_DATAFLOW_GEN1)
-    path = save_manifest(tmp_path / "df-del", built)
+    path, _ = save_manifest(tmp_path / "df-del", built)
     loaded = load_manifest(path)
     delete_items = delete_targets_from_manifest(
         loaded, expected_kind=KIND_DATAFLOW_GEN1
@@ -281,7 +282,7 @@ def test_delete_targets_from_manifest_requires_item_id(tmp_path: Path) -> None:
     model.write_text("{}", encoding="utf-8")
     items = [WorkItem(Target(WS, None), model)]
     built = manifest_from_work_items(items, kind=KIND_NOTEBOOK)
-    path = save_manifest(tmp_path / "create-only", built)
+    path, _ = save_manifest(tmp_path / "create-only", built)
     loaded = load_manifest(path)
     with pytest.raises(ManifestError, match="itemId"):
         delete_targets_from_manifest(loaded, expected_kind=KIND_NOTEBOOK)
@@ -374,6 +375,40 @@ def test_write_manifest_after_success_writes(
     )
     data = json.loads((tmp_path / "out.ftdep").read_text(encoding="utf-8"))
     assert data["entries"][0]["itemId"] == ITEM2
+
+
+def test_save_manifest_skips_identical_content(tmp_path: Path) -> None:
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    items = [WorkItem(Target(WS, ITEM), nb)]
+    built = manifest_from_work_items(items, display_names=["ETL"])
+    path, written = save_manifest(tmp_path / "deploy", built)
+    assert written
+    mtime = path.stat().st_mtime_ns
+    path2, written_again = save_manifest(tmp_path / "deploy", built)
+    assert path2 == path
+    assert not written_again
+    assert path.stat().st_mtime_ns == mtime
+
+
+def test_write_manifest_after_success_silent_when_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    nb = tmp_path / "a.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    items = [WorkItem(Target(WS, ITEM), nb)]
+    built = manifest_from_work_items(items, display_names=["A"])
+    save_manifest("out", built)
+    _write_manifest_after_success(
+        "out",
+        items,
+        display_names=["A"],
+        op_results=[OpResult(True, "ok", WS, ITEM)],
+    )
+    assert "Wrote manifest:" not in capsys.readouterr().out
 
 
 def test_dry_run_writes_manifest_on_success(
@@ -476,10 +511,11 @@ def _save_simple_manifest(directory: Path, stem: str) -> Path:
     nb = directory / "etl.ipynb"
     if not nb.exists():
         nb.write_text("{}", encoding="utf-8")
-    return save_manifest(
+    path, _ = save_manifest(
         directory / stem,
         manifest_from_work_items([WorkItem(Target(WS, ITEM), nb)]),
     )
+    return path
 
 
 def test_resolve_inspect_target_directory(tmp_path: Path) -> None:
@@ -656,11 +692,11 @@ def test_manifest_move_overwrite_silent(
 ) -> None:
     nb = tmp_path / "etl.ipynb"
     nb.write_text("{}", encoding="utf-8")
-    source = save_manifest(
+    source, _ = save_manifest(
         tmp_path / "alpha",
         manifest_from_work_items([WorkItem(Target(WS, ITEM), nb)]),
     )
-    dest = save_manifest(
+    dest, _ = save_manifest(
         tmp_path / "beta",
         manifest_from_work_items([WorkItem(Target(WS, ITEM2), nb)]),
     )
@@ -705,7 +741,7 @@ def test_origin_manifest_v2_round_trip(tmp_path: Path) -> None:
     items = [WorkItem(target, None, origin=origin)]
     built = manifest_from_work_items(items)
     assert built.schema_version == 2
-    path = save_manifest(tmp_path / "origin-deploy", built)
+    path, _ = save_manifest(tmp_path / "origin-deploy", built)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["schemaVersion"] == 2
     assert raw["entries"][0]["originWorkspaceId"] == WS

@@ -278,11 +278,12 @@ def prompt_save_manifest(
             item_id_overrides=overrides,
             semantic_model_id_overrides=sm_overrides,
         )
-        path = save_manifest(stem, built)
+        path, written = save_manifest(stem, built)
     except ManifestError as exc:
         print_warn_panel(f"manifest not written: {exc}")
         return
-    typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
+    if written:
+        typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
 
 
 def _needs_source_step(answers: dict[str, Any]) -> bool:
