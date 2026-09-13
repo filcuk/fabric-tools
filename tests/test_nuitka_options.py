@@ -49,6 +49,7 @@ def test_shared_nuitka_args_include_core_flags(project_root: Path) -> None:
     assert "--mingw64" in args
     assert "--msvc=latest" not in args
     assert "--assume-yes-for-downloads" in args
+    assert "--no-deployment-flag=self-execution" in args
     win_version = windows_file_version()
     assert f"--file-version={win_version}" in args
     assert f"--product-version={win_version}" in args
