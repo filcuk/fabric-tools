@@ -10,7 +10,8 @@ from typing import Any
 from fabric_tools.client import FabricApiError
 from fabric_tools.definition_parts import PAYLOAD_TYPE
 from fabric_tools.parsing import Target, WorkItem
-from fabric_tools.report.compare import compare_report
+from fabric_tools.report.compare import compare_report, run_compare_batch
+from fabric_tools.status import short_guid
 
 WS = "11111111-1111-1111-1111-111111111111"
 REPORT = "22222222-2222-2222-2222-222222222222"
@@ -271,3 +272,147 @@ def test_compare_joined_origin(tmp_path: Path) -> None:
     assert len(results) == 2
     assert results[0].ok and not results[0].identical
     assert results[1].ok and results[1].identical
+
+
+def test_run_compare_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.report.compare.update_status",
+        lambda msg: messages.append(msg),
+    )
+    report_a = _write_local(tmp_path / "A.Report")
+    _write_model(tmp_path / "A.SemanticModel")
+    report_b = _write_local(tmp_path / "B.Report")
+    _write_model(tmp_path / "B.SemanticModel")
+    report_id_b = "33333333-3333-3333-3333-333333333333"
+    model_id_b = "88888888-8888-8888-8888-888888888888"
+
+    class MultiClient(FakeClient):
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict[str, Any] | None = None,
+            json: Any = None,
+            wait: bool = True,
+        ) -> Any:
+            del params, json, wait
+            if (
+                method == "POST"
+                and "/reports/" in path
+                and path.endswith("/getDefinition")
+            ):
+                item_id = path.split("/")[-2]
+                model_id = MODEL if item_id == REPORT else model_id_b
+                return {"definition": _definition(model_id=model_id)}
+            if (
+                method == "POST"
+                and "/semanticModels/" in path
+                and path.endswith("/getDefinition")
+            ):
+                item_id = path.split("/")[-2]
+                return {"definition": _sm_definition()}
+            raise FabricApiError(f"unexpected {method} {path}")
+
+    run_compare_batch(
+        MultiClient(sm_bodies={MODEL: "model Sales\n", model_id_b: "model Sales\n"}),
+        [
+            WorkItem(Target(WS, REPORT), report_a),  # type: ignore[arg-type]
+            WorkItem(Target(WS, report_id_b), report_b),  # type: ignore[arg-type]
+        ],
+    )
+    assert messages == [
+        f"1 of 4 · Comparing report ({short_guid(REPORT)})…",
+        f"2 of 4 · Comparing semantic model ({short_guid(MODEL)})…",
+        f"3 of 4 · Comparing report ({short_guid(report_id_b)})…",
+        f"4 of 4 · Comparing semantic model ({short_guid(model_id_b)})…",
+    ]
+
+
+def test_run_compare_batch_status_independent(tmp_path: Path, monkeypatch: Any) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.report.compare.update_status",
+        lambda msg: messages.append(msg),
+    )
+    report = _write_local(tmp_path / "Sales.Report")
+    _write_model(tmp_path / "Sales.SemanticModel")
+    run_compare_batch(
+        FakeClient(),
+        [WorkItem(Target(WS, REPORT), report)],  # type: ignore[arg-type]
+        independent=True,
+    )
+    assert messages == [f"1 of 1 · Comparing report ({short_guid(REPORT)})…"]
+
+
+def test_run_compare_batch_status_skipped_join(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.report.compare.update_status",
+        lambda msg: messages.append(msg),
+    )
+    report_a = _write_local(tmp_path / "A.Report")
+    _write_model(tmp_path / "A.SemanticModel")
+    report_b = _write_local(tmp_path / "B.Report")
+    _write_model(tmp_path / "B.SemanticModel")
+    report_id_b = "33333333-3333-3333-3333-333333333333"
+    unbound = {
+        "format": "PBIR",
+        "parts": [
+            _part(
+                "definition.pbir",
+                json.dumps(
+                    {
+                        "version": "4.0",
+                        "datasetReference": {"byPath": {"path": "../A.SemanticModel"}},
+                    }
+                ).encode("utf-8"),
+            ),
+            _part("definition/report.json", b'{"version": "1.0"}\n'),
+        ],
+    }
+
+    class MixedClient(FakeClient):
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict[str, Any] | None = None,
+            json: Any = None,
+            wait: bool = True,
+        ) -> Any:
+            del params, json, wait
+            if (
+                method == "POST"
+                and "/reports/" in path
+                and path.endswith("/getDefinition")
+            ):
+                item_id = path.split("/")[-2]
+                if item_id == REPORT:
+                    return {"definition": unbound}
+                return {"definition": _definition()}
+            if (
+                method == "POST"
+                and "/semanticModels/" in path
+                and path.endswith("/getDefinition")
+            ):
+                return {"definition": _sm_definition()}
+            raise FabricApiError(f"unexpected {method} {path}")
+
+    run_compare_batch(
+        MixedClient(),
+        [
+            WorkItem(Target(WS, REPORT), report_a),  # type: ignore[arg-type]
+            WorkItem(Target(WS, report_id_b), report_b),  # type: ignore[arg-type]
+        ],
+        powerbi_client=FakePowerBi(dataset_id=None),
+    )
+    assert messages == [
+        f"1 of 4 · Comparing report ({short_guid(REPORT)})…",
+        f"2 of 3 · Comparing report ({short_guid(report_id_b)})…",
+        f"3 of 3 · Comparing semantic model ({short_guid(MODEL)})…",
+    ]
