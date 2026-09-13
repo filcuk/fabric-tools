@@ -47,6 +47,20 @@ def resolve_item_name(client: FabricClient, target: Target) -> str:
     return f"{name} ({target.item_id}{suffix})"
 
 
+def item_display_name(client: FabricClient, target: Target) -> str:
+    """Return Fabric item display name only (no id/type suffix)."""
+    if target.item_id is None:
+        return "-"
+    try:
+        data = client.get_item(target.workspace_id, target.item_id)
+    except FabricApiError:
+        return target.item_id
+    name = data.get("displayName") or data.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return target.item_id
+
+
 def resolve_powerbi_group_name(client: PowerBiClient, group_id: str) -> str:
     try:
         data = client.get_group(group_id)
@@ -71,14 +85,7 @@ def notebook_display_name(client: FabricClient, target: Target) -> str:
     """Return Fabric item display name for a notebook target (fallback: id)."""
     if target.item_id is None:
         return "Notebook"
-    try:
-        data = client.get_item(target.workspace_id, target.item_id)
-    except FabricApiError:
-        return target.item_id
-    name = data.get("displayName") or data.get("name")
-    if isinstance(name, str) and name.strip():
-        return name.strip()
-    return target.item_id
+    return item_display_name(client, target)
 
 
 def dataflow_gen1_display_name(client: PowerBiClient, target: Target) -> str:

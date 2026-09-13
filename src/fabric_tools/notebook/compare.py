@@ -14,7 +14,7 @@ from nbdime.diffing.notebooks import diff_notebooks, set_notebook_diff_targets
 from nbdime.prettyprint import PrettyPrintConfig, pretty_print_notebook_diff
 
 from fabric_tools.client import FabricApiError, FabricClient
-from fabric_tools.confirm import resolve_item_name, resolve_workspace_name
+from fabric_tools.confirm import item_display_name, resolve_workspace_name
 from fabric_tools.notebook.definition import (
     FABRIC_GIT_CONTENT_NAMES,
     PLATFORM_PART_PATH,
@@ -37,6 +37,9 @@ class CompareResult:
     diff_text: str = ""
     error: str | None = None
     messages: list[str] = field(default_factory=list)
+    remote_name: str = "-"
+    local_name: str = "-"
+    target_ref: str = "-"
 
 
 def compare_notebook(
@@ -59,6 +62,7 @@ def compare_notebook(
             identical=False,
             header="compare",
             error="compare requires a local --file or --origin",
+            target_ref=item.target.label(),
         )
     if item.file is not None and item.origin is not None:
         return CompareResult(
@@ -66,6 +70,7 @@ def compare_notebook(
             identical=False,
             header="compare",
             error="compare cannot use both --file and --origin",
+            target_ref=item.target.label(),
         )
 
     if item.origin is not None:
@@ -83,6 +88,8 @@ def _compare_file_to_target(
     assert item.file is not None
     target = item.target
     local_path = item.file
+    local_name = local_path.name
+    target_ref = target.label()
     try:
         fmt = validate_local_notebook(local_path)
     except DefinitionError as exc:
@@ -91,11 +98,13 @@ def _compare_file_to_target(
             identical=False,
             header=str(local_path),
             error=str(exc),
+            local_name=local_name,
+            target_ref=target_ref,
         )
 
-    remote_label = resolve_item_name(client, target)
+    remote_name = item_display_name(client, target)
     workspace_label = resolve_workspace_name(client, target.workspace_id)
-    header = f"remote {remote_label} in {workspace_label}  vs  local `{local_path}`"
+    header = f"remote {remote_name} in {workspace_label}  vs  local `{local_path}`"
 
     try:
         definition = get_notebook_definition(
@@ -110,6 +119,9 @@ def _compare_file_to_target(
             identical=False,
             header=header,
             error=f"failed to fetch remote definition: {exc}",
+            remote_name=remote_name,
+            local_name=local_name,
+            target_ref=target_ref,
         )
 
     with tempfile.TemporaryDirectory(prefix="fabric-tools-compare-") as tmp:
@@ -126,6 +138,9 @@ def _compare_file_to_target(
                 identical=False,
                 header=header,
                 error=f"failed to unpack remote definition: {exc}",
+                remote_name=remote_name,
+                local_name=local_name,
+                target_ref=target_ref,
             )
 
         if fmt is NotebookFormat.IPYNB:
@@ -136,11 +151,17 @@ def _compare_file_to_target(
                 left_label=f"remote:{remote_path.name}",
                 right_label=f"local:{local_path}",
                 ignore_outputs=ignore_outputs,
+                remote_name=remote_name,
+                local_name=local_name,
+                target_ref=target_ref,
             )
         return _diff_fabric_git(
             header,
             remote_dir=remote_path,
             local_dir=local_path,
+            remote_name=remote_name,
+            local_name=local_name,
+            target_ref=target_ref,
         )
 
 
@@ -154,14 +175,15 @@ def _compare_origin_to_target(
     assert item.origin is not None and item.origin.item_id is not None
     target = item.target
     origin = item.origin
+    remote_name = item_display_name(client, target)
+    local_name = item_display_name(client, origin)
+    target_ref = target.label()
 
-    origin_label = resolve_item_name(client, origin)
     origin_ws = resolve_workspace_name(client, origin.workspace_id)
-    target_label = resolve_item_name(client, target)
     target_ws = resolve_workspace_name(client, target.workspace_id)
     header = (
-        f"origin {origin_label} in {origin_ws}  vs  "
-        f"target {target_label} in {target_ws}"
+        f"origin {local_name} in {origin_ws}  vs  "
+        f"target {remote_name} in {target_ws}"
     )
 
     try:
@@ -183,6 +205,9 @@ def _compare_origin_to_target(
             identical=False,
             header=header,
             error=f"failed to fetch remote definition: {exc}",
+            remote_name=remote_name,
+            local_name=local_name,
+            target_ref=target_ref,
         )
 
     with tempfile.TemporaryDirectory(prefix="fabric-tools-compare-") as tmp:
@@ -202,6 +227,9 @@ def _compare_origin_to_target(
                 identical=False,
                 header=header,
                 error=f"failed to unpack remote definition: {exc}",
+                remote_name=remote_name,
+                local_name=local_name,
+                target_ref=target_ref,
             )
         return _diff_ipynb(
             header,
@@ -210,6 +238,9 @@ def _compare_origin_to_target(
             left_label=f"target:{target.label()}",
             right_label=f"origin:{origin.label()}",
             ignore_outputs=ignore_outputs,
+            remote_name=remote_name,
+            local_name=local_name,
+            target_ref=target_ref,
         )
 
 
@@ -241,6 +272,9 @@ def _diff_ipynb(
     left_label: str,
     right_label: str,
     ignore_outputs: bool,
+    remote_name: str = "-",
+    local_name: str = "-",
+    target_ref: str = "-",
 ) -> CompareResult:
     set_notebook_diff_targets(
         sources=True,
@@ -254,7 +288,15 @@ def _diff_ipynb(
     nb_right = _load_notebook_for_diff(right_path)
     diff = diff_notebooks(nb_left, nb_right)
     if not diff:
-        return CompareResult(ok=True, identical=True, header=header, diff_text="")
+        return CompareResult(
+            ok=True,
+            identical=True,
+            header=header,
+            diff_text="",
+            remote_name=remote_name,
+            local_name=local_name,
+            target_ref=target_ref,
+        )
 
     buffer = StringIO()
     config = PrettyPrintConfig(out=buffer)
@@ -270,6 +312,9 @@ def _diff_ipynb(
         identical=False,
         header=header,
         diff_text=buffer.getvalue(),
+        remote_name=remote_name,
+        local_name=local_name,
+        target_ref=target_ref,
     )
 
 
@@ -289,6 +334,9 @@ def _diff_fabric_git(
     *,
     remote_dir: Path,
     local_dir: Path,
+    remote_name: str = "-",
+    local_name: str = "-",
+    target_ref: str = "-",
 ) -> CompareResult:
     names: list[str] = []
     for name in FABRIC_GIT_CONTENT_NAMES:
@@ -341,10 +389,21 @@ def _diff_fabric_git(
             chunks.append("".join(diff))
 
     if not any_diff:
-        return CompareResult(ok=True, identical=True, header=header, diff_text="")
+        return CompareResult(
+            ok=True,
+            identical=True,
+            header=header,
+            diff_text="",
+            remote_name=remote_name,
+            local_name=local_name,
+            target_ref=target_ref,
+        )
     return CompareResult(
         ok=True,
         identical=False,
         header=header,
         diff_text="\n".join(chunks),
+        remote_name=remote_name,
+        local_name=local_name,
+        target_ref=target_ref,
     )
