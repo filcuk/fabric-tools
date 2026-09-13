@@ -110,3 +110,8 @@ def update(message: str) -> None:
     if current is not None and not _console.is_terminal:
         _console.print(message, highlight=False)
         _message.set(message)
+
+
+def current_message() -> str | None:
+    """Return the active status message, if any."""
+    return _message.get()

@@ -118,8 +118,12 @@ def _broker_interactive_unreliable() -> bool:
 
 
 def _announce(message: str) -> None:
-    from fabric_tools.status import update
+    from fabric_tools.status import current_message, update
 
+    # Do not overwrite download/deploy/compare progress during later token refreshes.
+    active = current_message()
+    if active is not None and not active.startswith("Authenticating"):
+        return
     update(message)
 
 
@@ -184,14 +188,17 @@ class _PersistingAuthRecordCredential:
 
 
 class _AnnouncingCredential:
-    """Update the CLI status line before delegating ``get_token``."""
+    """Update the CLI status line before the first ``get_token`` attempt."""
 
     def __init__(self, inner: TokenCredential, message: str) -> None:
         self._inner = inner
         self._message = message
+        self._announced = False
 
     def get_token(self, *scopes: str, **kwargs) -> AccessToken:
-        _announce(self._message)
+        if not self._announced:
+            _announce(self._message)
+            self._announced = True
         return self._inner.get_token(*scopes, **kwargs)
 
     def close(self) -> None:

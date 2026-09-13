@@ -288,7 +288,36 @@ def test_announcing_credential_updates_status(monkeypatch) -> None:
     inner.get_token.return_value = AccessToken("tok", 9999999999)
     wrapped = auth._AnnouncingCredential(inner, "Authenticating (browser)...")
     assert wrapped.get_token("scope").token == "tok"
+    assert wrapped.get_token("scope").token == "tok"
     assert messages == ["Authenticating (browser)..."]
+
+
+def test_announce_does_not_overwrite_non_auth_status(monkeypatch) -> None:
+    updates: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.status.update",
+        lambda msg: updates.append(msg),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.status.current_message",
+        lambda: "1 of 2 · Comparing report (aaaaaaaa…)…",
+    )
+    auth._announce("Authenticating (Windows account)...")
+    assert updates == []
+
+
+def test_announce_updates_when_status_is_authenticating(monkeypatch) -> None:
+    updates: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.status.update",
+        lambda msg: updates.append(msg),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.status.current_message",
+        lambda: "Authenticating...",
+    )
+    auth._announce("Authenticating (Windows account)...")
+    assert updates == ["Authenticating (Windows account)..."]
 
 
 def test_device_code_prompt_announces_code(monkeypatch) -> None:
