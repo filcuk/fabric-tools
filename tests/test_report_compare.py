@@ -277,7 +277,7 @@ def test_compare_joined_origin(tmp_path: Path) -> None:
 def test_run_compare_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> None:
     messages: list[str] = []
     monkeypatch.setattr(
-        "fabric_tools.report.compare.update_status",
+        "fabric_tools.status.update",
         lambda msg: messages.append(msg),
     )
     report_a = _write_local(tmp_path / "A.Report")
@@ -333,7 +333,7 @@ def test_run_compare_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> No
 def test_run_compare_batch_status_independent(tmp_path: Path, monkeypatch: Any) -> None:
     messages: list[str] = []
     monkeypatch.setattr(
-        "fabric_tools.report.compare.update_status",
+        "fabric_tools.status.update",
         lambda msg: messages.append(msg),
     )
     report = _write_local(tmp_path / "Sales.Report")
@@ -351,7 +351,7 @@ def test_run_compare_batch_status_skipped_join(
 ) -> None:
     messages: list[str] = []
     monkeypatch.setattr(
-        "fabric_tools.report.compare.update_status",
+        "fabric_tools.status.update",
         lambda msg: messages.append(msg),
     )
     report_a = _write_local(tmp_path / "A.Report")

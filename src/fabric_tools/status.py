@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 
 from rich.console import Console
 from rich.status import Status
@@ -26,6 +27,22 @@ def short_guid(value: str, *, length: int = 8) -> str:
 def progress_message(current: int, total: int, detail: str) -> str:
     """Format a step-prefixed status line: ``1 of 4 · detail``."""
     return f"{current} of {total} · {detail}"
+
+
+@dataclass
+class BatchProgress:
+    """Mutable ``n of m`` counter for batch spinner updates."""
+
+    current: int = 0
+    total: int = 0
+
+    def advance(self, detail: str) -> None:
+        self.current += 1
+        update(progress_message(self.current, self.total, detail))
+
+    def skip_planned(self) -> None:
+        if self.total > self.current:
+            self.total -= 1
 
 
 @contextmanager

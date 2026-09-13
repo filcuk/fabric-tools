@@ -14,7 +14,10 @@ from fabric_tools.report.ops import (
     delete_report,
     deploy_report,
     download_report,
+    run_deploy_batch,
+    run_download_batch,
 )
+from fabric_tools.status import short_guid
 
 WS = "11111111-1111-1111-1111-111111111111"
 REPORT = "22222222-2222-2222-2222-222222222222"
@@ -339,3 +342,106 @@ def test_delete_report(tmp_path: Path) -> None:
     result = delete_report(client, WorkItem(Target(WS, REPORT), None))  # type: ignore[arg-type]
     assert result.ok
     assert any(c[0] == "DELETE" and "/reports/" in c[1] for c in client.calls)
+
+
+def test_run_download_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.status.update",
+        lambda msg: messages.append(msg),
+    )
+    dest_a = tmp_path / "A.Report"
+    dest_b = tmp_path / "B.Report"
+    report_b = "33333333-3333-3333-3333-333333333333"
+    model_b = "88888888-8888-8888-8888-888888888888"
+    client = FakeClient(
+        definitions_by_item={
+            REPORT: _report_definition(),
+            report_b: {
+                "format": "PBIR",
+                "parts": [
+                    _part("definition.pbir", _pbir_conn(model_b)),
+                    _part("definition/report.json", b'{"version": "1.0"}\n'),
+                ],
+            },
+        },
+        sm_definitions={MODEL: _sm_definition(), model_b: _sm_definition()},
+    )
+    run_download_batch(
+        client,
+        [
+            WorkItem(Target(WS, REPORT), dest_a),  # type: ignore[arg-type]
+            WorkItem(Target(WS, report_b), dest_b),  # type: ignore[arg-type]
+        ],
+        powerbi_client=FakePowerBi(),
+    )
+    assert messages == [
+        f"1 of 4 · Downloading report ({short_guid(REPORT)})…",
+        f"2 of 4 · Downloading semantic model ({short_guid(MODEL)})…",
+        f"3 of 4 · Downloading report ({short_guid(report_b)})…",
+        f"4 of 4 · Downloading semantic model ({short_guid(model_b)})…",
+    ]
+
+
+def test_run_download_batch_status_independent(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.status.update",
+        lambda msg: messages.append(msg),
+    )
+    run_download_batch(
+        FakeClient(),
+        [WorkItem(Target(WS, REPORT), tmp_path / "Sales.Report")],  # type: ignore[arg-type]
+        independent=True,
+    )
+    assert messages == [f"1 of 1 · Downloading report ({short_guid(REPORT)})…"]
+
+
+def test_run_deploy_batch_status_joined_create(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.status.update",
+        lambda msg: messages.append(msg),
+    )
+    _write_model_folder(tmp_path / "Sales.SemanticModel")
+    report = _write_report_folder(
+        tmp_path / "Sales.Report",
+        pbir=_pbir_path("../Sales.SemanticModel"),
+    )
+    run_deploy_batch(
+        FakeClient(),
+        [WorkItem(Target(WS, None), report)],  # type: ignore[arg-type]
+        display_names=["Sales"],
+    )
+    assert messages == [
+        "1 of 2 · Creating semantic model…",
+        "2 of 2 · Creating report…",
+    ]
+
+
+def test_run_deploy_batch_status_joined_overwrite(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.status.update",
+        lambda msg: messages.append(msg),
+    )
+    _write_model_folder(tmp_path / "Sales.SemanticModel")
+    report = _write_report_folder(
+        tmp_path / "Sales.Report",
+        pbir=_pbir_path("../Sales.SemanticModel"),
+    )
+    run_deploy_batch(
+        FakeClient(),
+        [WorkItem(Target(WS, REPORT), report)],  # type: ignore[arg-type]
+        semantic_model_ids=[MODEL],
+    )
+    assert messages == [
+        f"1 of 2 · Deploying semantic model ({short_guid(MODEL)})…",
+        f"2 of 2 · Deploying report ({short_guid(REPORT)})…",
+    ]

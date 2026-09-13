@@ -44,9 +44,16 @@ from fabric_tools.semantic_model.ops import (
 from fabric_tools.semantic_model.ops import (
     unpack_definition as unpack_semantic_model_definition,
 )
+from fabric_tools.status import BatchProgress, short_guid
 from fabric_tools.status import update as update_status
 
 ITEM_TYPE = "Report"
+
+
+def _status_detail(verb: str, kind: str, item_id: str | None = None) -> str:
+    if item_id:
+        return f"{verb} {kind} ({short_guid(item_id)})…"
+    return f"{verb} {kind}…"
 
 
 @dataclass
@@ -64,6 +71,7 @@ def download_report(
     *,
     independent: bool = False,
     powerbi_client: Any | None = None,
+    progress: BatchProgress | None = None,
 ) -> OpResult:
     """Download one remote report (folder or ``.pbix``); join model when packable."""
     if item.target is None or item.target.item_id is None:
@@ -73,19 +81,27 @@ def download_report(
 
     target = item.target
     dest = item.file
+    plans_model = _plans_download_model_step(item, independent=independent)
 
     if is_pbix_path(dest):
+        if progress is not None:
+            progress.advance(_status_detail("Downloading", "report", target.item_id))
         return _download_pbix(
             item,
             independent=independent,
             powerbi_client=powerbi_client,
         )
 
+    if progress is not None:
+        progress.advance(_status_detail("Downloading", "report", target.item_id))
+
     try:
         detect_report_path(dest)
         definition = get_report_definition(client, target.workspace_id, target.item_id)
         written = unpack_definition(definition, dest)
     except (FabricApiError, DefinitionError, OSError) as exc:
+        if plans_model and progress is not None:
+            progress.skip_planned()
         return OpResult(
             False,
             f"download failed {target.label()} -> {dest}: {exc}",
@@ -105,6 +121,10 @@ def download_report(
             powerbi_client=powerbi_client,
         )
         if model_id:
+            if progress is not None:
+                progress.advance(
+                    _status_detail("Downloading", "semantic model", model_id)
+                )
             model_dest = dest.parent / f"{display_name_from_path(dest)}.SemanticModel"
             try:
                 sm_def = get_semantic_model_definition(
@@ -126,6 +146,8 @@ def download_report(
                 "report downloaded; semantic model not included "
                 "(thin/live-connect or unbound — use semantic-model download if needed)"
             )
+            if plans_model and progress is not None:
+                progress.skip_planned()
 
     return OpResult(
         True,
@@ -145,6 +167,7 @@ def deploy_report(
     semantic_model_id: str | None = None,
     origin_definition_cache: dict[str, dict[str, Any]] | None = None,
     powerbi_client: Any | None = None,
+    progress: BatchProgress | None = None,
 ) -> OpResult:
     """Create or overwrite one report from a local folder, ``.pbix``, or Fabric origin."""
     if item.target is None:
@@ -157,6 +180,14 @@ def deploy_report(
     target = item.target
 
     if item.file is not None and is_pbix_path(item.file):
+        if progress is not None:
+            progress.advance(
+                _status_detail(
+                    "Creating" if target.is_create else "Deploying",
+                    "report",
+                    target.item_id,
+                )
+            )
         return _deploy_pbix(
             item,
             display_name=display_name,
@@ -168,6 +199,8 @@ def deploy_report(
         try:
             join = resolve_local_join(item.file)
         except DefinitionError as exc:
+            if progress is not None:
+                progress.skip_planned()
             return OpResult(
                 False,
                 f"deploy source failed: {exc}",
@@ -175,6 +208,8 @@ def deploy_report(
                 target.item_id,
             )
         if independent and join.model_path is not None:
+            if progress is not None:
+                progress.skip_planned()
             return OpResult(
                 False,
                 "report deploy --independent cannot join a packable sibling "
@@ -188,6 +223,8 @@ def deploy_report(
             and join.reference.kind == "byPath"
             and join.model_path is None
         ):
+            if progress is not None:
+                progress.skip_planned()
             return OpResult(
                 False,
                 "report byPath does not resolve to a packable semantic model",
@@ -201,8 +238,17 @@ def deploy_report(
                 join_model_path=join.model_path,
                 display_name=display_name,
                 semantic_model_id=semantic_model_id,
+                progress=progress,
             )
 
+    if progress is not None:
+        progress.advance(
+            _status_detail(
+                "Creating" if target.is_create else "Deploying",
+                "report",
+                target.item_id,
+            )
+        )
     return _deploy_report_only(
         client,
         item,
@@ -304,20 +350,18 @@ def run_download_batch(
     independent: bool = False,
     powerbi_client: Any | None = None,
 ) -> list[OpResult]:
+    progress = BatchProgress(
+        total=_estimate_download_steps(items, independent=independent)
+    )
     results: list[OpResult] = []
     for item in items:
-        target = item.target
-        dest = item.file
-        if target is not None and dest is not None:
-            update_status(f"Downloading {target.label()} -> {dest}...")
-        else:
-            update_status("Downloading report...")
         results.append(
             download_report(
                 client,
                 item,
                 independent=independent,
                 powerbi_client=powerbi_client,
+                progress=progress,
             )
         )
     return results
@@ -332,6 +376,9 @@ def run_deploy_batch(
     semantic_model_ids: list[str | None] | None = None,
     powerbi_client: Any | None = None,
 ) -> list[OpResult]:
+    progress = BatchProgress(
+        total=_estimate_deploy_steps(items, independent=independent)
+    )
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(items):
@@ -341,16 +388,6 @@ def run_deploy_batch(
         sm_id = None
         if semantic_model_ids and index < len(semantic_model_ids):
             sm_id = semantic_model_ids[index]
-        target = item.target
-        if target is not None and target.is_create:
-            label = name or (
-                display_name_from_path(item.file) if item.file is not None else "report"
-            )
-            update_status(f"Creating '{label}' in {target.workspace_id}...")
-        elif target is not None:
-            update_status(f"Deploying to {target.label()}...")
-        else:
-            update_status("Deploying report...")
         results.append(
             deploy_report(
                 client,
@@ -360,6 +397,7 @@ def run_deploy_batch(
                 semantic_model_id=sm_id,
                 origin_definition_cache=origin_cache,
                 powerbi_client=powerbi_client,
+                progress=progress,
             )
         )
     return results
@@ -375,6 +413,48 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
             update_status("Deleting report...")
         results.append(delete_report(client, item))
     return results
+
+
+def _estimate_download_steps(items: list[WorkItem], *, independent: bool) -> int:
+    total = 0
+    for item in items:
+        if item.target is None or item.target.item_id is None or item.file is None:
+            continue
+        total += 1
+        if _plans_download_model_step(item, independent=independent):
+            total += 1
+    return total
+
+
+def _plans_download_model_step(item: WorkItem, *, independent: bool) -> bool:
+    if independent or item.file is None:
+        return False
+    return not is_pbix_path(item.file)
+
+
+def _estimate_deploy_steps(items: list[WorkItem], *, independent: bool) -> int:
+    total = 0
+    for item in items:
+        if item.target is None:
+            continue
+        if item.file is None and item.origin is None:
+            continue
+        if item.file is not None and item.origin is not None:
+            continue
+        total += 1
+        if _plans_deploy_model_step(item, independent=independent):
+            total += 1
+    return total
+
+
+def _plans_deploy_model_step(item: WorkItem, *, independent: bool) -> bool:
+    if independent or item.file is None or is_pbix_path(item.file):
+        return False
+    try:
+        join = resolve_local_join(item.file)
+    except DefinitionError:
+        return False
+    return join.model_path is not None
 
 
 def _deploy_report_only(
@@ -472,16 +552,21 @@ def _deploy_joined_folder(
     join_model_path: Path,
     display_name: str | None,
     semantic_model_id: str | None,
+    progress: BatchProgress | None = None,
 ) -> OpResult:
     target = item.target
     assert target is not None and item.file is not None
 
     report_name = display_name or display_name_from_path(item.file)
     model_name = sm_display_name(join_model_path)
+    verb = "Creating" if target.is_create else "Deploying"
 
     try:
         model_definition = pack_sm_definition(join_model_path)
     except Exception as exc:  # noqa: BLE001
+        if progress is not None:
+            progress.skip_planned()
+            progress.skip_planned()
         return OpResult(
             False,
             f"joined semantic model pack failed: {exc}",
@@ -491,9 +576,12 @@ def _deploy_joined_folder(
 
     model_id = semantic_model_id
     messages: list[str] = []
+    progress_at_entry = progress.current if progress is not None else 0
 
     try:
         if target.is_create:
+            if progress is not None:
+                progress.advance(_status_detail(verb, "semantic model"))
             created_model = create_semantic_model(
                 client,
                 target.workspace_id,
@@ -515,6 +603,9 @@ def _deploy_joined_folder(
                     powerbi_client=None,
                 )
             if not model_id:
+                if progress is not None:
+                    progress.skip_planned()
+                    progress.skip_planned()
                 return OpResult(
                     False,
                     "joined overwrite requires the target report's bound semantic "
@@ -523,6 +614,8 @@ def _deploy_joined_folder(
                     target.workspace_id,
                     target.item_id,
                 )
+            if progress is not None:
+                progress.advance(_status_detail(verb, "semantic model", model_id))
             update_semantic_model_definition(
                 client,
                 target.workspace_id,
@@ -535,6 +628,9 @@ def _deploy_joined_folder(
         assert model_id
         pbir = rewrite_pbir_to_by_connection(load_pbir(item.file), model_id)
         report_definition = pack_definition(item.file, pbir_override=pbir)
+
+        if progress is not None:
+            progress.advance(_status_detail(verb, "report", target.item_id))
 
         if target.is_create:
             created = create_report(
@@ -575,6 +671,10 @@ def _deploy_joined_folder(
             semantic_model_id=model_id,
         )
     except (FabricApiError, DefinitionError) as exc:
+        if progress is not None:
+            advanced = progress.current - progress_at_entry
+            for _ in range(max(0, 2 - advanced)):
+                progress.skip_planned()
         return OpResult(
             False,
             f"joined deploy failed: {exc}",

@@ -20,6 +20,21 @@ def test_progress_message() -> None:
     )
 
 
+def test_batch_progress_advance_and_skip(monkeypatch: object) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(status, "update", lambda msg: messages.append(msg))
+    progress = status.BatchProgress(total=3)
+    progress.advance("Downloading report (aaaaaaaa…)…")
+    progress.skip_planned()
+    progress.advance("Downloading report (bbbbbbbb…)…")
+    assert progress.current == 2
+    assert progress.total == 2
+    assert messages == [
+        "1 of 3 · Downloading report (aaaaaaaa…)…",
+        "2 of 2 · Downloading report (bbbbbbbb…)…",
+    ]
+
+
 def test_update_outside_busy_is_noop() -> None:
     status.update("should not raise")
 

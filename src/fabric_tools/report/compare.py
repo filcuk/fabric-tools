@@ -19,8 +19,7 @@ from fabric_tools.report.definition import (
 )
 from fabric_tools.report.ops import get_report_definition, resolve_bound_model_id
 from fabric_tools.semantic_model.compare import compare_semantic_model
-from fabric_tools.status import progress_message, short_guid
-from fabric_tools.status import update as update_status
+from fabric_tools.status import BatchProgress, short_guid
 
 
 @dataclass
@@ -36,33 +35,13 @@ class CompareResult:
     target_ref: str = "-"
 
 
-@dataclass
-class _CompareProgress:
-    current: int = 0
-    total: int = 0
-
-    def advance(self, kind: str, item_id: str) -> None:
-        self.current += 1
-        update_status(
-            progress_message(
-                self.current,
-                self.total,
-                f"Comparing {kind} ({short_guid(item_id)})…",
-            )
-        )
-
-    def skip_planned(self) -> None:
-        if self.total > self.current:
-            self.total -= 1
-
-
 def compare_report(
     client: FabricClient,
     item: WorkItem,
     *,
     independent: bool = False,
     powerbi_client: Any | None = None,
-    progress: _CompareProgress | None = None,
+    progress: BatchProgress | None = None,
 ) -> list[CompareResult]:
     """Diff target report against a local folder or another remote.
 
@@ -112,7 +91,7 @@ def compare_report(
 
     plans_model = _plans_model_step(item, independent=independent)
     if progress is not None:
-        progress.advance("report", item.target.item_id)
+        progress.advance(f"Comparing report ({short_guid(item.target.item_id)})…")
 
     if item.origin is not None:
         report_result, origin_def, target_def = _compare_origin_to_target(client, item)
@@ -161,7 +140,7 @@ def run_compare_batch(
     independent: bool = False,
     powerbi_client: Any | None = None,
 ) -> list[CompareResult]:
-    progress = _CompareProgress(
+    progress = BatchProgress(
         total=_estimate_compare_steps(items, independent=independent)
     )
     results: list[CompareResult] = []
@@ -333,7 +312,7 @@ def _joined_file_model_results(
     report_result: CompareResult,
     remote_definition: dict[str, Any] | None,
     powerbi_client: Any | None,
-    progress: _CompareProgress | None,
+    progress: BatchProgress | None,
 ) -> list[CompareResult]:
     assert item.target is not None and item.target.item_id is not None
     assert item.file is not None
@@ -360,7 +339,7 @@ def _joined_file_model_results(
         return []
 
     if progress is not None:
-        progress.advance("semantic model", model_id)
+        progress.advance(f"Comparing semantic model ({short_guid(model_id)})…")
     # semantic_model.compare.CompareResult is structurally identical.
     model_result = compare_semantic_model(
         client,
@@ -389,7 +368,7 @@ def _joined_origin_model_results(
     origin_definition: dict[str, Any] | None,
     target_definition: dict[str, Any] | None,
     powerbi_client: Any | None,
-    progress: _CompareProgress | None,
+    progress: BatchProgress | None,
 ) -> list[CompareResult]:
     assert item.target is not None and item.target.item_id is not None
     assert item.origin is not None and item.origin.item_id is not None
@@ -420,7 +399,7 @@ def _joined_origin_model_results(
         return []
 
     if progress is not None:
-        progress.advance("semantic model", target_model_id)
+        progress.advance(f"Comparing semantic model ({short_guid(target_model_id)})…")
     model_result = compare_semantic_model(
         client,
         WorkItem(
