@@ -99,6 +99,9 @@ def shared_nuitka_args(
     win_version = windows_file_version()
     args: list[str] = [
         "--assume-yes-for-downloads",
+        # CLI uses -m/--manifest; Nuitka's default guard treats -m as Python
+        # self-execution and aborts before Typer runs.
+        "--no-deployment-flag=self-execution",
         *compiler_args(version_info=version_info),
         "--windows-console-mode=force",
         f"--output-filename={EXE_NAME}",
