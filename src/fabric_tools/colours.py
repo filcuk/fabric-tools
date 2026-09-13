@@ -107,7 +107,7 @@ PALETTE_ROWS: tuple[PaletteRow, ...] = (
     PaletteRow(
         "cyan",
         STYLE_ID,
-        "Identifier / command hint; Usage command path / COMMAND",
+        "Identifier / command hint; Usage command path / COMMAND; created GUIDs",
     ),
     PaletteRow("magenta", STYLE_OPTION, "Command option — long (help); [OPTIONS]"),
     PaletteRow(

@@ -150,6 +150,10 @@ def test_compare_identical(tmp_path: Path) -> None:
     assert len(results) == 1
     assert results[0].ok
     assert results[0].identical
+    assert results[0].remote_name == "Sales"
+    assert results[0].local_name == "Sales.Report"
+    assert results[0].target_ref == f"{WS}:{REPORT}"
+    assert str(tmp_path) not in results[0].local_name
 
 
 def test_compare_diff(tmp_path: Path) -> None:

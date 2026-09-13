@@ -5799,21 +5799,9 @@ def _exit_from_op_results(results: list[OpResult]) -> None:
 
 
 def _print_compare_results(results: list[CompareResult]) -> None:
-    for result in results:
-        typer.secho(result.header, fg=FG_ID, bold=True)
-        if result.error:
-            print_error_panel(result.error)
-            continue
-        if result.identical:
-            typer.secho("identical", fg=FG_OK)
-        else:
-            print_warn_panel("differences found")
-            if result.diff_text:
-                typer.echo(result.diff_text.rstrip())
-        messages = getattr(result, "messages", None) or []
-        for message in messages:
-            print_warn_panel(message)
-        typer.echo("")
+    from fabric_tools.compare_print import print_compare_results
+
+    print_compare_results(results)
 
 
 def _exit_from_compare_results(results: list[CompareResult]) -> None:
