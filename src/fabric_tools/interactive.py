@@ -24,6 +24,7 @@ from fabric_tools.manifest import (
     KIND_REPORT,
     KIND_SEMANTIC_MODEL,
     KIND_UDF,
+    KIND_VARIABLE_LIBRARY,
     ManifestError,
     item_id_overrides_from_results,
     manifest_from_work_items,
@@ -40,6 +41,7 @@ _TOOL_KIND = {
     "dataflow-gen1": KIND_DATAFLOW_GEN1,
     "environment": KIND_ENVIRONMENT,
     "org-app": KIND_ORG_APP,
+    "variable-library": KIND_VARIABLE_LIBRARY,
     "pipeline": KIND_PIPELINE,
     "udf": KIND_UDF,
     "semantic-model": KIND_SEMANTIC_MODEL,
@@ -84,6 +86,7 @@ def run_interactive_wizard() -> None:
         run_report_command,
         run_semantic_model_command,
         run_udf_command,
+        run_variable_library_command,
     )
 
     typer.echo("fabric-tools interactive mode")
@@ -184,6 +187,17 @@ def run_interactive_wizard() -> None:
         )
     elif tool == "org-app":
         run_org_app_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    elif tool == "variable-library":
+        run_variable_library_command(
             mode,
             target_values=targets or None,
             file_values=files or None,
@@ -372,6 +386,7 @@ def _run_step(step: str, answers: dict[str, Any]) -> None:
                 "dataflow-gen1",
                 "environment",
                 "org-app",
+                "variable-library",
                 "pipeline",
                 "udf",
                 "semantic-model",
@@ -451,6 +466,8 @@ def _file_prompt(tool: str) -> str:
         return "Enter folder (*.Dataflow)"
     if tool == "org-app":
         return "Enter folder (*.OrgApp)"
+    if tool == "variable-library":
+        return "Enter folder (*.VariableLibrary)"
     if tool == "environment":
         return "Enter folder (*.Environment)"
     if tool == "pipeline":

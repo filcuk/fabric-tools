@@ -339,6 +339,43 @@ def test_interactive_dataflow_download(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["kwargs"]["on_success"] is not None
 
 
+def test_interactive_variable_library_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selects = iter(
+        [
+            "variable-library",
+            "download",
+            "execute",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(True),
+        ]
+    )
+    texts = iter(
+        [
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr("questionary.select", lambda *a, **k: _Ask(next(selects)))
+    monkeypatch.setattr("questionary.text", lambda *a, **k: _Ask(next(texts)))
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_variable_library_command", fake_run)
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DOWNLOAD
+    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"]["on_success"] is not None
+
+
 def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
     # another target? destination paths? silent? include-schedules? proceed?
     selects = iter(

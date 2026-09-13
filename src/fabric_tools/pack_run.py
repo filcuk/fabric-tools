@@ -21,6 +21,7 @@ from fabric_tools.manifest import (
     KIND_REPORT,
     KIND_SEMANTIC_MODEL,
     KIND_UDF,
+    KIND_VARIABLE_LIBRARY,
     REMAP_KINDS,
     DeploymentManifest,
     ManifestEntry,
@@ -58,6 +59,7 @@ def run_pack_command(
         run_report_command,
         run_semantic_model_command,
         run_udf_command,
+        run_variable_library_command,
     )
 
     _enforce_readonly_command(mode, dry_run=dry_run)
@@ -114,6 +116,7 @@ def run_pack_command(
         KIND_DATAFLOW_GEN1: run_dataflow_gen1_command,
         KIND_ENVIRONMENT: run_environment_command,
         KIND_ORG_APP: run_org_app_command,
+        KIND_VARIABLE_LIBRARY: run_variable_library_command,
         KIND_PIPELINE: run_pipeline_command,
         KIND_UDF: run_udf_command,
         KIND_SEMANTIC_MODEL: run_semantic_model_command,

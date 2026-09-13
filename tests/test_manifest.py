@@ -26,6 +26,7 @@ from fabric_tools.manifest import (
     KIND_REPORT,
     KIND_SEMANTIC_MODEL,
     KIND_UDF,
+    KIND_VARIABLE_LIBRARY,
     DeploymentManifest,
     ManifestEntry,
     ManifestError,
@@ -253,6 +254,26 @@ def test_org_app_kind_round_trip(tmp_path: Path) -> None:
     assert loaded.entries[0].kind == KIND_ORG_APP
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_ORG_APP)
     assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_variable_library_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Config.VariableLibrary"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_VARIABLE_LIBRARY,
+        display_names=["Config"],
+    )
+    path, _ = save_manifest(tmp_path / "variable-library", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_VARIABLE_LIBRARY
+    work_items, names = work_items_from_manifest(
+        loaded, expected_kind=KIND_VARIABLE_LIBRARY
+    )
+    assert names == ["Config"]
     assert work_items[0].file == folder.resolve()
 
 
@@ -923,20 +944,28 @@ def test_group_pack_entries_orders_model_before_report() -> None:
             kind=KIND_ENVIRONMENT, workspace_id=WS, item_id=ITEM, file=Path("env")
         ),
         ManifestEntry(kind=KIND_ORG_APP, workspace_id=WS, item_id=ITEM, file=Path("d")),
+        ManifestEntry(
+            kind=KIND_VARIABLE_LIBRARY,
+            workspace_id=WS,
+            item_id=ITEM,
+            file=Path("vars"),
+        ),
     )
     groups = group_pack_entries_by_kind(entries)
     assert [kind for kind, _ in groups] == [
         KIND_SEMANTIC_MODEL,
         KIND_REPORT,
+        KIND_VARIABLE_LIBRARY,
         KIND_ENVIRONMENT,
-        KIND_ORG_APP,
         KIND_NOTEBOOK,
+        KIND_ORG_APP,
     ]
     rev = group_pack_entries_by_kind(entries, reverse=True)
     assert [kind for kind, _ in rev] == [
-        KIND_NOTEBOOK,
         KIND_ORG_APP,
+        KIND_NOTEBOOK,
         KIND_ENVIRONMENT,
+        KIND_VARIABLE_LIBRARY,
         KIND_REPORT,
         KIND_SEMANTIC_MODEL,
     ]

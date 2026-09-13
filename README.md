@@ -72,9 +72,9 @@ fabric-tools notebook deploy -m etl
 | Paginated Report|✅|✅|No API support for sources & credentials.|
 | Org App|✅|✅|`definition.json` in a `*.OrgApp` folder.|
 | Environment|✅|✅|Libraries and Spark compute settings in a `*.Environment` folder.|
+| Variable Library|✅|✅|`variables.json`, `settings.json`, and optional `valueSets/` in a `*.VariableLibrary` folder.|
 | Inspect|✅ (Read)|🚫|Browse workspaces and items.|
 | Pack manifests|✅|✅|Schema v3 multi-kind `.ftdep`; `pack …` for mixed.|
-| Variable Library|📅|📅||
 | Lakehouse|🚫|🚫|No API support.|
 | Warehouse|❔|❔||
 | Eventhouse|❔|❔||
