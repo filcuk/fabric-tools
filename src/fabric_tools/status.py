@@ -16,6 +16,18 @@ _message: ContextVar[str | None] = ContextVar(
 )
 
 
+def short_guid(value: str, *, length: int = 8) -> str:
+    """Return a truncated GUID for spinner text (e.g. ``a1b2c3d4…``)."""
+    if length < 1 or len(value) <= length:
+        return value
+    return f"{value[:length]}…"
+
+
+def progress_message(current: int, total: int, detail: str) -> str:
+    """Format a step-prefixed status line: ``1 of 4 · detail``."""
+    return f"{current} of {total} · {detail}"
+
+
 @contextmanager
 def busy(message: str) -> Iterator[None]:
     """Show a spinner status line while work runs.
@@ -59,7 +71,7 @@ def update(message: str) -> None:
     """Update the active status message, if any.
 
     No-op when no ``busy`` context is active. On non-TTY, prints only when the
-    message changes (e.g. phase transitions during LRO waits).
+    message changes (e.g. phase transitions during a batch).
     """
     current = _message.get()
     if current == message:

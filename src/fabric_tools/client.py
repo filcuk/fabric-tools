@@ -8,7 +8,6 @@ from typing import Any
 import httpx
 
 from fabric_tools.auth import TokenProvider, token_provider
-from fabric_tools.status import update as update_status
 
 DEFAULT_BASE_URL = "https://api.fabric.microsoft.com/v1"
 DEFAULT_RETRY_AFTER_SECONDS = 5
@@ -208,12 +207,6 @@ class FabricClient:
             )
 
         state_url = location or f"{self.base_url}/operations/{operation_id}"
-        wait_label = (
-            f"Waiting for Fabric operation ({operation_id})..."
-            if operation_id
-            else "Waiting for Fabric operation..."
-        )
-        update_status(wait_label)
 
         while True:
             self._sleep(retry_after)

@@ -167,12 +167,12 @@ def test_http_error_raises() -> None:
     assert exc_info.value.error_code == "PowerBIEntityNotFound"
 
 
-def test_wait_for_import_updates_activity_status(
+def test_wait_for_import_does_not_overwrite_activity_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     messages: list[str] = []
     monkeypatch.setattr(
-        "fabric_tools.powerbi_client.update_status",
+        "fabric_tools.status.update",
         lambda msg: messages.append(msg),
     )
 
@@ -187,7 +187,7 @@ def test_wait_for_import_updates_activity_status(
     with _client(httpx.MockTransport(handler)) as client:
         client.create_dataflow_from_model("ws-1", b"{}")
 
-    assert messages == ["Waiting for Power BI import (imp-1)..."]
+    assert messages == []
 
 
 def test_dataflow_id_from_import_fallbacks() -> None:

@@ -104,10 +104,12 @@ def test_http_error_raises() -> None:
     assert exc_info.value.request_id == "req-1"
 
 
-def test_lro_updates_activity_status(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lro_does_not_overwrite_activity_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     messages: list[str] = []
     monkeypatch.setattr(
-        "fabric_tools.client.update_status",
+        "fabric_tools.status.update",
         lambda msg: messages.append(msg),
     )
 
@@ -130,4 +132,4 @@ def test_lro_updates_activity_status(monkeypatch: pytest.MonkeyPatch) -> None:
     with _client(httpx.MockTransport(handler)) as client:
         client.request("POST", "/workspaces/ws/notebooks/nb/getDefinition")
 
-    assert messages == ["Waiting for Fabric operation (op-1)..."]
+    assert messages == []
