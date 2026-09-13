@@ -1,9 +1,9 @@
 # <img src="res/app.svg" alt="" width="40" height="40" align="left"> Fabric Tools
 
-_CLI for working with Microsoft Fabric artifacts._
-![Platform](https://img.shields.io/badge/platform-Windows-blue) ![GitHub Issues](https://img.shields.io/github/issues/filcuk/fabric-tools) ![GitHub Release](https://img.shields.io/github/v/release/filcuk/fabric-tools?include_prereleases)
+_CLI for working with Microsoft Fabric artifacts._  
+![Platform](https://img.shields.io/badge/platform-Windows-blue) [![GitHub Issues](https://img.shields.io/github/issues/filcuk/fabric-tools)](https://github.com/filcuk/fabric-tools/issues) [![GitHub Release](https://img.shields.io/github/v/release/filcuk/fabric-tools?include_prereleases)](https://github.com/filcuk/fabric-tools/releases)
 
-_Video here later_
+![Demo](res/readme/demo.avif)
 
 Have you ever wanted to:
 
@@ -18,7 +18,7 @@ Have you ever wanted to:
 
 ## Quick start
 
-1. Download the [latest release](https://github.com/filcuk/fabric-tools/releases/download/v0.4.0/fabric-tools.exe)
+1. Download the [latest release](https://github.com/filcuk/fabric-tools/releases/download/latest/fabric-tools.exe)
 2. _Optionally_ install for improved speed and ease of access:
 
   ```powershell
