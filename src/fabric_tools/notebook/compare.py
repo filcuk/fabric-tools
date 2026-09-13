@@ -26,7 +26,7 @@ from fabric_tools.notebook.definition import (
 )
 from fabric_tools.notebook.ops import get_notebook_definition
 from fabric_tools.parsing import WorkItem
-from fabric_tools.status import update as update_status
+from fabric_tools.status import BatchProgress, status_detail
 
 
 @dataclass
@@ -182,8 +182,7 @@ def _compare_origin_to_target(
     origin_ws = resolve_workspace_name(client, origin.workspace_id)
     target_ws = resolve_workspace_name(client, target.workspace_id)
     header = (
-        f"origin {local_name} in {origin_ws}  vs  "
-        f"target {remote_name} in {target_ws}"
+        f"origin {local_name} in {origin_ws}  vs  target {remote_name} in {target_ws}"
     )
 
     try:
@@ -250,16 +249,11 @@ def run_compare_batch(
     *,
     ignore_outputs: bool = False,
 ) -> list[CompareResult]:
+    progress = BatchProgress(total=len(items))
     results: list[CompareResult] = []
     for item in items:
-        if item.target is not None and item.file is not None:
-            update_status(f"Comparing {item.target.label()} <-> {item.file}...")
-        elif item.target is not None and item.origin is not None:
-            update_status(
-                f"Comparing {item.target.label()} <-> origin {item.origin.label()}..."
-            )
-        else:
-            update_status("Comparing notebooks...")
+        item_id = item.target.item_id if item.target is not None else None
+        progress.advance(status_detail("Comparing", "notebook", item_id))
         results.append(compare_notebook(client, item, ignore_outputs=ignore_outputs))
     return results
 

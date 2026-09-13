@@ -15,7 +15,7 @@ from fabric_tools.dataflow.definition import (
 )
 from fabric_tools.dataflow.ops import get_dataflow_definition
 from fabric_tools.parsing import WorkItem
-from fabric_tools.status import update as update_status
+from fabric_tools.status import BatchProgress, status_detail
 
 
 @dataclass
@@ -66,16 +66,11 @@ def run_compare_batch(
     client: FabricClient,
     items: list[WorkItem],
 ) -> list[CompareResult]:
+    progress = BatchProgress(total=len(items))
     results: list[CompareResult] = []
     for item in items:
-        if item.target is not None and item.file is not None:
-            update_status(f"Comparing {item.target.label()} <-> {item.file}...")
-        elif item.target is not None and item.origin is not None:
-            update_status(
-                f"Comparing {item.target.label()} <-> origin {item.origin.label()}..."
-            )
-        else:
-            update_status("Comparing dataflow...")
+        item_id = item.target.item_id if item.target is not None else None
+        progress.advance(status_detail("Comparing", "dataflow", item_id))
         results.append(compare_dataflow(client, item))
     return results
 
@@ -145,8 +140,7 @@ def _compare_origin_to_target(client: FabricClient, item: WorkItem) -> CompareRe
     origin_ws = resolve_workspace_name(client, origin.workspace_id)
     target_ws = resolve_workspace_name(client, target.workspace_id)
     header = (
-        f"origin {local_name} in {origin_ws}  vs  "
-        f"target {remote_name} in {target_ws}"
+        f"origin {local_name} in {origin_ws}  vs  target {remote_name} in {target_ws}"
     )
 
     try:

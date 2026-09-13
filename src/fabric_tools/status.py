@@ -29,6 +29,13 @@ def progress_message(current: int, total: int, detail: str) -> str:
     return f"{current} of {total} · {detail}"
 
 
+def status_detail(verb: str, kind: str, item_id: str | None = None) -> str:
+    """Build spinner detail text: ``Downloading notebook (a1b2c3d4…)…``."""
+    if item_id:
+        return f"{verb} {kind} ({short_guid(item_id)})…"
+    return f"{verb} {kind}…"
+
+
 @dataclass
 class BatchProgress:
     """Mutable ``n of m`` counter for batch spinner updates."""

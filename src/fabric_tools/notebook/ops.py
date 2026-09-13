@@ -27,6 +27,7 @@ from fabric_tools.notebook.definition import (
     unpack_definition,
 )
 from fabric_tools.parsing import WorkItem
+from fabric_tools.status import BatchProgress, short_guid, status_detail
 from fabric_tools.status import update as update_status
 
 
@@ -398,14 +399,12 @@ def delete_notebook(client: FabricClient, item: WorkItem) -> OpResult:
 
 
 def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        dest = item.file
-        if target is not None and dest is not None:
-            update_status(f"Downloading {target.label()} -> {dest}...")
-        else:
-            update_status("Downloading notebook...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Downloading", "notebook", item_id))
         results.append(download_notebook(client, item))
     return results
 
@@ -418,6 +417,7 @@ def run_deploy_batch(
     cell_indices: list[int] | None = None,
     guid_maps: list[dict[str, str] | None] | None = None,
 ) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(items):
@@ -429,15 +429,18 @@ def run_deploy_batch(
             guid_map = guid_maps[index]
         target = item.target
         if target is not None and target.is_create:
-            label = name or (item.file.name if item.file is not None else "notebook")
-            update_status(f"Creating '{label}' in {target.workspace_id}...")
+            progress.advance(status_detail("Creating", "notebook"))
         elif target is not None and cell_indices is not None:
             cells_label = format_cell_indices(cell_indices)
-            update_status(f"Updating cells [{cells_label}] in {target.label()}...")
+            item_id = target.item_id
+            detail = f"Updating cells [{cells_label}]"
+            if item_id:
+                detail = f"{detail} ({short_guid(item_id)})"
+            progress.advance(f"{detail}…")
         elif target is not None:
-            update_status(f"Deploying to {target.label()}...")
+            progress.advance(status_detail("Deploying", "notebook", target.item_id))
         else:
-            update_status("Deploying notebook...")
+            progress.advance(status_detail("Deploying", "notebook"))
         results.append(
             deploy_notebook(
                 client,

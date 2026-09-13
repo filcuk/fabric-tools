@@ -44,16 +44,10 @@ from fabric_tools.semantic_model.ops import (
 from fabric_tools.semantic_model.ops import (
     unpack_definition as unpack_semantic_model_definition,
 )
-from fabric_tools.status import BatchProgress, short_guid
+from fabric_tools.status import BatchProgress, status_detail
 from fabric_tools.status import update as update_status
 
 ITEM_TYPE = "Report"
-
-
-def _status_detail(verb: str, kind: str, item_id: str | None = None) -> str:
-    if item_id:
-        return f"{verb} {kind} ({short_guid(item_id)})…"
-    return f"{verb} {kind}…"
 
 
 @dataclass
@@ -85,7 +79,7 @@ def download_report(
 
     if is_pbix_path(dest):
         if progress is not None:
-            progress.advance(_status_detail("Downloading", "report", target.item_id))
+            progress.advance(status_detail("Downloading", "report", target.item_id))
         return _download_pbix(
             item,
             independent=independent,
@@ -93,7 +87,7 @@ def download_report(
         )
 
     if progress is not None:
-        progress.advance(_status_detail("Downloading", "report", target.item_id))
+        progress.advance(status_detail("Downloading", "report", target.item_id))
 
     try:
         detect_report_path(dest)
@@ -123,7 +117,7 @@ def download_report(
         if model_id:
             if progress is not None:
                 progress.advance(
-                    _status_detail("Downloading", "semantic model", model_id)
+                    status_detail("Downloading", "semantic model", model_id)
                 )
             model_dest = dest.parent / f"{display_name_from_path(dest)}.SemanticModel"
             try:
@@ -182,7 +176,7 @@ def deploy_report(
     if item.file is not None and is_pbix_path(item.file):
         if progress is not None:
             progress.advance(
-                _status_detail(
+                status_detail(
                     "Creating" if target.is_create else "Deploying",
                     "report",
                     target.item_id,
@@ -243,7 +237,7 @@ def deploy_report(
 
     if progress is not None:
         progress.advance(
-            _status_detail(
+            status_detail(
                 "Creating" if target.is_create else "Deploying",
                 "report",
                 target.item_id,
@@ -581,7 +575,7 @@ def _deploy_joined_folder(
     try:
         if target.is_create:
             if progress is not None:
-                progress.advance(_status_detail(verb, "semantic model"))
+                progress.advance(status_detail(verb, "semantic model"))
             created_model = create_semantic_model(
                 client,
                 target.workspace_id,
@@ -615,7 +609,7 @@ def _deploy_joined_folder(
                     target.item_id,
                 )
             if progress is not None:
-                progress.advance(_status_detail(verb, "semantic model", model_id))
+                progress.advance(status_detail(verb, "semantic model", model_id))
             update_semantic_model_definition(
                 client,
                 target.workspace_id,
@@ -630,7 +624,7 @@ def _deploy_joined_folder(
         report_definition = pack_definition(item.file, pbir_override=pbir)
 
         if progress is not None:
-            progress.advance(_status_detail(verb, "report", target.item_id))
+            progress.advance(status_detail(verb, "report", target.item_id))
 
         if target.is_create:
             created = create_report(

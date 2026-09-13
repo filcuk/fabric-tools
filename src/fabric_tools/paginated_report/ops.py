@@ -19,6 +19,7 @@ from fabric_tools.powerbi_client import (
     PowerBiClient,
     report_id_from_import,
 )
+from fabric_tools.status import BatchProgress, status_detail
 from fabric_tools.status import update as update_status
 
 
@@ -151,6 +152,7 @@ def run_deploy_batch(
     *,
     display_names: list[str] | None = None,
 ) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     origin_cache: dict[str, bytes] = {}
     for index, item in enumerate(items):
@@ -158,14 +160,14 @@ def run_deploy_batch(
         if display_names and index < len(display_names):
             name = display_names[index]
         target = item.target
-        if target is not None:
-            action = "Creating" if target.is_create else "Overwriting"
-            label = name or (
-                item.file.name if item.file is not None else "paginated-report"
+        if target is not None and target.is_create:
+            progress.advance(status_detail("Creating", "paginated-report"))
+        elif target is not None:
+            progress.advance(
+                status_detail("Overwriting", "paginated-report", target.item_id)
             )
-            update_status(f"{action} '{label}' in {target.workspace_id}...")
         else:
-            update_status("Deploying paginated-report...")
+            progress.advance(status_detail("Deploying", "paginated-report"))
         results.append(
             deploy_paginated_report(
                 client,

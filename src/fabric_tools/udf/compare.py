@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from fabric_tools.client import FabricApiError, FabricClient
 from fabric_tools.confirm import item_display_name, resolve_workspace_name
 from fabric_tools.parsing import WorkItem
-from fabric_tools.status import update as update_status
+from fabric_tools.status import BatchProgress, status_detail
 from fabric_tools.udf.definition import (
     DefinitionError,
     definition_to_diff_text,
@@ -66,16 +66,11 @@ def run_compare_batch(
     client: FabricClient,
     items: list[WorkItem],
 ) -> list[CompareResult]:
+    progress = BatchProgress(total=len(items))
     results: list[CompareResult] = []
     for item in items:
-        if item.target is not None and item.file is not None:
-            update_status(f"Comparing {item.target.label()} <-> {item.file}...")
-        elif item.target is not None and item.origin is not None:
-            update_status(
-                f"Comparing {item.target.label()} <-> origin {item.origin.label()}..."
-            )
-        else:
-            update_status("Comparing User Data Function...")
+        item_id = item.target.item_id if item.target is not None else None
+        progress.advance(status_detail("Comparing", "User Data Function", item_id))
         results.append(compare_udf(client, item))
     return results
 
@@ -145,8 +140,7 @@ def _compare_origin_to_target(client: FabricClient, item: WorkItem) -> CompareRe
     origin_ws = resolve_workspace_name(client, origin.workspace_id)
     target_ws = resolve_workspace_name(client, target.workspace_id)
     header = (
-        f"origin {local_name} in {origin_ws}  vs  "
-        f"target {remote_name} in {target_ws}"
+        f"origin {local_name} in {origin_ws}  vs  target {remote_name} in {target_ws}"
     )
 
     try:

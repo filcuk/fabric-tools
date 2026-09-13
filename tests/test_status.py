@@ -20,6 +20,14 @@ def test_progress_message() -> None:
     )
 
 
+def test_status_detail() -> None:
+    assert (
+        status.status_detail("Downloading", "notebook", "a1b2c3d4-xxxx")
+        == "Downloading notebook (a1b2c3d4…)…"
+    )
+    assert status.status_detail("Creating", "report") == "Creating report…"
+
+
 def test_batch_progress_advance_and_skip(monkeypatch: object) -> None:
     messages: list[str] = []
     monkeypatch.setattr(status, "update", lambda msg: messages.append(msg))
