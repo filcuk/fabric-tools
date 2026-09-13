@@ -204,6 +204,38 @@ def apply_help_theme() -> None:
     rich_utils._fabric_tools_help_theme_patched = True
 
 
+def print_error_panel(message: str) -> None:
+    """Print a Typer-style Error panel on stderr (red border, title Error)."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
+
+    Console(stderr=True).print(
+        Panel(
+            Text(str(message)),
+            border_style=STYLE_ERROR,
+            title="Error",
+            title_align="left",
+        )
+    )
+
+
+def print_warn_panel(message: str) -> None:
+    """Print a Warning panel on stderr (yellow border, title Warning)."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
+
+    Console(stderr=True).print(
+        Panel(
+            Text(str(message)),
+            border_style=STYLE_WARN,
+            title="Warning",
+            title_align="left",
+        )
+    )
+
+
 def print_banner(*, subtitle: str | None = None) -> None:
     """Print the root-help ASCII banner with FABRIC / - / TOOLS colours."""
     from rich.console import Console

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 import typer
 from typer.core import TyperGroup
@@ -22,6 +22,8 @@ from fabric_tools.colours import (
     STYLE_WARN,
     apply_help_theme,
     print_banner,
+    print_error_panel,
+    print_warn_panel,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
@@ -82,6 +84,18 @@ _GUID_REMAP_HELP = (
 )
 
 
+def _exit_error(message: str, *, code: int = EXIT_USER) -> NoReturn:
+    """Print a shared Error panel and exit (never returns)."""
+    print_error_panel(message)
+    raise typer.Exit(code=code)
+
+
+def _exit_warn(message: str, *, code: int = EXIT_USER) -> NoReturn:
+    """Print a shared Warning panel and exit (never returns)."""
+    print_warn_panel(message)
+    raise typer.Exit(code=code)
+
+
 def _resolve_deploy_guid_maps(
     remap_values: list[str] | None,
     *,
@@ -108,8 +122,7 @@ def _resolve_deploy_guid_maps(
                     load_guid_map(piece)
         return []
     except GuidMapError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
 
 def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
@@ -117,8 +130,7 @@ def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
     try:
         ensure_command_allowed(mode, dry_run=dry_run)
     except ReadOnlyError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
 
 def _enforce_readonly_setup(action: str) -> None:
@@ -126,15 +138,14 @@ def _enforce_readonly_setup(action: str) -> None:
     try:
         ensure_setup_mutation_allowed(action)
     except ReadOnlyError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
 
-def _fail_auth(exc: AuthError) -> None:
+def _fail_auth(exc: AuthError) -> NoReturn:
     """Print a short auth failure and exit (never returns)."""
-    color = FG_WARN if exc.canceled else FG_ERROR
-    typer.secho(str(exc), fg=color, err=True)
-    raise typer.Exit(code=EXIT_USER) from exc
+    if exc.canceled:
+        _exit_warn(str(exc))
+    _exit_error(str(exc))
 
 
 def _authenticate_client(client: object) -> None:
@@ -419,8 +430,7 @@ def env_set(
     try:
         spec = set_user_env(name, value)
     except EnvError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(format_set_confirmation(spec, value), fg=FG_OK)
     raise typer.Exit(code=EXIT_OK)
@@ -443,8 +453,7 @@ def env_unset(
     try:
         spec = unset_user_env(name)
     except EnvError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(format_unset_confirmation(spec), fg=FG_OK)
     raise typer.Exit(code=EXIT_OK)
@@ -473,8 +482,7 @@ def manifest_inspect(
     try:
         target = resolve_inspect_target(manifest)
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if target.is_dir():
         _inspect_manifest_dir(target)
@@ -483,8 +491,7 @@ def manifest_inspect(
     try:
         loaded = load_manifest(target)
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     typer.echo(format_inspect(loaded, path=target))
     raise typer.Exit(code=EXIT_OK)
 
@@ -495,8 +502,7 @@ def manifest_list() -> None:
     try:
         paths = list_manifest_paths()
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if not paths:
         typer.echo("No .ftdep manifests in the current folder.")
@@ -538,11 +544,9 @@ def manifest_delete(
         )
         delete_manifest_file(path)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(f"Deleted local manifest file {path}", fg=FG_OK)
     raise typer.Exit(code=EXIT_OK)
@@ -588,11 +592,9 @@ def manifest_move(
         confirm_or_abort(message, silent=silent)
         move_manifest_file(source, dest)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(
         f"Moved local manifest file {source} to {dest}",
@@ -638,11 +640,9 @@ def inspect_workspace_list(
                 type_filter=item_type,
             )
     except InspectError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     if not rows:
         typer.echo("No workspaces matched.")
@@ -680,11 +680,9 @@ def inspect_workspace_get(
             _authenticate_client(client)
             row = get_workspace_detail(client, parsed)
     except InspectError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     print_workspace_detail(row)
     raise typer.Exit(code=EXIT_OK)
@@ -736,11 +734,9 @@ def inspect_item_list(
                 type_filter=item_type,
             )
     except InspectError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     if not rows:
         typer.echo("No items matched.")
@@ -778,11 +774,9 @@ def inspect_item_get(
             _authenticate_client(client)
             row = get_item_detail(client, parsed)
     except InspectError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     print_item_detail(row)
     raise typer.Exit(code=EXIT_OK)
@@ -793,8 +787,7 @@ def _inspect_manifest_dir(directory: Path | None) -> None:
     try:
         paths = list_manifest_paths(directory)
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if not paths:
         if directory is None:
@@ -848,13 +841,10 @@ def main(
     """
     if interactive:
         if ctx.invoked_subcommand is not None:
-            typer.secho(
+            _exit_error(
                 "Do not combine --interactive with a subcommand. "
-                "Use: fabric-tools --interactive",
-                fg=FG_ERROR,
-                err=True,
+                "Use: fabric-tools --interactive"
             )
-            raise typer.Exit(code=EXIT_USER)
         from fabric_tools.interactive import run_interactive_wizard
         from fabric_tools.update_check import start_background_update_check
 
@@ -918,8 +908,7 @@ def setup_install() -> None:
     try:
         result = install_to_user_path()
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(f"Installed launcher: {result['launcher']}", fg=FG_OK)
     typer.echo(f"Install directory: {result['install_dir']}")
@@ -964,8 +953,7 @@ def setup_uninstall(
     try:
         result = uninstall_from_user_path(delete_files=not keep_files)
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if result["removed_from_path"]:
         typer.secho("Removed install directory from your user PATH.", fg=FG_OK)
@@ -1001,8 +989,7 @@ def setup_status_cmd() -> None:
     try:
         status = path_status()
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     # Same key/value layout as inspect get: dim right-aligned keys, no colon,
     # two-space gap, left-aligned values.
@@ -1173,8 +1160,7 @@ def setup_clean() -> None:
     try:
         result = clean_onefile_caches()
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if result["cleaned"]:
         typer.secho("Removed onefile extract cache.", fg=FG_OK)
@@ -1212,8 +1198,7 @@ def setup_update(
             with busy("Checking for updates..."):
                 result = check_for_update()
         except UpdateCheckError as exc:
-            typer.secho(str(exc), fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(str(exc), code=EXIT_API)
 
         typer.echo(f"Current version: {result.current}")
         latest_label = f"{result.latest} ({result.tag_name})"
@@ -1236,14 +1221,11 @@ def setup_update(
     try:
         result = perform_setup_update(silent=silent)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except UpdateCheckError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     if result.get("up_to_date"):
         typer.echo(f"Current version: {result.get('current', '')}")
@@ -3020,8 +3002,7 @@ def run_notebook_command(
     from fabric_tools.validate import run_dry_run
 
     if remap_values and mode is not CommandMode.DEPLOY:
-        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error("--remap / -r is only valid with deploy")
 
     try:
         cell_indices = parse_cell_indices(cells)
@@ -3038,8 +3019,7 @@ def run_notebook_command(
         )
         validate_cells_usage(mode, items, cell_indices, dry_run=dry_run)
     except (ParseError, ManifestError, CellSelectionError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     guid_map_specs = (
         _resolve_deploy_guid_maps(
@@ -3073,8 +3053,7 @@ def run_notebook_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001 - surface auth/client failures cleanly
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
@@ -3098,8 +3077,7 @@ def run_notebook_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -3120,8 +3098,7 @@ def run_notebook_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -3225,18 +3202,15 @@ def run_notebook_command(
             )
             _exit_from_op_results(op_results)
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -3279,8 +3253,7 @@ def run_dataflow_command(
     from fabric_tools.validate import run_dry_run_dataflow
 
     if remap_values and mode is not CommandMode.DEPLOY:
-        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error("--remap / -r is only valid with deploy")
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -3295,8 +3268,7 @@ def run_dataflow_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     guid_map_specs = (
         _resolve_deploy_guid_maps(
@@ -3329,8 +3301,7 @@ def run_dataflow_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
@@ -3354,8 +3325,7 @@ def run_dataflow_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -3376,8 +3346,7 @@ def run_dataflow_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -3475,18 +3444,15 @@ def run_dataflow_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -3530,13 +3496,10 @@ def run_semantic_model_command(
     from fabric_tools.validate import run_dry_run_semantic_model
 
     if independent and mode is not CommandMode.DEPLOY:
-        typer.secho(
+        _exit_error(
             "--independent / -i is only valid on semantic-model deploy "
-            "(delete always follows service cascade).",
-            fg=FG_ERROR,
-            err=True,
+            "(delete always follows service cascade)."
         )
-        raise typer.Exit(code=EXIT_USER)
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -3551,20 +3514,16 @@ def run_semantic_model_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if mode is CommandMode.DEPLOY and any(
         item.file is not None and item.file.suffix.lower() == ".pbix" for item in items
     ):
-        typer.secho(
+        _exit_error(
             "semantic-model deploy from .pbix is not supported yet "
             "(folder *.SemanticModel only; PBIX skipReport via --independent "
-            "comes with report support).",
-            fg=FG_ERROR,
-            err=True,
+            "comes with report support)."
         )
-        raise typer.Exit(code=EXIT_USER)
 
     # Folder/origin deploy is already model-only; --independent is reserved for
     # thick .pbix (skipReport) once PBIX import is wired.
@@ -3589,8 +3548,7 @@ def run_semantic_model_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
@@ -3609,8 +3567,7 @@ def run_semantic_model_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -3631,8 +3588,7 @@ def run_semantic_model_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -3728,18 +3684,15 @@ def run_semantic_model_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -3790,13 +3743,10 @@ def run_report_command(
     from fabric_tools.validate import run_dry_run_report
 
     if independent and mode is CommandMode.DELETE:
-        typer.secho(
+        _exit_error(
             "--independent / -i is not used on report delete "
-            "(delete always removes the report only).",
-            fg=FG_ERROR,
-            err=True,
+            "(delete always removes the report only)."
         )
-        raise typer.Exit(code=EXIT_USER)
 
     try:
         items, resolved_names, has_targets, has_files, has_origins, sm_ids = (
@@ -3811,8 +3761,7 @@ def run_report_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if dry_run:
         client: FabricClient | None = None
@@ -3833,8 +3782,7 @@ def run_report_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
@@ -3853,8 +3801,7 @@ def run_report_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -3876,8 +3823,7 @@ def run_report_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -3994,18 +3940,15 @@ def run_report_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -4061,8 +4004,7 @@ def run_dataflow_gen1_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if dry_run:
         client: PowerBiClient | None = None
@@ -4083,8 +4025,7 @@ def run_dataflow_gen1_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
@@ -4103,8 +4044,7 @@ def run_dataflow_gen1_command(
                     else None
                 )
             except (ParseError, DataflowDefinitionError) as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -4125,8 +4065,7 @@ def run_dataflow_gen1_command(
             else None
         )
     except (ParseError, DataflowDefinitionError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = PowerBiClient()
@@ -4222,18 +4161,15 @@ def run_dataflow_gen1_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -4291,8 +4227,7 @@ def run_paginated_report_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if dry_run:
         client: PowerBiClient | None = None
@@ -4313,8 +4248,7 @@ def run_paginated_report_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
@@ -4333,8 +4267,7 @@ def run_paginated_report_command(
                     else None
                 )
             except (ParseError, PaginatedReportDefinitionError) as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -4355,8 +4288,7 @@ def run_paginated_report_command(
             else None
         )
     except (ParseError, PaginatedReportDefinitionError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = PowerBiClient()
@@ -4452,18 +4384,15 @@ def run_paginated_report_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -4507,8 +4436,7 @@ def run_pipeline_command(
     from fabric_tools.validate import run_dry_run_pipeline
 
     if remap_values and mode is not CommandMode.DEPLOY:
-        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error("--remap / -r is only valid with deploy")
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -4523,8 +4451,7 @@ def run_pipeline_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     guid_map_specs = (
         _resolve_deploy_guid_maps(
@@ -4557,8 +4484,7 @@ def run_pipeline_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
@@ -4582,8 +4508,7 @@ def run_pipeline_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -4604,8 +4529,7 @@ def run_pipeline_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -4709,18 +4633,15 @@ def run_pipeline_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -4769,12 +4690,10 @@ def run_udf_command(
     try:
         check_udf_user_auth()
     except UdfAuthError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if remap_values and mode is not CommandMode.DEPLOY:
-        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error("--remap / -r is only valid with deploy")
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -4789,8 +4708,7 @@ def run_udf_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     guid_map_specs = (
         _resolve_deploy_guid_maps(
@@ -4823,8 +4741,7 @@ def run_udf_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
@@ -4848,8 +4765,7 @@ def run_udf_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -4870,8 +4786,7 @@ def run_udf_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -4969,18 +4884,15 @@ def run_udf_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -5945,7 +5857,6 @@ def run() -> None:
 
     orphan = format_nuitka_orphan_exe_error()
     if orphan:
-        typer.secho(orphan, fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error(orphan)
 
     app(prog_name="fabric-tools")

@@ -63,3 +63,28 @@ def test_debug_hidden_from_root_help() -> None:
     # Hidden group: not listed among root commands (avoid matching incidental text).
     assert "\ndebug " not in result.stdout
     assert " debug " not in result.stdout
+
+
+def test_print_error_panel_uses_error_title(capsys) -> None:
+    colours.print_error_panel("setup update requires the Windows .exe build")
+    err = capsys.readouterr().err
+    assert "Error" in err
+    assert "setup update requires the Windows .exe build" in err
+
+
+def test_print_warn_panel_uses_warning_title(capsys) -> None:
+    colours.print_warn_panel("Cancelled.")
+    err = capsys.readouterr().err
+    assert "Warning" in err
+    assert "Cancelled." in err
+
+
+def test_cli_exit_error_renders_error_panel(monkeypatch) -> None:
+    from fabric_tools.exit_codes import EXIT_USER
+
+    monkeypatch.setenv("FABRIC_TOOLS_READONLY", "1")
+    result = CliRunner().invoke(app, ["setup", "update"])
+    assert result.exit_code == EXIT_USER
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "Error" in combined
+    assert "read-only" in combined.lower() or "readonly" in combined.lower()

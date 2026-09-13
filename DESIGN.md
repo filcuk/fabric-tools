@@ -10,8 +10,8 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 
 | Role | Style | Mechanism | Typical use |
 |------|--------|-----------|-------------|
-| Error / failure | red | Typer `fg=RED` / Rich `"red"` | Exceptions, failed ops, dry-run failures |
-| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"` | User cancel, notices, soft errors, partial env state |
+| Error / failure | red | Typer `fg=RED` / Rich `"red"`; **Error** panel | Exit-causing failures (`print_error_panel` / `_exit_error`); per-item op/compare lines still use plain red `secho` |
+| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | Exit-causing cancel/abort (`print_warn_panel` / `_exit_warn`); notices and soft non-exit lines stay plain yellow `secho` |
 | Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare `identical`, enabled/set |
 | Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands, compare headers, **Usage** command path and `COMMAND` placeholder |
 | Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Option/argument placeholders in `--help` (e.g. `<PATH>`, `<DEST>`, `<manifest>`, **Usage** `[ARGS]...`); **Power BI** in help text |
@@ -25,6 +25,15 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Root help — banner FABRIC | teal (`#8acfb3`) | Rich truecolor | ASCII art ``FABRIC`` in root `--help` |
 | Root help — banner - / TOOLS | `#1d8e7a` | Rich truecolor | ASCII art hyphen gap and ``TOOLS`` in root `--help` |
 | Primary text | default | no colour | Names, values, plain echoes, spinner messages, unified diffs |
+
+### Error and warning panels
+
+CLI exits that report a failure or cancel use a Rich `Panel` on stderr, matching Typer’s usage-error box:
+
+- **Error** — red border, title `Error`, left-aligned (`fabric_tools.colours.print_error_panel` / `cli._exit_error`).
+- **Warning** — yellow border, title `Warning`, left-aligned (`print_warn_panel` / `_exit_warn`) for user cancel and soft abort.
+
+Do not invent a different boxed failure style. Per-item status lines in multi-target runs (`_print_op_results`, compare result errors) stay unboxed coloured `secho` so a batch does not spam panels.
 
 ### Aligned key / value and table layout
 
