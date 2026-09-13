@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -359,16 +360,28 @@ def test_write_deferred_install_helper(tmp_path: Path) -> None:
     helper = tmp_path / APPLY_UPDATE_HELPER_NAME
     _write_deferred_install_helper(helper)
     text = helper.read_text(encoding="utf-8")
-    assert "tasklist" in text
+    assert "Get-Process" in text
     assert "setup install" in text
+    assert "findstr" not in text
+    assert helper.suffix == ".ps1"
 
 
 def test_write_deferred_cache_cleanup_helper(tmp_path: Path) -> None:
     helper = tmp_path / CLEAR_ONEFILE_CACHE_HELPER_NAME
     _write_deferred_cache_cleanup_helper(helper)
     text = helper.read_text(encoding="utf-8")
-    assert "tasklist" in text
-    assert "rmdir" in text
+    assert "Get-Process" in text
+    assert "Remove-Item" in text
+    assert "findstr" not in text
+    assert helper.suffix == ".ps1"
+
+
+def test_hidden_process_creationflags_avoids_detached() -> None:
+    from fabric_tools.path_setup import _hidden_process_creationflags
+
+    flags = _hidden_process_creationflags()
+    assert flags & subprocess.CREATE_NO_WINDOW
+    assert not (flags & subprocess.DETACHED_PROCESS)
 
 
 def test_cleanup_onefile_caches_removes_current_and_legacy(

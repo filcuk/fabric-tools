@@ -21,8 +21,8 @@ EXE_NAME = "fabric-tools.exe"
 CMD_NAME = "fabric-tools.cmd"
 INTERNAL_DIR_NAME = "_internal"
 ONEDIR_BOOTLOADER_DIR = "_onedir_bootloader"
-APPLY_UPDATE_HELPER_NAME = "apply-update.cmd"
-CLEAR_ONEFILE_CACHE_HELPER_NAME = "clear-onefile-cache.cmd"
+APPLY_UPDATE_HELPER_NAME = "apply-update.ps1"
+CLEAR_ONEFILE_CACHE_HELPER_NAME = "clear-onefile-cache.ps1"
 
 
 class PathSetupError(RuntimeError):
@@ -622,22 +622,23 @@ def perform_setup_update(*, silent: bool = False) -> dict[str, str | bool]:
 
 
 def _write_deferred_install_helper(path: Path) -> None:
-    """Write a cmd script that waits for a PID, then runs ``setup install``."""
+    """Write a PowerShell script that waits for a PID, then runs ``setup install``.
+
+    Avoid cmd ``tasklist|findstr`` / ``ping`` wait loops: those console children
+    surface as Windows Terminal tabs and can flash/reopen while waiting.
+    """
     path.write_text(
         "\r\n".join(
             [
-                "@echo off",
-                "setlocal EnableExtensions",
-                'set "PID=%~1"',
-                'set "EXE=%~2"',
-                ":waitloop",
-                'tasklist /FI "PID eq %PID%" 2>NUL | findstr /I "%PID%" >NUL',
-                "if not errorlevel 1 (",
-                "  ping -n 2 127.0.0.1 >NUL",
-                "  goto waitloop",
+                "param(",
+                "  [Parameter(Mandatory = $true)][int] $WaitPid,",
+                "  [Parameter(Mandatory = $true)][string] $Exe",
                 ")",
-                '"%EXE%" setup install',
-                "exit /b %ERRORLEVEL%",
+                "while (Get-Process -Id $WaitPid -ErrorAction SilentlyContinue) {",
+                "  Start-Sleep -Seconds 1",
+                "}",
+                "& $Exe setup install",
+                "exit $LASTEXITCODE",
                 "",
             ]
         ),
@@ -645,27 +646,50 @@ def _write_deferred_install_helper(path: Path) -> None:
     )
 
 
-def _spawn_deferred_install(helper: Path, pid: int, exe: Path) -> None:
-    """Start the deferred install helper detached from this process."""
+def _hidden_process_creationflags() -> int:
+    """Flags for a console-free background helper (no flashing Terminal tabs)."""
+    # Prefer CREATE_NO_WINDOW alone. Pairing it with DETACHED_PROCESS can still
+    # allocate consoles for child tools under Windows Terminal-as-default.
     creationflags = 0
-    if hasattr(subprocess, "DETACHED_PROCESS"):
-        creationflags |= subprocess.DETACHED_PROCESS
-    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
-        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
     if hasattr(subprocess, "CREATE_NO_WINDOW"):
         creationflags |= subprocess.CREATE_NO_WINDOW
+    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    return creationflags
 
+
+def _spawn_powershell_helper(helper: Path, *args: str, failure: str) -> None:
+    """Start a ``.ps1`` helper with no console window."""
     try:
         subprocess.Popen(  # noqa: S603
-            ["cmd.exe", "/c", str(helper), str(pid), str(exe)],
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(helper),
+                *args,
+            ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            creationflags=creationflags,
+            creationflags=_hidden_process_creationflags(),
             close_fds=True,
         )
     except OSError as exc:
-        raise PathSetupError(f"failed to schedule update install: {exc}") from exc
+        raise PathSetupError(f"{failure}: {exc}") from exc
+
+
+def _spawn_deferred_install(helper: Path, pid: int, exe: Path) -> None:
+    """Start the deferred install helper detached from this process."""
+    _spawn_powershell_helper(
+        helper,
+        str(pid),
+        str(exe),
+        failure="failed to schedule update install",
+    )
 
 
 def _path_is_under(path: Path, parent: Path) -> bool:
@@ -697,22 +721,27 @@ def _running_from_onefile_cache() -> bool:
 
 
 def _write_deferred_cache_cleanup_helper(path: Path) -> None:
-    """Write a cmd script that waits for a PID, then deletes cache directories."""
+    """Write a PowerShell script that waits for a PID, then deletes cache dirs."""
     path.write_text(
         "\r\n".join(
             [
-                "@echo off",
-                "setlocal EnableExtensions",
-                'set "PID=%~1"',
-                ":waitloop",
-                'tasklist /FI "PID eq %PID%" 2>NUL | findstr /I "%PID%" >NUL',
-                "if not errorlevel 1 (",
-                "  ping -n 2 127.0.0.1 >NUL",
-                "  goto waitloop",
+                "param(",
+                "  [Parameter(Mandatory = $true)][int] $WaitPid,",
+                "  [Parameter(Mandatory = $true)][string] $Dir1,",
+                "  [string] $Dir2 = ''",
                 ")",
-                'if not "%~2"=="" if exist "%~2" rmdir /s /q "%~2"',
-                'if not "%~3"=="" if exist "%~3" rmdir /s /q "%~3"',
-                "exit /b 0",
+                "while (Get-Process -Id $WaitPid -ErrorAction SilentlyContinue) {",
+                "  Start-Sleep -Seconds 1",
+                "}",
+                "foreach ($dir in @($Dir1, $Dir2)) {",
+                "  if ($dir -and (Test-Path -LiteralPath $dir)) {",
+                (
+                    "    Remove-Item -LiteralPath $dir -Recurse -Force "
+                    "-ErrorAction SilentlyContinue"
+                ),
+                "  }",
+                "}",
+                "exit 0",
                 "",
             ]
         ),
@@ -722,28 +751,12 @@ def _write_deferred_cache_cleanup_helper(path: Path) -> None:
 
 def _spawn_deferred_cache_cleanup(helper: Path, pid: int, *dirs: Path) -> None:
     """Start deferred onefile-cache cleanup detached from this process."""
-    creationflags = 0
-    if hasattr(subprocess, "DETACHED_PROCESS"):
-        creationflags |= subprocess.DETACHED_PROCESS
-    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
-        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
-    if hasattr(subprocess, "CREATE_NO_WINDOW"):
-        creationflags |= subprocess.CREATE_NO_WINDOW
-
-    args = ["cmd.exe", "/c", str(helper), str(pid), *(str(d) for d in dirs)]
-    try:
-        subprocess.Popen(  # noqa: S603
-            args,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creationflags,
-            close_fds=True,
-        )
-    except OSError as exc:
-        raise PathSetupError(
-            f"failed to schedule onefile cache cleanup: {exc}"
-        ) from exc
+    _spawn_powershell_helper(
+        helper,
+        str(pid),
+        *(str(d) for d in dirs),
+        failure="failed to schedule onefile cache cleanup",
+    )
 
 
 def _cleanup_onefile_caches() -> dict[str, bool]:
