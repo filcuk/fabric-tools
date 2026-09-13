@@ -27,6 +27,7 @@ from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
+    KIND_ENVIRONMENT,
     KIND_NOTEBOOK,
     KIND_ORG_APP,
     KIND_PAGINATED_REPORT,
@@ -215,6 +216,7 @@ class _BannerGroup(TyperGroup):
         "inspect",
         "dataflow-gen1",
         "dataflow",
+        "environment",
         "notebook",
         "org-app",
         "paginated-report",
@@ -277,6 +279,14 @@ dataflow_app = typer.Typer(
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(dataflow_app, name="dataflow", rich_help_panel="Fabric")
+
+environment_app = typer.Typer(
+    name="environment",
+    help="Fabric Environment items.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(environment_app, name="environment", rich_help_panel="Fabric")
 
 org_app_app = typer.Typer(
     name="org-app",
@@ -2087,6 +2097,180 @@ def org_app_delete(
 ) -> None:
     """Soft-delete Org App item(s) in Fabric."""
     run_org_app_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@environment_app.command("download")
+def environment_download(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(optional) Local *.Environment folder. Defaults to remote display "
+        "name with .Environment in the current folder. Repeatable or "
+        "comma-separated; one folder may broadcast to all targets.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    silent: bool = typer.Option(
+        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or files only; do not download.",
+    ),
+) -> None:
+    """Download Environment definition(s) from Fabric to local folders."""
+    run_environment_command(
+        CommandMode.DOWNLOAD,
+        target_values=target,
+        file_values=file,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@environment_app.command("deploy")
+def environment_deploy(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.Environment folder. "
+        "Repeatable or comma-separated; one folder may broadcast to all targets. "
+        "Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact source. "
+        "Repeatable or comma-separated; one origin may broadcast to all targets.",
+    ),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="(optional, create only) Display name. Defaults to folder stem "
+        "or origin display name.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    silent: bool = typer.Option(
+        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
+    ),
+) -> None:
+    """Deploy Environment item(s) from local folders or a Fabric origin."""
+    run_environment_command(
+        CommandMode.DEPLOY,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=silent,
+        dry_run=dry_run,
+        names=name,
+        manifest=manifest,
+    )
+
+
+@environment_app.command("compare")
+def environment_compare(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Must 1:1 match --file or --origin.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.Environment folder. "
+        "Must 1:1 match --target. Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact to compare "
+        "against --target. Must 1:1 match --target.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not compare.",
+    ),
+) -> None:
+    """Compare target Environment to a local folder or Fabric origin."""
+    run_environment_command(
+        CommandMode.COMPARE,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=True,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@environment_app.command("delete")
+def environment_delete(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help="(optional) Load workspace:artifact targets from a .ftdep "
+        "(entries must have itemId). Not rewritten after delete.",
+    ),
+    silent: bool = typer.Option(
+        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Soft-delete Environment item(s) in Fabric."""
+    run_environment_command(
         CommandMode.DELETE,
         target_values=target,
         file_values=None,
@@ -4132,6 +4316,212 @@ def run_org_app_command(
         client.close()
 
 
+def run_environment_command(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    origin_values: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
+    manifest: str | None = None,
+    on_success: Callable[..., None] | None = None,
+) -> None:
+    """Shared entry for Environment CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_environment,
+        confirm_deploy_actions_environment,
+        confirm_download_overwrites_environment,
+        resolve_environment_download_files,
+    )
+    from fabric_tools.environment.compare import (
+        run_compare_batch as run_environment_compare,
+    )
+    from fabric_tools.environment.ops import run_delete_batch as run_environment_delete
+    from fabric_tools.environment.ops import run_deploy_batch as run_environment_deploy
+    from fabric_tools.environment.ops import (
+        run_download_batch as run_environment_download,
+    )
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run_environment
+
+    try:
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_environment_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
+        )
+    except (ParseError, ManifestError) as exc:
+        _exit_error(str(exc))
+
+    if dry_run:
+        client: FabricClient | None = None
+        try:
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    _authenticate_client(client)
+            with busy("Checking..."):
+                results = run_dry_run_environment(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                )
+        except AuthError as exc:
+            _fail_auth(exc)
+        except Exception as exc:  # noqa: BLE001
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
+        finally:
+            if client is not None:
+                client.close()
+        failed = False
+        for result in results:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
+                failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_environment_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except ParseError as exc:
+                _exit_error(str(exc))
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_ENVIRONMENT,
+            )
+            _notify_success(on_success, items, display_names=display_names)
+        raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
+
+    try:
+        display_names = (
+            _resolve_environment_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
+            else None
+        )
+    except ParseError as exc:
+        _exit_error(str(exc))
+
+    with busy("Authenticating..."):
+        client = FabricClient()
+        _authenticate_client(client)
+    try:
+        if mode is CommandMode.DOWNLOAD:
+            items = resolve_environment_download_files(client, items)
+            confirm_download_overwrites_environment(client, items, silent=silent)
+            with busy("Downloading..."):
+                op_results = run_environment_download(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_ENVIRONMENT,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_actions_environment(
+                client, items, silent=silent, display_names=display_names
+            )
+            with busy("Deploying..."):
+                op_results = run_environment_deploy(
+                    client, items, display_names=display_names
+                )
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            for result in op_results:
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}", fg=FG_ID
+                    )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_ENVIRONMENT,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.COMPARE:
+            with busy("Comparing..."):
+                compare_results = run_environment_compare(client, items)
+            _print_compare_results(compare_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+                kind=KIND_ENVIRONMENT,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+            )
+            _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DELETE:
+            confirm_delete_environment(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_environment_delete(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        else:
+            _exit_error(f"Unknown mode: {mode}")
+    except ConfirmationAborted as exc:
+        _exit_warn(str(exc))
+    except typer.Exit:
+        raise
+    except AuthError as exc:
+        _fail_auth(exc)
+    except Exception as exc:  # noqa: BLE001
+        _exit_error(str(exc), code=EXIT_API)
+    finally:
+        client.close()
+
+
 def run_semantic_model_command(
     mode: CommandMode,
     *,
@@ -5794,6 +6184,107 @@ def _resolve_org_app_deploy_names(
     names: list[str | None] | list[str] | None,
 ) -> list[str]:
     from fabric_tools.org_app.definition import display_name_from_path
+
+    if names and len(names) not in {1, len(items)}:
+        raise ParseError(
+            f"--name count must be 1 or match target count ({len(items)}); "
+            f"got {len(names)}"
+        )
+    resolved: list[str] = []
+    for index, item in enumerate(items):
+        chosen: str | None = None
+        if names:
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
+        elif item.file is not None:
+            resolved.append(display_name_from_path(item.file))
+        else:
+            resolved.append("")
+    return resolved
+
+
+def _resolve_environment_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve Environment targets/files/origins from CLI and/or a manifest."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
+    manifest_names: list[str | None] | None = None
+
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(loaded, expected_kind=KIND_ENVIRONMENT)
+            return items, None, True, False, False
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False
+
+    if cli_targets or cli_files or cli_origins:
+        targets = cli_targets
+        files = cli_files
+        origins = cli_origins
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_ENVIRONMENT
+        )
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
+            )
+    else:
+        targets = []
+        files = []
+        origins = []
+
+    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files), bool(origins)
+
+
+def _resolve_environment_deploy_names(
+    items: list[WorkItem],
+    names: list[str | None] | list[str] | None,
+) -> list[str]:
+    from fabric_tools.environment.definition import display_name_from_path
 
     if names and len(names) not in {1, len(items)}:
         raise ParseError(

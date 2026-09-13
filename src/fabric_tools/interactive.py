@@ -16,6 +16,7 @@ from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
+    KIND_ENVIRONMENT,
     KIND_NOTEBOOK,
     KIND_ORG_APP,
     KIND_PAGINATED_REPORT,
@@ -37,6 +38,7 @@ _TOOL_KIND = {
     "notebook": KIND_NOTEBOOK,
     "dataflow": KIND_DATAFLOW,
     "dataflow-gen1": KIND_DATAFLOW_GEN1,
+    "environment": KIND_ENVIRONMENT,
     "org-app": KIND_ORG_APP,
     "pipeline": KIND_PIPELINE,
     "udf": KIND_UDF,
@@ -74,6 +76,7 @@ def run_interactive_wizard() -> None:
     from fabric_tools.cli import (
         run_dataflow_command,
         run_dataflow_gen1_command,
+        run_environment_command,
         run_notebook_command,
         run_org_app_command,
         run_paginated_report_command,
@@ -181,6 +184,17 @@ def run_interactive_wizard() -> None:
         )
     elif tool == "org-app":
         run_org_app_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    elif tool == "environment":
+        run_environment_command(
             mode,
             target_values=targets or None,
             file_values=files or None,
@@ -356,6 +370,7 @@ def _run_step(step: str, answers: dict[str, Any]) -> None:
                 "notebook",
                 "dataflow",
                 "dataflow-gen1",
+                "environment",
                 "org-app",
                 "pipeline",
                 "udf",
@@ -436,6 +451,8 @@ def _file_prompt(tool: str) -> str:
         return "Enter folder (*.Dataflow)"
     if tool == "org-app":
         return "Enter folder (*.OrgApp)"
+    if tool == "environment":
+        return "Enter folder (*.Environment)"
     if tool == "pipeline":
         return "Enter folder (*.DataPipeline)"
     if tool == "udf":

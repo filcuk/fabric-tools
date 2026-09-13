@@ -24,6 +24,7 @@ KIND_PIPELINE = "pipeline"
 KIND_UDF = "udf"
 KIND_REPORT = "report"
 KIND_ORG_APP = "org-app"
+KIND_ENVIRONMENT = "environment"
 KIND_PAGINATED_REPORT = "paginated-report"
 KIND_SEMANTIC_MODEL = "semantic-model"
 
@@ -36,6 +37,7 @@ ITEM_KINDS = frozenset(
         KIND_UDF,
         KIND_REPORT,
         KIND_ORG_APP,
+        KIND_ENVIRONMENT,
         KIND_PAGINATED_REPORT,
         KIND_SEMANTIC_MODEL,
     }
@@ -44,11 +46,12 @@ ITEM_KINDS = frozenset(
 # Kinds that honour remap path refs / CLI --remap.
 REMAP_KINDS = frozenset({KIND_NOTEBOOK, KIND_DATAFLOW, KIND_PIPELINE, KIND_UDF})
 
-# Deploy order: models before reports; independent Org Apps and other kinds follow
-# (stable within kind).
+# Deploy order: models before reports, then environments before notebooks that
+# may depend on them; independent kinds follow (stable within kind).
 DEPLOY_KIND_ORDER: tuple[str, ...] = (
     KIND_SEMANTIC_MODEL,
     KIND_REPORT,
+    KIND_ENVIRONMENT,
     KIND_ORG_APP,
     KIND_NOTEBOOK,
     KIND_UDF,

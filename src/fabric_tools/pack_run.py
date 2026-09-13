@@ -13,6 +13,7 @@ from fabric_tools.guid_map import GuidMapError, guid_map_confirm_line, resolve_g
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
+    KIND_ENVIRONMENT,
     KIND_NOTEBOOK,
     KIND_ORG_APP,
     KIND_PAGINATED_REPORT,
@@ -49,6 +50,7 @@ def run_pack_command(
         _exit_error,
         run_dataflow_command,
         run_dataflow_gen1_command,
+        run_environment_command,
         run_notebook_command,
         run_org_app_command,
         run_paginated_report_command,
@@ -110,6 +112,7 @@ def run_pack_command(
         KIND_NOTEBOOK: run_notebook_command,
         KIND_DATAFLOW: run_dataflow_command,
         KIND_DATAFLOW_GEN1: run_dataflow_gen1_command,
+        KIND_ENVIRONMENT: run_environment_command,
         KIND_ORG_APP: run_org_app_command,
         KIND_PIPELINE: run_pipeline_command,
         KIND_UDF: run_udf_command,

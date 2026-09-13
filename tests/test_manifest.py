@@ -17,6 +17,7 @@ from fabric_tools.client import FabricApiError
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
+    KIND_ENVIRONMENT,
     KIND_NOTEBOOK,
     KIND_ORG_APP,
     KIND_PACK,
@@ -252,6 +253,24 @@ def test_org_app_kind_round_trip(tmp_path: Path) -> None:
     assert loaded.entries[0].kind == KIND_ORG_APP
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_ORG_APP)
     assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_environment_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Dev.Environment"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_ENVIRONMENT,
+        display_names=["Dev"],
+    )
+    path, _ = save_manifest(tmp_path / "environment", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_ENVIRONMENT
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_ENVIRONMENT)
+    assert names == ["Dev"]
     assert work_items[0].file == folder.resolve()
 
 
@@ -900,12 +919,16 @@ def test_group_pack_entries_orders_model_before_report() -> None:
         ManifestEntry(
             kind=KIND_SEMANTIC_MODEL, workspace_id=WS, item_id=ITEM, file=Path("c")
         ),
+        ManifestEntry(
+            kind=KIND_ENVIRONMENT, workspace_id=WS, item_id=ITEM, file=Path("env")
+        ),
         ManifestEntry(kind=KIND_ORG_APP, workspace_id=WS, item_id=ITEM, file=Path("d")),
     )
     groups = group_pack_entries_by_kind(entries)
     assert [kind for kind, _ in groups] == [
         KIND_SEMANTIC_MODEL,
         KIND_REPORT,
+        KIND_ENVIRONMENT,
         KIND_ORG_APP,
         KIND_NOTEBOOK,
     ]
@@ -913,6 +936,7 @@ def test_group_pack_entries_orders_model_before_report() -> None:
     assert [kind for kind, _ in rev] == [
         KIND_NOTEBOOK,
         KIND_ORG_APP,
+        KIND_ENVIRONMENT,
         KIND_REPORT,
         KIND_SEMANTIC_MODEL,
     ]

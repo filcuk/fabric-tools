@@ -14,6 +14,10 @@ from fabric_tools.dataflow_gen1.definition import (
     DefinitionError as DataflowDefinitionError,
 )
 from fabric_tools.dataflow_gen1.definition import validate_local_model
+from fabric_tools.environment.definition import (
+    DefinitionError as EnvironmentDefinitionError,
+)
+from fabric_tools.environment.definition import validate_local_environment
 from fabric_tools.notebook.cells import (
     CellSelectionError,
     format_cell_indices,
@@ -331,6 +335,86 @@ def run_dry_run_org_app(
                             )
                         )
 
+    return results
+
+
+def run_dry_run_environment(
+    mode: CommandMode,
+    items: list[WorkItem],
+    *,
+    client: FabricClient | None,
+    has_targets: bool,
+    has_files: bool,
+    has_origins: bool = False,
+) -> list[CheckResult]:
+    """Validate Environment local folders and/or Fabric remotes without mutating."""
+    results: list[CheckResult] = []
+    if has_files:
+        seen_files: set[Path] = set()
+        for item in items:
+            if item.file is None:
+                continue
+            file_key = item.file.resolve()
+            if file_key in seen_files:
+                continue
+            seen_files.add(file_key)
+            try:
+                validate_local_environment(item.file)
+                results.append(
+                    CheckResult(True, f"local ok: {item.file} (Environment folder)")
+                )
+            except EnvironmentDefinitionError as exc:
+                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+
+    if has_targets or has_origins:
+        if client is None:
+            results.append(CheckResult(False, "remote fail: Fabric client is required"))
+            return results
+        seen_workspaces: set[str] = set()
+        seen_items: set[str] = set()
+        if has_origins:
+            for item in items:
+                origin = item.origin
+                if origin is None or origin.item_id is None:
+                    continue
+                if origin.workspace_id not in seen_workspaces:
+                    seen_workspaces.add(origin.workspace_id)
+                    results.append(_check_workspace(client, origin.workspace_id))
+                key = origin.label()
+                if key not in seen_items:
+                    seen_items.add(key)
+                    results.append(
+                        _check_item(
+                            client,
+                            origin,
+                            mode=mode,
+                            role="origin",
+                            expected_type="Environment",
+                            kind_label="environment",
+                        )
+                    )
+        if has_targets:
+            for item in items:
+                target = item.target
+                if target is None:
+                    continue
+                if target.workspace_id not in seen_workspaces:
+                    seen_workspaces.add(target.workspace_id)
+                    results.append(_check_workspace(client, target.workspace_id))
+                if target.item_id is not None:
+                    key = target.label()
+                    if key not in seen_items:
+                        seen_items.add(key)
+                        results.append(
+                            _check_item(
+                                client,
+                                target,
+                                mode=mode,
+                                role="target",
+                                expected_type="Environment",
+                                kind_label="environment",
+                            )
+                        )
     return results
 
 
