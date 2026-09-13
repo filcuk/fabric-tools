@@ -8,6 +8,9 @@ import typer
 
 from fabric_tools.client import FabricApiError, FabricClient
 from fabric_tools.dataflow.definition import display_name_from_path
+from fabric_tools.org_app.definition import (
+    display_name_from_path as org_app_name_from_path,
+)
 from fabric_tools.parsing import Target, WorkItem, default_download_paths
 from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
 from fabric_tools.status import busy
@@ -141,6 +144,13 @@ def dataflow_display_name(client: FabricClient, target: Target) -> str:
     return target.item_id
 
 
+def org_app_display_name(client: FabricClient, target: Target) -> str:
+    """Return Fabric item display name for an Org App target (fallback: id)."""
+    if target.item_id is None:
+        return "OrgApp"
+    return item_display_name(client, target)
+
+
 def resolve_notebook_download_files(
     client: FabricClient,
     items: list[WorkItem],
@@ -231,6 +241,30 @@ def resolve_dataflow_download_files(
             for item in items
         ]
         paths = default_download_paths(names, extension=".Dataflow")
+    return [
+        WorkItem(item.target, path, origin=item.origin)
+        for item, path in zip(items, paths, strict=True)
+    ]
+
+
+def resolve_org_app_download_files(
+    client: FabricClient,
+    items: list[WorkItem],
+) -> list[WorkItem]:
+    """Fill missing download destinations from remote names (``.OrgApp``)."""
+    if not items or all(item.file is not None for item in items):
+        return items
+    if any(item.file is not None for item in items):
+        raise ValueError("download work items must all omit --file or all provide it")
+
+    with busy("Resolving download paths..."):
+        names = [
+            org_app_display_name(client, item.target)
+            if item.target is not None
+            else "OrgApp"
+            for item in items
+        ]
+        paths = default_download_paths(names, extension=".OrgApp")
     return [
         WorkItem(item.target, path, origin=item.origin)
         for item, path in zip(items, paths, strict=True)
@@ -328,6 +362,34 @@ def confirm_download_overwrites_dataflow(
     silent: bool,
 ) -> None:
     """Confirm before overwriting existing local Dataflow Gen2 folders."""
+    if silent:
+        return
+    existing = [
+        item
+        for item in items
+        if item.target is not None and item.file is not None and _path_exists(item.file)
+    ]
+    if not existing:
+        return
+
+    lines = ["About to overwrite local path(s):"]
+    with busy("Resolving targets..."):
+        for item in existing:
+            assert item.target is not None and item.file is not None
+            remote = resolve_item_name(client, item.target)
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
+def confirm_download_overwrites_org_app(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm before overwriting existing local Org App folders."""
     if silent:
         return
     existing = [
@@ -564,6 +626,59 @@ def confirm_deploy_actions_dataflow(
     confirm_or_abort("\n".join(lines), silent=False)
 
 
+def confirm_deploy_actions_org_app(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+    display_names: list[str] | None = None,
+) -> None:
+    """Confirm create or remote overwrite before Org App deploy."""
+    if silent or not items:
+        return
+
+    first = items[0].target
+    if first is None:
+        return
+
+    if first.is_create:
+        lines = ["About to create Org App(s):"]
+        with busy("Resolving targets..."):
+            for index, item in enumerate(items):
+                assert item.target is not None
+                workspace = resolve_workspace_name(client, item.target.workspace_id)
+                name: str | None = None
+                if (
+                    display_names
+                    and index < len(display_names)
+                    and display_names[index]
+                ):
+                    name = display_names[index]
+                if not name:
+                    if item.file is not None:
+                        name = org_app_name_from_path(item.file)
+                    elif item.origin is not None:
+                        name = resolve_item_name(client, item.origin)
+                    else:
+                        name = "(unnamed)"
+                source = _source_phrase_fabric(client, item)
+                lines.append(f"  - '{name}' in {workspace}{source}")
+        lines.append("Are you sure?")
+        confirm_or_abort("\n".join(lines), silent=False)
+        return
+
+    lines = ["About to overwrite remote Org App(s):"]
+    with busy("Resolving targets..."):
+        for item in items:
+            assert item.target is not None
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            remote = resolve_item_name(client, item.target)
+            source = _source_phrase_fabric(client, item, prefix=" with")
+            lines.append(f"  - {remote} in {workspace}{source}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
 def confirm_delete_actions(
     client: FabricClient,
     items: list[WorkItem],
@@ -638,6 +753,27 @@ def confirm_delete_dataflow(
         return
 
     lines = ["About to delete remote dataflow(s):"]
+    with busy("Resolving targets..."):
+        for item in items:
+            assert item.target is not None
+            workspace = resolve_workspace_name(client, item.target.workspace_id)
+            remote = resolve_item_name(client, item.target)
+            lines.append(f"  - {remote} in {workspace}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
+def confirm_delete_org_app(
+    client: FabricClient,
+    items: list[WorkItem],
+    *,
+    silent: bool,
+) -> None:
+    """Confirm soft-delete of remote Org App items."""
+    if silent or not items:
+        return
+
+    lines = ["About to delete remote Org App(s):"]
     with busy("Resolving targets..."):
         for item in items:
             assert item.target is not None

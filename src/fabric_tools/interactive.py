@@ -17,6 +17,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_ORG_APP,
     KIND_PAGINATED_REPORT,
     KIND_PIPELINE,
     KIND_REPORT,
@@ -36,6 +37,7 @@ _TOOL_KIND = {
     "notebook": KIND_NOTEBOOK,
     "dataflow": KIND_DATAFLOW,
     "dataflow-gen1": KIND_DATAFLOW_GEN1,
+    "org-app": KIND_ORG_APP,
     "pipeline": KIND_PIPELINE,
     "udf": KIND_UDF,
     "semantic-model": KIND_SEMANTIC_MODEL,
@@ -73,6 +75,7 @@ def run_interactive_wizard() -> None:
         run_dataflow_command,
         run_dataflow_gen1_command,
         run_notebook_command,
+        run_org_app_command,
         run_paginated_report_command,
         run_pipeline_command,
         run_report_command,
@@ -174,6 +177,17 @@ def run_interactive_wizard() -> None:
             names=resolved_names,
             remap_values=remap_values,
             publish=publish,
+            on_success=on_success,
+        )
+    elif tool == "org-app":
+        run_org_app_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
             on_success=on_success,
         )
     elif tool == "pipeline":
@@ -342,6 +356,7 @@ def _run_step(step: str, answers: dict[str, Any]) -> None:
                 "notebook",
                 "dataflow",
                 "dataflow-gen1",
+                "org-app",
                 "pipeline",
                 "udf",
                 "semantic-model",
@@ -419,6 +434,8 @@ def _file_prompt(tool: str) -> str:
         return "Enter file (.rdl)"
     if tool == "dataflow":
         return "Enter folder (*.Dataflow)"
+    if tool == "org-app":
+        return "Enter folder (*.OrgApp)"
     if tool == "pipeline":
         return "Enter folder (*.DataPipeline)"
     if tool == "udf":

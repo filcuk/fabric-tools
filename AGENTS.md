@@ -6,14 +6,14 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 
 ## Project goal
 
-`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), semantic model sync (`semantic-model`), report sync (`report`; joins a packable model by default), paginated report sync (`paginated-report`; `.rdl` via Power BI), and read-only `inspect` (list/get workspaces and items).
+`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), Org App sync (`org-app`), semantic model sync (`semantic-model`), report sync (`report`; joins a packable model by default), paginated report sync (`paginated-report`; `.rdl` via Power BI), and read-only `inspect` (list/get workspaces and items).
 
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `semantic-model` + `report` + `paginated-report` + `inspect` groups, `env` (list/set/unset), `manifest` (inspect/list/delete/move), `pack` (download/deploy/compare/delete), `setup`, hidden `debug` (`debug color` palette swatch)
+  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `org-app` + `semantic-model` + `report` + `paginated-report` + `inspect` groups, `env` (list/set/unset), `manifest` (inspect/list/delete/move), `pack` (download/deploy/compare/delete), `setup`, hidden `debug` (`debug color` palette swatch)
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
-  - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (schema v3 packs: top-level `kind: "pack"`; per-entry `kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `semantic-model` \| `report` \| `paginated-report`; optional pack/entry `remap` path refs)
+  - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (schema v3 packs: top-level `kind: "pack"`; per-entry `kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `org-app` \| `semantic-model` \| `report` \| `paginated-report`; optional pack/entry `remap` path refs)
   - `pack_run.py` — multi-kind pack orchestration (`fabric-tools pack …`)
   - `colours.py` — CLI colour roles, help theme, `debug color` swatch (see [DESIGN.md](DESIGN.md))
   - `inspect_cmd.py` — Fabric workspace/item list/get helpers (filters, formatters, `--target` shapes)
@@ -25,7 +25,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `definition_parts.py` — recursive folder ↔ InlineBase64 definition parts
   - `guid_map.py` — deploy `--remap` / `-r` JSON (source GUID → target GUID) load/pair/apply to definition text parts
   - `parsing.py` — `--target` / `--file` / `--origin` parsing and mode validation (`download` \| `deploy` \| `compare` \| `delete`; `deploy_create_only` for Gen1)
-  - `validate.py` — `--dry-run` remote/local checks (Fabric notebooks + Dataflow Gen2 + Power BI Gen1 + DataPipeline + UDF + semantic model + report + paginated-report)
+  - `validate.py` — `--dry-run` remote/local checks (Fabric notebooks + Dataflow Gen2 + Power BI Gen1 + DataPipeline + UDF + Org App + semantic model + report + paginated-report)
   - `confirm.py` — overwrite / create / delete prompts
   - `status.py` — Rich spinner / status line for auth and long-running work
   - `exit_codes.py` — CLI exit code constants
@@ -36,6 +36,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `dataflow_gen1/` — `model.json` helpers (`definition.py`); download/create/delete (`ops.py`); compare (`compare.py`)
   - `pipeline/` — DataPipeline Git-style folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `udf/` — User Data Function folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
+  - `org_app/` — Org App folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `semantic_model/` — semantic model folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `report/` — report folder + PBIX (`definition.py`); join/bind rewrite; download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `paginated_report/` — `.rdl` helpers (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
@@ -129,6 +130,15 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Compare: multi-part unified diff (JSON pretty-printed; `.whl` parts reported as `<binary N bytes>`)
 - Delete: Fabric soft delete (`DELETE .../userDataFunctions/{id}`)
 
+### Org Apps (`org-app`)
+
+- Format: Fabric Git-style `*.OrgApp` folder (`definition.json` required; optional `.platform`)
+- API: Fabric Org App (`/workspaces/{ws}/orgApps/...` + create via `/items` with type `OrgApp`)
+- Deploy: create or overwrite (`updateDefinition`; `updateMetadata=true` when `.platform` is present)
+- Compare: normalized JSON unified diff of `definition.json`
+- Delete: Fabric soft delete (`DELETE .../orgApps/{id}`)
+- No GUID remap or publish option
+
 ### Semantic models (`semantic-model`)
 
 - Format: Fabric Git-style `*.SemanticModel` folder (`definition.pbism` required; TMDL `definition/` **or** TMSL `model.bim`, not both)
@@ -168,6 +178,7 @@ py -3 -m fabric_tools --version
 py -3 -m fabric_tools inspect --help
 py -3 -m fabric_tools notebook --help
 py -3 -m fabric_tools dataflow --help
+py -3 -m fabric_tools org-app --help
 py -3 -m fabric_tools semantic-model --help
 py -3 -m fabric_tools report --help
 py -3 -m fabric_tools paginated-report --help

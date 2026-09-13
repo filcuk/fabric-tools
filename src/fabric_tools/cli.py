@@ -28,6 +28,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_ORG_APP,
     KIND_PAGINATED_REPORT,
     KIND_PIPELINE,
     KIND_REPORT,
@@ -124,23 +125,17 @@ def _resolve_deploy_guid_maps(
         except GuidMapError as exc:
             _exit_error(str(exc))
 
-    if (
-        manifest
-        and expected_kind
-        and has_targets
-        and n_targets > 0
-    ):
+    if manifest and expected_kind and has_targets and n_targets > 0:
         try:
             path = resolve_manifest_path(manifest)
             if not path.is_file():
                 return []
             loaded = load_manifest(path)
-            return entry_guid_maps_from_manifest(
-                loaded, expected_kind=expected_kind
-            )
+            return entry_guid_maps_from_manifest(loaded, expected_kind=expected_kind)
         except ManifestError as exc:
             _exit_error(str(exc))
     return []
+
 
 def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
     """Exit if ``FABRIC_TOOLS_READONLY`` blocks this mode (unless dry-run)."""
@@ -221,6 +216,7 @@ class _BannerGroup(TyperGroup):
         "dataflow-gen1",
         "dataflow",
         "notebook",
+        "org-app",
         "paginated-report",
         "pipeline",
         "report",
@@ -281,6 +277,14 @@ dataflow_app = typer.Typer(
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(dataflow_app, name="dataflow", rich_help_panel="Fabric")
+
+org_app_app = typer.Typer(
+    name="org-app",
+    help="Fabric Org App items.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(org_app_app, name="org-app", rich_help_panel="Fabric")
 
 semantic_model_app = typer.Typer(
     name="semantic-model",
@@ -1879,6 +1883,210 @@ def dataflow_delete(
 ) -> None:
     """Soft-delete Dataflow Gen2 item(s) in Fabric."""
     run_dataflow_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@org_app_app.command("download")
+def org_app_download(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(optional) Local *.OrgApp folder. "
+        "Defaults to remote display name with .OrgApp in the current folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One folder may broadcast to all targets.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or files only; do not download.",
+    ),
+) -> None:
+    """Download Org App definition(s) from Fabric to local folders."""
+    run_org_app_command(
+        CommandMode.DOWNLOAD,
+        target_values=target,
+        file_values=file,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@org_app_app.command("deploy")
+def org_app_deploy(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated "
+        "(spaces after commas OK).",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.OrgApp folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One folder may broadcast to all targets. Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact source. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+    ),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="(optional, create only) Display name. Defaults to folder stem "
+        "or origin display name.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
+    ),
+) -> None:
+    """Deploy Org App item(s) from local folders or a Fabric origin."""
+    run_org_app_command(
+        CommandMode.DEPLOY,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=silent,
+        dry_run=dry_run,
+        names=name,
+        manifest=manifest,
+    )
+
+
+@org_app_app.command("compare")
+def org_app_compare(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "With --file: one workspace only. Must 1:1 match --file or --origin.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.OrgApp folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact to compare against "
+        "--target. Must 1:1 match --target (no broadcast). "
+        "Mutually exclusive with --file.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not compare.",
+    ),
+) -> None:
+    """Compare target Org App to a local folder or Fabric origin."""
+    run_org_app_command(
+        CommandMode.COMPARE,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=True,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@org_app_app.command("delete")
+def org_app_delete(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help="(optional) Load workspace:artifact targets from a .ftdep "
+        "(entries must have itemId). Not rewritten after delete.",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Soft-delete Org App item(s) in Fabric."""
+    run_org_app_command(
         CommandMode.DELETE,
         target_values=target,
         file_values=None,
@@ -3711,6 +3919,219 @@ def run_dataflow_command(
         client.close()
 
 
+def run_org_app_command(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    origin_values: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
+    manifest: str | None = None,
+    on_success: Callable[..., None] | None = None,
+) -> None:
+    """Shared entry for Org App CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_org_app,
+        confirm_deploy_actions_org_app,
+        confirm_download_overwrites_org_app,
+        resolve_org_app_download_files,
+    )
+    from fabric_tools.org_app.compare import run_compare_batch as run_org_compare
+    from fabric_tools.org_app.ops import run_delete_batch as run_org_delete
+    from fabric_tools.org_app.ops import run_deploy_batch as run_org_deploy
+    from fabric_tools.org_app.ops import run_download_batch as run_org_download
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run_org_app
+
+    try:
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_org_app_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
+        )
+    except (ParseError, ManifestError) as exc:
+        _exit_error(str(exc))
+
+    if dry_run:
+        client: FabricClient | None = None
+        try:
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    _authenticate_client(client)
+            with busy("Checking..."):
+                results = run_dry_run_org_app(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                )
+        except AuthError as exc:
+            _fail_auth(exc)
+        except Exception as exc:  # noqa: BLE001
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
+        finally:
+            if client is not None:
+                client.close()
+
+        failed = False
+        for result in results:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
+                failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_org_app_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except ParseError as exc:
+                _exit_error(str(exc))
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_ORG_APP,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+            )
+        raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
+
+    try:
+        display_names = (
+            _resolve_org_app_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
+            else None
+        )
+    except ParseError as exc:
+        _exit_error(str(exc))
+
+    with busy("Authenticating..."):
+        client = FabricClient()
+        _authenticate_client(client)
+    try:
+        if mode is CommandMode.DOWNLOAD:
+            items = resolve_org_app_download_files(client, items)
+            confirm_download_overwrites_org_app(client, items, silent=silent)
+            with busy("Downloading..."):
+                op_results = run_org_download(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_ORG_APP,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_actions_org_app(
+                client,
+                items,
+                silent=silent,
+                display_names=display_names,
+            )
+            with busy("Deploying..."):
+                op_results = run_org_deploy(
+                    client,
+                    items,
+                    display_names=display_names,
+                )
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            for result in op_results:
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}",
+                        fg=FG_ID,
+                    )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_ORG_APP,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.COMPARE:
+            with busy("Comparing..."):
+                compare_results = run_org_compare(client, items)
+            _print_compare_results(compare_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+                kind=KIND_ORG_APP,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+            )
+            _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DELETE:
+            confirm_delete_org_app(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_org_delete(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        else:
+            _exit_error(f"Unknown mode: {mode}")
+    except ConfirmationAborted as exc:
+        _exit_warn(str(exc))
+    except typer.Exit:
+        raise
+    except AuthError as exc:
+        _fail_auth(exc)
+    except Exception as exc:  # noqa: BLE001
+        _exit_error(str(exc), code=EXIT_API)
+    finally:
+        client.close()
+
+
 def run_semantic_model_command(
     mode: CommandMode,
     *,
@@ -5272,6 +5693,107 @@ def _resolve_dataflow_deploy_names(
     names: list[str | None] | list[str] | None,
 ) -> list[str]:
     from fabric_tools.dataflow.definition import display_name_from_path
+
+    if names and len(names) not in {1, len(items)}:
+        raise ParseError(
+            f"--name count must be 1 or match target count ({len(items)}); "
+            f"got {len(names)}"
+        )
+    resolved: list[str] = []
+    for index, item in enumerate(items):
+        chosen: str | None = None
+        if names:
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
+        elif item.file is not None:
+            resolved.append(display_name_from_path(item.file))
+        else:
+            resolved.append("")
+    return resolved
+
+
+def _resolve_org_app_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve Org App targets/files/origins from CLI and/or a manifest."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
+    manifest_names: list[str | None] | None = None
+
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(loaded, expected_kind=KIND_ORG_APP)
+            return items, None, True, False, False
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False
+
+    if cli_targets or cli_files or cli_origins:
+        targets = cli_targets
+        files = cli_files
+        origins = cli_origins
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_ORG_APP
+        )
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
+            )
+    else:
+        targets = []
+        files = []
+        origins = []
+
+    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files), bool(origins)
+
+
+def _resolve_org_app_deploy_names(
+    items: list[WorkItem],
+    names: list[str | None] | list[str] | None,
+) -> list[str]:
+    from fabric_tools.org_app.definition import display_name_from_path
 
     if names and len(names) not in {1, len(items)}:
         raise ParseError(

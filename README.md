@@ -70,9 +70,9 @@ fabric-tools notebook deploy -m etl
 | Semantic Model|✅|✅||
 | Report|✅|✅|Standalone or model-joined operations.|
 | Paginated Report|✅|✅|No API support for sources & credentials.|
+| Org App|✅|✅|`definition.json` in a `*.OrgApp` folder.|
 | Inspect|✅ (Read)|🚫|Browse workspaces and items.|
 | Pack manifests|✅|✅|Schema v3 multi-kind `.ftdep`; `pack …` for mixed.|
-| Org App|📅|📅||
 | Environment|📅|📅||
 | Variable Library|📅|📅||
 | Lakehouse|🚫|🚫|No API support.|

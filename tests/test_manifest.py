@@ -18,6 +18,7 @@ from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_ORG_APP,
     KIND_PACK,
     KIND_PAGINATED_REPORT,
     KIND_PIPELINE,
@@ -232,6 +233,24 @@ def test_dataflow_kind_round_trip(tmp_path: Path) -> None:
     assert loaded.kind == KIND_PACK
     assert loaded.entries[0].kind == KIND_DATAFLOW
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_DATAFLOW)
+    assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_org_app_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Sales.OrgApp"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_ORG_APP,
+        display_names=["Sales"],
+    )
+    path, _ = save_manifest(tmp_path / "org-app", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_ORG_APP
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_ORG_APP)
     assert names == ["Sales"]
     assert work_items[0].file == folder.resolve()
 
@@ -881,16 +900,19 @@ def test_group_pack_entries_orders_model_before_report() -> None:
         ManifestEntry(
             kind=KIND_SEMANTIC_MODEL, workspace_id=WS, item_id=ITEM, file=Path("c")
         ),
+        ManifestEntry(kind=KIND_ORG_APP, workspace_id=WS, item_id=ITEM, file=Path("d")),
     )
     groups = group_pack_entries_by_kind(entries)
     assert [kind for kind, _ in groups] == [
         KIND_SEMANTIC_MODEL,
         KIND_REPORT,
+        KIND_ORG_APP,
         KIND_NOTEBOOK,
     ]
     rev = group_pack_entries_by_kind(entries, reverse=True)
     assert [kind for kind, _ in rev] == [
         KIND_NOTEBOOK,
+        KIND_ORG_APP,
         KIND_REPORT,
         KIND_SEMANTIC_MODEL,
     ]
