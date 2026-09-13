@@ -80,8 +80,8 @@ fabric-tools notebook deploy -m etl
 
 **Legend:**  
 ✅ = Supported  
-📅 = Planned
-🚫 = Not supported
+📅 = Planned  
+🚫 = Not supported  
 
 [^1]: Dataflow Gen1 don't support overwrite, and credentials must be handled separately.
 
