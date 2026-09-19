@@ -64,6 +64,7 @@ from fabric_tools.parsing import (
 from fabric_tools.readonly import (
     ReadOnlyError,
     ensure_command_allowed,
+    ensure_mutation_allowed,
     ensure_setup_mutation_allowed,
 )
 
@@ -153,6 +154,14 @@ def _enforce_readonly_setup(action: str) -> None:
     """Exit if ``FABRIC_TOOLS_READONLY`` blocks a mutating setup action."""
     try:
         ensure_setup_mutation_allowed(action)
+    except ReadOnlyError as exc:
+        _exit_error(str(exc))
+
+
+def _enforce_readonly_mutation(action: str, *, dry_run: bool) -> None:
+    """Exit if ``FABRIC_TOOLS_READONLY`` blocks a named mutation (unless dry-run)."""
+    try:
+        ensure_mutation_allowed(action, dry_run=dry_run)
     except ReadOnlyError as exc:
         _exit_error(str(exc))
 
@@ -315,6 +324,22 @@ semantic_model_app = typer.Typer(
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(semantic_model_app, name="semantic-model", rich_help_panel="Fabric")
+
+semantic_model_role_app = typer.Typer(
+    name="role",
+    help="Manage semantic-model RLS role membership (XMLA / SqlServer module).",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+semantic_model_app.add_typer(semantic_model_role_app, name="role")
+
+semantic_model_role_member_app = typer.Typer(
+    name="member",
+    help="Add or remove members on a semantic-model RLS role.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+semantic_model_role_app.add_typer(semantic_model_role_member_app, name="member")
 
 report_app = typer.Typer(
     name="report",
@@ -2901,6 +2926,146 @@ def semantic_model_delete(
         dry_run=dry_run,
         name_filter=name_filter,
         manifest=manifest,
+    )
+
+
+@semantic_model_role_app.command("list")
+def semantic_model_role_list(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required) workspace:artifact or workspaceId:*. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Do not offer SqlServer Install-Module; fail with the hint.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Resolve targets only; do not call XMLA.",
+    ),
+) -> None:
+    """List RLS roles and members for semantic model(s) via XMLA."""
+    run_semantic_model_role_command(
+        "list",
+        target_values=target,
+        name_filter=name_filter,
+        silent=silent,
+        dry_run=dry_run,
+    )
+
+
+@semantic_model_role_member_app.command("add")
+def semantic_model_role_member_add(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required) workspace:artifact or workspaceId:*. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    role: str = typer.Option(
+        ...,
+        "--role",
+        "-r",
+        help="Model role name.",
+    ),
+    member: str = typer.Option(
+        ...,
+        "--member",
+        help="Member UPN or Entra group display name (AzureAD).",
+    ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation; do not offer SqlServer Install-Module.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Resolve targets and confirm plan only; do not mutate.",
+    ),
+) -> None:
+    """Add a member to an RLS role on semantic model(s) via XMLA."""
+    run_semantic_model_role_command(
+        "member_add",
+        target_values=target,
+        name_filter=name_filter,
+        silent=silent,
+        dry_run=dry_run,
+        role_name=role,
+        member_name=member,
+    )
+
+
+@semantic_model_role_member_app.command("remove")
+def semantic_model_role_member_remove(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required) workspace:artifact or workspaceId:*. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    role: str = typer.Option(
+        ...,
+        "--role",
+        "-r",
+        help="Model role name.",
+    ),
+    member: str = typer.Option(
+        ...,
+        "--member",
+        help="Member UPN or Entra group display name (AzureAD).",
+    ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation; do not offer SqlServer Install-Module.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Resolve targets and confirm plan only; do not mutate.",
+    ),
+) -> None:
+    """Remove a member from an RLS role on semantic model(s) via XMLA."""
+    run_semantic_model_role_command(
+        "member_remove",
+        target_values=target,
+        name_filter=name_filter,
+        silent=silent,
+        dry_run=dry_run,
+        role_name=role,
+        member_name=member,
     )
 
 
@@ -5597,6 +5762,226 @@ def run_semantic_model_command(
             _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
         _exit_warn(str(exc))
+    except typer.Exit:
+        raise
+    except AuthError as exc:
+        _fail_auth(exc)
+    except Exception as exc:  # noqa: BLE001
+        _exit_error(str(exc), code=EXIT_API)
+    finally:
+        client.close()
+
+
+def run_semantic_model_role_command(
+    action: str,
+    *,
+    target_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    name_filter: str | None = None,
+    role_name: str | None = None,
+    member_name: str | None = None,
+) -> None:
+    """List or mutate semantic-model RLS role members via XMLA (SqlServer module)."""
+    import json
+    import sys
+
+    from fabric_tools.auth import POWER_BI_SCOPE, create_credential, get_access_token
+    from fabric_tools.client import FabricApiError, FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_semantic_model_role_member_changes,
+        resolve_workspace_name,
+        semantic_model_display_name,
+    )
+    from fabric_tools.status import busy
+    from fabric_tools.xmla_roles import XmlaRolesError, invoke_xmla_roles
+
+    if action in {"member_add", "member_remove"}:
+        _enforce_readonly_mutation(
+            "semantic-model role member change",
+            dry_run=dry_run,
+        )
+        if not role_name or not member_name:
+            _exit_error("--role and --member are required for member add/remove.")
+
+    if sys.platform != "win32":
+        _exit_error("semantic-model role commands require Windows PowerShell.")
+
+    expand_client: FabricClient | None = None
+    try:
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=None,
+            target_values=target_values,
+            mode=CommandMode.DELETE,
+            name_filter=name_filter,
+        )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_SEMANTIC_MODEL, expand_client)
+            with busy("Expanding selectors..."):
+                items, _, has_targets, _, _ = _resolve_semantic_model_inputs(
+                    CommandMode.DELETE,
+                    target_values=target_values,
+                    origin_values=None,
+                    dry_run=dry_run,
+                    names=None,
+                    manifest=None,
+                    name_filter=name_filter,
+                    list_items_fn=list_fn,
+                    kind_label=_KIND_EXPAND_LABELS[KIND_SEMANTIC_MODEL],
+                )
+        else:
+            items, _, has_targets, _, _ = _resolve_semantic_model_inputs(
+                CommandMode.DELETE,
+                target_values=target_values,
+                origin_values=None,
+                dry_run=dry_run,
+                names=None,
+                manifest=None,
+                name_filter=name_filter,
+            )
+    except (ParseError, ManifestError) as exc:
+        _exit_error(str(exc))
+
+    if not has_targets or not items:
+        _exit_error("Provide --target / -t with workspace:artifact or workspaceId:*.")
+
+    for item in items:
+        if item.target is None or item.target.item_id is None:
+            _exit_error(
+                "semantic-model role requires concrete model targets "
+                "(workspaceId:itemId or workspaceId:*)."
+            )
+
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
+
+    try:
+        confirm_rows: list[tuple[str, str, str, str, str]] = []
+        resolved: list[tuple[str, str, str, str]] = []
+        with busy("Resolving models..."):
+            for item in items:
+                assert item.target is not None and item.target.item_id is not None
+                try:
+                    workspace = client.get_workspace(item.target.workspace_id)
+                    model_item = client.get_item(
+                        item.target.workspace_id, item.target.item_id
+                    )
+                except FabricApiError as exc:
+                    _exit_error(str(exc), code=EXIT_API)
+                ws_name = workspace.get("displayName") or workspace.get("name")
+                model_name = model_item.get("displayName") or model_item.get("name")
+                if not isinstance(ws_name, str) or not ws_name.strip():
+                    _exit_error(
+                        f"Workspace {item.target.workspace_id} has no displayName "
+                        "for XMLA."
+                    )
+                if not isinstance(model_name, str) or not model_name.strip():
+                    _exit_error(
+                        f"Semantic model {item.target.item_id} has no displayName "
+                        "for XMLA."
+                    )
+                item_type = model_item.get("type")
+                if item_type and item_type != "SemanticModel":
+                    _exit_error(
+                        f"Target {item.target.item_id} type is {item_type!r}; "
+                        "expected SemanticModel."
+                    )
+                ws_label = resolve_workspace_name(client, item.target.workspace_id)
+                model_label = semantic_model_display_name(client, item.target)
+                resolved.append(
+                    (
+                        ws_name.strip(),
+                        model_name.strip(),
+                        item.target.item_id,
+                        ws_label,
+                    )
+                )
+                if action in {"member_add", "member_remove"}:
+                    assert role_name is not None and member_name is not None
+                    confirm_rows.append(
+                        (
+                            ws_label,
+                            model_label,
+                            item.target.item_id,
+                            role_name,
+                            member_name,
+                        )
+                    )
+
+        if dry_run:
+            for _ws_name, model_name, model_id, ws_label in resolved:
+                if action == "list":
+                    typer.secho(
+                        f"[dry-run] would list roles on semantic model "
+                        f'"{model_name}" ({model_id}) in {ws_label}',
+                        fg=FG_OK,
+                    )
+                else:
+                    verb = "add" if action == "member_add" else "remove"
+                    prep = "to" if action == "member_add" else "from"
+                    typer.secho(
+                        f'[dry-run] would {verb} member "{member_name}" {prep} '
+                        f'role "{role_name}" on semantic model "{model_name}" '
+                        f"({model_id}) in {ws_label}",
+                        fg=FG_OK,
+                    )
+            raise typer.Exit(code=EXIT_OK)
+
+        if action in {"member_add", "member_remove"}:
+            member_action = "add" if action == "member_add" else "remove"
+            try:
+                confirm_semantic_model_role_member_changes(
+                    confirm_rows,
+                    action=member_action,
+                    silent=silent,
+                )
+            except ConfirmationAborted as exc:
+                _exit_warn(str(exc))
+
+        try:
+            with busy("Acquiring Power BI token..."):
+                token = get_access_token(
+                    create_credential(), scope=POWER_BI_SCOPE
+                ).token
+        except AuthError as exc:
+            _fail_auth(exc)
+
+        failed = False
+        for ws_name, model_name, model_id, ws_label in resolved:
+            try:
+                with busy(f"XMLA: {model_name}..."):
+                    result = invoke_xmla_roles(
+                        action=action,  # type: ignore[arg-type]
+                        workspace_name=ws_name,
+                        database_name=model_name,
+                        access_token=token,
+                        role_name=role_name,
+                        member_name=member_name,
+                        offer_install=not silent,
+                        silent=silent,
+                    )
+            except XmlaRolesError as exc:
+                detail = f"\n{exc.detail}" if exc.detail else ""
+                code = f" [{exc.code}]" if exc.code else ""
+                print_error_panel(
+                    f"{model_name} ({model_id}) in {ws_label}: {exc}{code}{detail}"
+                )
+                failed = True
+                continue
+
+            header = f"{model_name} ({model_id}) in {ws_label}: {result.message}"
+            typer.secho(header, fg=FG_OK)
+            if action == "list" and result.roles or result.roles:
+                typer.echo(json.dumps({"roles": result.roles}, indent=2))
+
+        raise typer.Exit(code=EXIT_API if failed else EXIT_OK)
     except typer.Exit:
         raise
     except AuthError as exc:

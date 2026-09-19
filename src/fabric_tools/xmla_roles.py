@@ -1,8 +1,8 @@
-"""Invoke PowerShell + SqlServer (TOM) for semantic-model RLS role membership (spike).
+"""Invoke PowerShell + SqlServer (TOM) for semantic-model RLS role membership.
 
-Uses the checked-in ``scripts/xmla_role_members.ps1`` script. Requires Windows and the
-SqlServer module from the PowerShell Gallery. The access token is passed on stdin
-JSON only (never argv).
+Uses ``xmla_role_members.ps1`` (shipped beside this module; also under ``scripts/``).
+Requires Windows and the SqlServer module from the PowerShell Gallery. The access
+token is passed on stdin JSON only (never argv).
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def workspace_xmla_connection(workspace_display_name: str) -> str:
 
 
 def resolve_script_path() -> Path:
-    """Locate ``xmla_role_members.ps1`` (env override, then repo ``scripts/``)."""
+    """Locate ``xmla_role_members.ps1`` (env, package sibling, then repo ``scripts/``)."""
     override = os.environ.get(SCRIPT_ENV)
     if override:
         path = Path(override).expanduser()
@@ -72,9 +72,8 @@ def resolve_script_path() -> Path:
 
     here = Path(__file__).resolve()
     candidates = [
-        here.parents[2]
-        / "scripts"
-        / "xmla_role_members.ps1",  # src/fabric_tools → repo
+        here.with_name("xmla_role_members.ps1"),
+        here.parents[2] / "scripts" / "xmla_role_members.ps1",
         Path.cwd() / "scripts" / "xmla_role_members.ps1",
     ]
     for candidate in candidates:
@@ -82,8 +81,7 @@ def resolve_script_path() -> Path:
             return candidate.resolve()
 
     raise XmlaRolesError(
-        "xmla_role_members.ps1 not found. Set "
-        f"{SCRIPT_ENV} or run from a fabric-tools checkout.",
+        f"xmla_role_members.ps1 not found. Set {SCRIPT_ENV} or reinstall fabric-tools.",
         code="script_missing",
     )
 

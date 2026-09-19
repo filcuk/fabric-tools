@@ -116,6 +116,12 @@ def shared_nuitka_args(
     if icon.is_file():
         args.append(f"--windows-icon-from-ico={icon}")
 
+    xmla_script = project_root / "src" / "fabric_tools" / "xmla_role_members.ps1"
+    if xmla_script.is_file():
+        args.append(
+            f"--include-data-files={xmla_script}=fabric_tools/xmla_role_members.ps1"
+        )
+
     for package in INCLUDE_PACKAGES:
         args.append(f"--include-package={package}")
     for package in INCLUDE_PACKAGE_DATA:

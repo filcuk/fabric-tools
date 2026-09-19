@@ -69,7 +69,7 @@ fabric-tools notebook delete -t <workspaceId>:* -f etl
 |Dataflow Gen1|✅|🚫|No API support for overwrite.|
 |Data Pipeline|✅|✅||
 |User Data Function|✅|✅||
-|Semantic Model|✅|✅|RLS management planned.|
+|Semantic Model|✅|✅|RLS role members.|
 |Report|✅|✅|Standalone or model-joined operations.|
 |Paginated Report|✅|✅|No API support for sources & credentials.|
 |Org App|✅|✅||

@@ -88,25 +88,27 @@ Notes:
 - Unsigned binaries may trigger SmartScreen warnings
 - Auth from the exe uses Windows WAM (when available), browser/device-code, or `AZURE_*` service principal env vars; tokens persist under `%LOCALAPPDATA%\fabric-tools`
 
-## XMLA role-membership spike (PowerShell Gallery)
+## XMLA role membership (SqlServer / PowerShell Gallery)
 
-Phase 3 discovery only (hidden `debug xmla-roles`). Product `semantic-model role …` comes later.
+Product commands: `fabric-tools semantic-model role list|member add|member remove`.
 
-**Backend:** Windows `pwsh` (preferred) or Windows PowerShell 5.1 + **SqlServer** module from PSGallery (loads Analysis Services / TOM). Not a bundled `.exe`. MicrosoftPowerBIMgmt alone is not enough (REST dataset permissions ≠ RLS role members).
+**Backend:** Windows `pwsh` (preferred) or Windows PowerShell 5.1 + **SqlServer** module from PSGallery (Analysis Services / TOM). Not a bundled native helper. REST dataset permissions are not RLS role members.
 
-**Script:** [`scripts/xmla_role_members.ps1`](scripts/xmla_role_members.ps1) — stdin JSON (`list` / `member_add` / `member_remove`); access token on stdin only (never argv). Override path with `FABRIC_TOOLS_XMLA_SCRIPT`.
+**Script:** shipped as `fabric_tools/xmla_role_members.ps1` (also [`scripts/xmla_role_members.ps1`](scripts/xmla_role_members.ps1) in the repo). Override with `FABRIC_TOOLS_XMLA_SCRIPT`. Token on stdin JSON only.
 
 ```powershell
-py -3 -m fabric_tools debug xmla-roles --help
-py -3 -m fabric_tools debug xmla-roles list -t <workspaceId>:<semanticModelId>
+py -3 -m fabric_tools semantic-model role --help
+py -3 -m fabric_tools semantic-model role list -t <workspaceId>:<semanticModelId>
+py -3 -m fabric_tools semantic-model role member add -t <workspaceId>:* -f Sales -r Readers --member user@contoso.com
 ```
 
-If SqlServer is missing, the CLI offers `Install-Module SqlServer -Scope CurrentUser` (confirm required). `-s` / `--silent` skips the offer and prints the install hint.
+If SqlServer is missing, the CLI offers `Install-Module SqlServer -Scope CurrentUser` (confirm required). `-s` / `--silent` skips the offer (and confirms on member mutations).
 
-**Notes for live trials:**
+**Live-trial notes:**
 
 - Capacity / workspace must allow **XMLA read/write**
-- Use Power BI API scope token (CLI already does for this spike)
-- Members are UPNs or Entra groups (`ExternalModelRoleMember`); service principals are not valid RLS role members
-- Add/remove are idempotent (already present / already absent → `changed: false`)
-- Prefer PowerShell 7 (`pwsh`) when available; 5.1 also works with a current SqlServer module
+- Power BI API scope token (CLI acquires this for role commands)
+- Members are UPNs or Entra groups; service principals are not valid RLS role members
+- Add/remove are idempotent (`changed: false` when already present / absent)
+- Prefer PowerShell 7 (`pwsh`) when available; 5.1 works with a current SqlServer module
+- Hidden `debug xmla-roles` remains available for low-level probing

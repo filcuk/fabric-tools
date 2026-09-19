@@ -34,6 +34,21 @@ def test_resolve_script_path_env(
     assert resolve_script_path() == script.resolve()
 
 
+def test_resolve_script_path_package_sibling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv(SCRIPT_ENV, raising=False)
+    pkg = tmp_path / "fabric_tools"
+    pkg.mkdir()
+    script = pkg / "xmla_role_members.ps1"
+    script.write_text("# sibling", encoding="utf-8")
+    monkeypatch.setattr(
+        "fabric_tools.xmla_roles.__file__",
+        str(pkg / "xmla_roles.py"),
+    )
+    assert resolve_script_path() == script.resolve()
+
+
 def test_resolve_script_path_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

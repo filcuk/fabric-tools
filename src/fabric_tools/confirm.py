@@ -1253,6 +1253,33 @@ def confirm_delete_semantic_model(
     confirm_or_abort("\n".join(lines), silent=False)
 
 
+def confirm_semantic_model_role_member_changes(
+    rows: list[tuple[str, str, str, str, str]],
+    *,
+    action: str,
+    silent: bool,
+) -> None:
+    """Confirm RLS role member add/remove for each affected model.
+
+    *rows* are ``(workspace_label, model_name, model_id, role_name, member_name)``.
+    *action* is ``add`` or ``remove``.
+    """
+    if silent or not rows:
+        return
+    verb = "Add" if action == "add" else "Remove"
+    prep = "to" if action == "add" else "from"
+    lines = [
+        f"About to {action} semantic-model role member(s) via XMLA:",
+    ]
+    for workspace, model_name, model_id, role_name, member_name in rows:
+        lines.append(
+            f'{verb}: member "{member_name}" {prep} role "{role_name}" '
+            f'on semantic model "{model_name}" ({model_id}) in {workspace}'
+        )
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
 def report_display_name(client: FabricClient, target: Target) -> str:
     """Return Fabric item display name for a report target (fallback: id)."""
     if target.item_id is None:
