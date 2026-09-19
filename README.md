@@ -19,14 +19,16 @@ Have you ever wanted to:
 ## Quick start
 
 1. Download the [latest release](https://github.com/filcuk/fabric-tools/releases/download/latest/fabric-tools.exe)
-2. _Optionally_ install for improved speed and ease of access:
+1. Unblock the file (File → Properties)
+1. Install for improved speed and ease of access _(optional but recommended)_:
 
   ```powershell
   .\fabric-tools.exe setup install
   ```
 
-  _Restart your terminal or IDE to capture PATH change._
-3. See available commands or use interactive wizard to get started:
+  _Restart your terminal or IDE to capture PATH change on first time install._  
+
+1. See available commands or use interactive wizard to get started:
 
   ```powershell
   fabric-tools --help
@@ -101,6 +103,12 @@ fabric-tools env -h
 > User Data Function APIs do **not** support service principals.
 
 ## Troubleshooting
+
+### Terminal restarted but the command is still not found
+
+If you're in an IDE, restarting a terminal is not enough, the whole IDE must be restarted.  
+Otherwise check your PATH to see if it's pointing to the correct target.  
+You can run `.\fabric-tools setup status` to see the state of the intallation.  
 
 ### Indefinite authentication
 
