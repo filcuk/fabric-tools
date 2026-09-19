@@ -449,7 +449,7 @@ def _run_xmla_script(
     except KeyboardInterrupt:
         _kill_process_tree(proc)
         raise XmlaRolesError(
-            "Cancelled.",
+            "Aborted by user.",
             code="cancelled",
             stage=last_stage,
         ) from None
@@ -598,7 +598,7 @@ def ensure_sqlserver_module(
     )
     if not confirm(prompt, default=False):
         raise XmlaRolesError(
-            f"Aborted. To install later, run: {INSTALL_HINT}",
+            f"Aborted by user. To install later, run: {INSTALL_HINT}",
             code="module_missing",
         )
     install_sqlserver_module(powershell=powershell)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NoReturn
 
 import questionary
 import typer
@@ -35,6 +35,7 @@ from fabric_tools.notebook.compare import CompareResult
 from fabric_tools.notebook.ops import OpResult
 from fabric_tools.parsing import CommandMode, WorkItem
 
+_ABORT_BY_USER = "Aborted by user."
 _TOOL_KIND = {
     "notebook": KIND_NOTEBOOK,
     "dataflow": KIND_DATAFLOW,
@@ -79,6 +80,20 @@ class _Back(Exception):
     """User asked to return to the previous major wizard step."""
 
 
+def _abort_by_user() -> NoReturn:
+    """Exit interactive with the shared Warning panel used elsewhere in the CLI."""
+    print_warn_panel(_ABORT_BY_USER)
+    raise typer.Exit(code=EXIT_USER) from None
+
+
+def _ask_question(question: questionary.Question) -> Any:
+    """Ask without questionary's plain ``Cancelled by user`` KBI line."""
+    try:
+        return question.unsafe_ask()
+    except KeyboardInterrupt:
+        _abort_by_user()
+
+
 def _is_rls_activity(activity: str) -> bool:
     return activity in _RLS_ACTIVITIES
 
@@ -118,15 +133,13 @@ def run_interactive_wizard() -> None:
             _run_step(step, answers)
         except _Back:
             if idx == 0:
-                print_warn_panel("Aborted by user.")
-                raise typer.Exit(code=EXIT_USER) from None
+                _abort_by_user()
             idx -= 1
             while True:
                 _clear_from(answers, _STEPS[idx])
                 if _STEPS[idx] == "source" and not _needs_source_step(answers):
                     if idx == 0:
-                        print_warn_panel("Aborted by user.")
-                        raise typer.Exit(code=EXIT_USER) from None
+                        _abort_by_user()
                     idx -= 1
                     continue
                 break
@@ -509,8 +522,7 @@ def _run_step(step: str, answers: dict[str, Any]) -> None:
 
     if step == "proceed":
         if not _confirm("Proceed?", default=True):
-            print_warn_panel("Aborted by user.")
-            raise typer.Exit(code=EXIT_USER)
+            _abort_by_user()
         return
 
     raise RuntimeError(f"unknown wizard step: {step}")
@@ -882,9 +894,9 @@ def _select(
     )
     if getattr(question, "application", None) is not None:
         _bind_escape_to_back(question)
-    result = question.ask()
+    result = _ask_question(question)
     if result is None:
-        raise typer.Exit(code=EXIT_USER)
+        _abort_by_user()
     if result == _BACK_VALUE:
         raise _Back()
     return str(result)
@@ -929,9 +941,9 @@ def _text(
             kwargs["key_bindings"] = _escape_key_bindings()
             kwargs["instruction"] = "(Esc back)"
         question = questionary.text(message, **kwargs)
-        result = question.ask()
+        result = _ask_question(question)
         if result is None:
-            raise typer.Exit(code=EXIT_USER)
+            _abort_by_user()
         if result == _BACK_VALUE:
             raise _Back()
         value = str(result).strip()

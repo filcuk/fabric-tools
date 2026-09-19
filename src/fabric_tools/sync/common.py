@@ -61,7 +61,7 @@ def _exit_error(message: str, *, code: int = EXIT_USER) -> NoReturn:
 
 def _exit_warn(message: str, *, code: int = EXIT_USER) -> NoReturn:
     """Print a shared Warning panel and exit (never returns)."""
-    text = (message or "").strip() or "Cancelled."
+    text = (message or "").strip() or "Aborted by user."
     print_warn_panel(text)
     raise typer.Exit(code=code)
 

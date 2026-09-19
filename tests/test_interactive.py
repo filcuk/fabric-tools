@@ -17,7 +17,10 @@ class _Ask:
     def __init__(self, value: Any) -> None:
         self._value = value
 
-    def ask(self) -> Any:
+    def ask(self, **_kwargs: Any) -> Any:
+        return self._value
+
+    def unsafe_ask(self, **_kwargs: Any) -> Any:
         return self._value
 
 
@@ -166,6 +169,7 @@ def test_interactive_abort_on_proceed(monkeypatch: pytest.MonkeyPatch) -> None:
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
+    warn_messages: list[str] = []
 
     monkeypatch.setattr(
         "questionary.select",
@@ -175,10 +179,59 @@ def test_interactive_abort_on_proceed(monkeypatch: pytest.MonkeyPatch) -> None:
         "questionary.text",
         lambda *a, **k: _Ask(next(texts)),
     )
+    monkeypatch.setattr(
+        "fabric_tools.interactive.print_warn_panel",
+        lambda msg: warn_messages.append(msg),
+    )
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
     assert exc_info.value.exit_code == EXIT_USER
+    assert warn_messages == ["Aborted by user."]
+
+
+def test_interactive_ctrl_c_uses_warn_panel(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fabric_tools.interactive import _select
+
+    class _RaiseKbi:
+        def unsafe_ask(self, **_kwargs: Any) -> Any:
+            raise KeyboardInterrupt
+
+    warn_messages: list[str] = []
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _RaiseKbi(),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.interactive.print_warn_panel",
+        lambda msg: warn_messages.append(msg),
+    )
+
+    with pytest.raises(typer.Exit) as exc_info:
+        _select("Select tool", choices=["notebook"], allow_back=False)
+    assert exc_info.value.exit_code == EXIT_USER
+    assert warn_messages == ["Aborted by user."]
+
+
+def test_interactive_none_result_uses_warn_panel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fabric_tools.interactive import _select
+
+    warn_messages: list[str] = []
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(None),
+    )
+    monkeypatch.setattr(
+        "fabric_tools.interactive.print_warn_panel",
+        lambda msg: warn_messages.append(msg),
+    )
+
+    with pytest.raises(typer.Exit) as exc_info:
+        _select("Select tool", choices=["notebook"], allow_back=False)
+    assert exc_info.value.exit_code == EXIT_USER
+    assert warn_messages == ["Aborted by user."]
 
 
 def test_interactive_notebook_delete(monkeypatch: pytest.MonkeyPatch) -> None:
