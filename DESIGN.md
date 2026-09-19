@@ -132,6 +132,8 @@ Build lines with `status_detail(module, action, name=None)` (and `progress_messa
 
 Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error/Warning panels so they are not printed mid-line.
 
+Stopping a spinner must not leave a blank line (Rich `Live.stop` calls `console.line()` by default — `fabric_tools.status` skips that so the next confirm or spinner stays tight under the previous output).
+
 ### Visual swatch
 
 `fabric-tools debug color` (hidden from root `--help`) prints a two-column swatch using the same alignment as key/value rows: **right-aligned** colour name (in that style), then **left-aligned** primary text describing the role. A single `dim` row covers muted hints and secondary columns/keys. Use it to review terminal rendering after palette changes.

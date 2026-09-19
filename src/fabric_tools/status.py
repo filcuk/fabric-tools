@@ -9,10 +9,13 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 from rich.console import Console
-from rich.status import Status
+from rich.live import Live
+from rich.spinner import Spinner
 
 _console = Console(stderr=True)
-_active: ContextVar[Status | None] = ContextVar("fabric_tools_status", default=None)
+_active: ContextVar[_BusyHandle | None] = ContextVar(
+    "fabric_tools_status", default=None
+)
 _message: ContextVar[str | None] = ContextVar(
     "fabric_tools_status_message", default=None
 )
@@ -23,6 +26,36 @@ _GUID_RE = re.compile(
 
 # Prefix used while Azure auth is in progress (nested busy / update guard).
 AUTH_STATUS_PREFIX = "auth: authenticating"
+
+
+@dataclass
+class _BusyHandle:
+    """Spinner + Live pair; ``stop`` clears the line without advancing."""
+
+    live: Live
+    spinner: Spinner
+
+    def update(self, message: str) -> None:
+        self.spinner.update(text=message)
+
+    def stop(self) -> None:
+        """End live rendering without Rich's trailing ``console.line()``."""
+        live = self.live
+        with live._lock:
+            if not live._started:
+                return
+            live._started = False
+            live.console.clear_live()
+            if live.auto_refresh and live._refresh_thread is not None:
+                live._refresh_thread.stop()
+                live._refresh_thread = None
+            # Rich Live.stop() calls console.line() here — that blank line is
+            # what jumps the next spinner / confirm prompt down. Skip it.
+            live._disable_redirect_io()
+            live.console.pop_render_hook()
+            live.console.show_cursor(True)
+            if live.transient and not live._alt_screen:
+                live.console.control(live._live_render.restore_cursor())
 
 
 def short_guid(value: str, *, length: int = 8) -> str:
@@ -80,6 +113,10 @@ def busy(message: str) -> Iterator[None]:
 
     Nested ``busy`` calls rewrite the same spinner and restore the parent
     message on exit. On a non-TTY stderr, prints each distinct message once.
+
+    Stopping does **not** advance the cursor (unlike Rich ``Status`` /
+    ``Live.stop``), so the next prompt or spinner is not pushed down a blank
+    line after confirms.
     """
     parent = _active.get()
     if parent is not None:
@@ -103,14 +140,23 @@ def busy(message: str) -> Iterator[None]:
             _message.reset(token_msg)
         return
 
-    with _console.status(message, spinner="dots") as status:
-        token = _active.set(status)
-        token_msg = _message.set(message)
-        try:
-            yield
-        finally:
-            _message.reset(token_msg)
-            _active.reset(token)
+    spinner = Spinner("dots", text=message)
+    live = Live(
+        spinner,
+        console=_console,
+        refresh_per_second=12.5,
+        transient=True,
+    )
+    handle = _BusyHandle(live=live, spinner=spinner)
+    live.start()
+    token = _active.set(handle)
+    token_msg = _message.set(message)
+    try:
+        yield
+    finally:
+        _message.reset(token_msg)
+        _active.reset(token)
+        handle.stop()
 
 
 def update(message: str) -> None:
@@ -123,9 +169,9 @@ def update(message: str) -> None:
     if current == message:
         return
 
-    status = _active.get()
-    if status is not None:
-        status.update(message)
+    handle = _active.get()
+    if handle is not None:
+        handle.update(message)
         _message.set(message)
         return
 
@@ -140,10 +186,10 @@ def clear() -> None:
     Safe to call when no ``busy`` context is active. The outer ``busy``
     ``finally`` still resets context tokens; calling ``stop`` twice is fine.
     """
-    status = _active.get()
-    if status is None:
+    handle = _active.get()
+    if handle is None:
         return
-    status.stop()
+    handle.stop()
 
 
 def current_message() -> str | None:
