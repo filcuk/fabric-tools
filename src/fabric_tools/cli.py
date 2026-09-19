@@ -5795,7 +5795,12 @@ def run_semantic_model_role_command(
         semantic_model_display_name,
     )
     from fabric_tools.status import busy
-    from fabric_tools.xmla_roles import XmlaRolesError, invoke_xmla_roles
+    from fabric_tools.status import update as status_update
+    from fabric_tools.xmla_roles import (
+        XmlaRolesError,
+        XmlaRolesResult,
+        invoke_xmla_roles,
+    )
 
     if action in {"member_add", "member_remove"}:
         _enforce_readonly_mutation(
@@ -5950,36 +5955,44 @@ def run_semantic_model_role_command(
                 token = get_access_token(
                     create_credential(), scope=POWER_BI_SCOPE
                 ).token
+
+                outcomes: list[
+                    tuple[str, str, str, XmlaRolesResult | XmlaRolesError]
+                ] = []
+                for ws_name, model_name, model_id, ws_label in resolved:
+                    status_update(f"XMLA: {model_name}...")
+                    try:
+                        result = invoke_xmla_roles(
+                            action=action,  # type: ignore[arg-type]
+                            workspace_name=ws_name,
+                            database_name=model_name,
+                            access_token=token,
+                            role_name=role_name,
+                            member_name=member_name,
+                            offer_install=not silent,
+                            silent=silent,
+                        )
+                        outcomes.append((model_name, model_id, ws_label, result))
+                    except XmlaRolesError as exc:
+                        outcomes.append((model_name, model_id, ws_label, exc))
         except AuthError as exc:
             _fail_auth(exc)
 
         failed = False
-        for ws_name, model_name, model_id, ws_label in resolved:
-            try:
-                with busy(f"XMLA: {model_name}..."):
-                    result = invoke_xmla_roles(
-                        action=action,  # type: ignore[arg-type]
-                        workspace_name=ws_name,
-                        database_name=model_name,
-                        access_token=token,
-                        role_name=role_name,
-                        member_name=member_name,
-                        offer_install=not silent,
-                        silent=silent,
-                    )
-            except XmlaRolesError as exc:
-                detail = f"\n{exc.detail}" if exc.detail else ""
-                code = f" [{exc.code}]" if exc.code else ""
+        for model_name, model_id, ws_label, outcome in outcomes:
+            if isinstance(outcome, XmlaRolesError):
+                detail = f"\n{outcome.detail}" if outcome.detail else ""
+                code = f" [{outcome.code}]" if outcome.code else ""
                 print_error_panel(
-                    f"{model_name} ({model_id}) in {ws_label}: {exc}{code}{detail}"
+                    f"{model_name} ({model_id}) in {ws_label}: {outcome}{code}{detail}"
                 )
                 failed = True
                 continue
 
-            header = f"{model_name} ({model_id}) in {ws_label}: {result.message}"
+            header = f"{model_name} ({model_id}) in {ws_label}: {outcome.message}"
             typer.secho(header, fg=FG_OK)
-            if action == "list" and result.roles or result.roles:
-                typer.echo(json.dumps({"roles": result.roles}, indent=2))
+            if outcome.roles:
+                typer.echo(json.dumps({"roles": outcome.roles}, indent=2))
 
         raise typer.Exit(code=EXIT_API if failed else EXIT_OK)
     except typer.Exit:
