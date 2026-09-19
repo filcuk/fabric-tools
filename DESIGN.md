@@ -82,6 +82,29 @@ In help prose (group/command descriptions and short help), **Fabric** is teal an
 
 On **root** `--help` only, the **Fabric** commands panel title and frame use teal (`#8acfb3`); the **Local** panel keeps the default dim border. The ASCII banner colours ``FABRIC`` as `#8acfb3` and the hyphen gap plus ``TOOLS`` as `#1d8e7a`. The subtitle under the banner is **dim**. Subcommand help is unchanged.
 
+### Required options and arguments
+
+Always-required CLI options and arguments must use Typer’s required sentinel (`typer.Option(...)` / `typer.Argument(...)`, or an equivalent with no default). Rich help then shows:
+
+- a leading `*` in the options/arguments table
+- a trailing `[required]` on the help line
+
+Example:
+
+```text
+│ *  --role     -r      TEXT  Model role name. [required]                      │
+│ *  --member           TEXT  Member UPN or Entra group display name …         │
+│                             [required]                                       │
+```
+
+Do **not** fake this with a `None` default plus `(required)` in the help string — that skips the `*` column and looks inconsistent next to true required flags.
+
+**Conditionally required** flags (e.g. `--origin` / `--target` that are optional when `-m` / `-d` supply enough context) keep a `None` default. Mark them in help prose as `(required without -m or -d)` (or the accurate condition). Do not use `...` for those — Click would reject otherwise-valid invocations.
+
+Optional flags may keep an `(optional)` help prefix for scannability; that is separate from the `*` / `[required]` marker.
+
+When a flag is always required via `...`, omit a redundant `(required)` prefix in the help text — Typer already appends `[required]`.
+
 ### Visual swatch
 
 `fabric-tools debug color` (hidden from root `--help`) prints a two-column swatch using the same alignment as key/value rows: **right-aligned** colour name (in that style), then **left-aligned** primary text describing the role. A single `dim` row covers muted hints and secondary columns/keys. Use it to review terminal rendering after palette changes.

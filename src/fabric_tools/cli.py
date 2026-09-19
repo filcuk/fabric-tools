@@ -866,7 +866,7 @@ def pack_download(
         ...,
         "--manifest",
         "-m",
-        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+        help="Pack manifest stem or path (.ftdep schema v3).",
     ),
     silent: bool = typer.Option(
         False,
@@ -911,7 +911,7 @@ def pack_deploy(
         ...,
         "--manifest",
         "-m",
-        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+        help="Pack manifest stem or path (.ftdep schema v3).",
     ),
     silent: bool = typer.Option(
         False,
@@ -970,7 +970,7 @@ def pack_compare(
         ...,
         "--manifest",
         "-m",
-        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+        help="Pack manifest stem or path (.ftdep schema v3).",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -1009,7 +1009,7 @@ def pack_delete(
         ...,
         "--manifest",
         "-m",
-        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+        help="Pack manifest stem or path (.ftdep schema v3).",
     ),
     silent: bool = typer.Option(
         False,
@@ -2931,11 +2931,11 @@ def semantic_model_delete(
 
 @semantic_model_role_app.command("list")
 def semantic_model_role_list(
-    target: list[str] | None = typer.Option(
-        None,
+    target: list[str] = typer.Option(
+        ...,
         "--target",
         "-t",
-        help="(required) workspace:artifact or workspaceId:*. "
+        help="workspace:artifact or workspaceId:*. "
         "Repeatable or comma-separated (spaces after commas OK).",
     ),
     name_filter: str | None = typer.Option(
@@ -2969,11 +2969,11 @@ def semantic_model_role_list(
 
 @semantic_model_role_member_app.command("add")
 def semantic_model_role_member_add(
-    target: list[str] | None = typer.Option(
-        None,
+    target: list[str] = typer.Option(
+        ...,
         "--target",
         "-t",
-        help="(required) workspace:artifact or workspaceId:*. "
+        help="workspace:artifact or workspaceId:*. "
         "Repeatable or comma-separated (spaces after commas OK).",
     ),
     role: str = typer.Option(
@@ -3020,11 +3020,11 @@ def semantic_model_role_member_add(
 
 @semantic_model_role_member_app.command("remove")
 def semantic_model_role_member_remove(
-    target: list[str] | None = typer.Option(
-        None,
+    target: list[str] = typer.Option(
+        ...,
         "--target",
         "-t",
-        help="(required) workspace:artifact or workspaceId:*. "
+        help="workspace:artifact or workspaceId:*. "
         "Repeatable or comma-separated (spaces after commas OK).",
     ),
     role: str = typer.Option(
