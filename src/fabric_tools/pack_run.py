@@ -46,9 +46,7 @@ def run_pack_command(
     independent: bool = False,
 ) -> None:
     """Load a v3 pack and dispatch ordered kind groups to existing runners."""
-    from fabric_tools.cli import (
-        _enforce_readonly_command,
-        _exit_error,
+    from fabric_tools.sync import (
         run_dataflow_command,
         run_dataflow_gen1_command,
         run_environment_command,
@@ -61,6 +59,7 @@ def run_pack_command(
         run_udf_command,
         run_variable_library_command,
     )
+    from fabric_tools.sync.common import _enforce_readonly_command, _exit_error
 
     _enforce_readonly_command(mode, dry_run=dry_run)
 
