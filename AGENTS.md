@@ -11,11 +11,12 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `environment` + `variable-library` + `org-app` + `semantic-model` (incl. `role` / `role member`) + `report` + `paginated-report` + `inspect` groups, `env` (list/set/unset), `manifest` (inspect/list/delete/move), `pack` (download/deploy/compare/delete), `setup`, hidden `debug` (`debug color` palette swatch; `debug xmla-roles` XMLA helper). **Refactor in progress:** this monolith will become `cli/` (Typer surface only: `app.py`, `options.py`, `commands/<kind>.py`) and `sync/` (orchestration: `common.py`, later `orchestrator.py` + `kinds/<kind>.py` with `run_*_command`). Interactive and pack will call `fabric_tools.sync`, not Typer modules. Entry point stays `fabric_tools.cli:run`.
+  - `cli/` — Typer surface only (`app.py`, `options.py`, `lifecycle.py`, `commands/<kind>.py`); entrypoint `fabric_tools.cli:run`
+  - `sync/` — orchestration API shared by CLI, interactive, and pack (`common.py`, `kinds/<kind>.py` with `run_*_command`; shared `KindSpec` orchestrator planned next)
   - `xmla_roles.py` — Windows PowerShell + SqlServer (PSGallery) client for semantic-model RLS role members (`xmla_role_members.ps1`)
-  - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
+  - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save); calls `fabric_tools.sync`
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (schema v3 packs: top-level `kind: "pack"`; per-entry `kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `environment` \| `variable-library` \| `org-app` \| `semantic-model` \| `report` \| `paginated-report`; optional pack/entry `remap` path refs)
-  - `pack_run.py` — multi-kind pack orchestration (`fabric-tools pack …`)
+  - `pack_run.py` — multi-kind pack orchestration (`fabric-tools pack …`); calls `fabric_tools.sync`
   - `colours.py` — CLI colour roles, help theme, `debug color` swatch (see [DESIGN.md](DESIGN.md))
   - `inspect_cmd.py` — Fabric workspace/item list/get helpers (filters, formatters, `--target` shapes)
   - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; Nuitka onefile extracts under `%LOCALAPPDATA%\fabric-tools\cache`, install copies to `app\`; `setup update` downloads release exe and deferred-installs)

@@ -75,7 +75,7 @@ class _Back(Exception):
 
 def run_interactive_wizard() -> None:
     """Prompt for tool/activity/parameters, then dispatch to the matching runner."""
-    from fabric_tools.cli import (
+    from fabric_tools.sync import (
         run_dataflow_command,
         run_dataflow_gen1_command,
         run_environment_command,

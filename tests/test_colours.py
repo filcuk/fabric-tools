@@ -82,7 +82,7 @@ def test_print_warn_panel_uses_warning_title(capsys) -> None:
 def test_print_compare_results_prints_note_messages(capsys) -> None:
     from types import SimpleNamespace
 
-    from fabric_tools.cli import _print_compare_results
+    from fabric_tools.sync.common import _print_compare_results
 
     _print_compare_results(
         [

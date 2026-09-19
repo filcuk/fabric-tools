@@ -60,7 +60,7 @@ def test_interactive_dispatches_compare(monkeypatch: pytest.MonkeyPatch) -> None
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_notebook_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_notebook_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -100,7 +100,7 @@ def test_interactive_dry_run_offers_manifest_callback(
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_notebook_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_notebook_command", fake_run)
 
     with pytest.raises(typer.Exit):
         run_interactive_wizard()
@@ -204,7 +204,7 @@ def test_interactive_notebook_delete(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_notebook_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_notebook_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -246,7 +246,7 @@ def test_interactive_dataflow_gen1_download(monkeypatch: pytest.MonkeyPatch) -> 
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_dataflow_gen1_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_dataflow_gen1_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -291,7 +291,7 @@ def test_interactive_paginated_report_download(
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_paginated_report_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_paginated_report_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -334,7 +334,7 @@ def test_interactive_dataflow_download(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_dataflow_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_dataflow_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -372,7 +372,7 @@ def test_interactive_variable_library_download(
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_variable_library_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_variable_library_command", fake_run)
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
     assert exc_info.value.exit_code == 0
@@ -416,7 +416,7 @@ def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_pipeline_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_pipeline_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -466,7 +466,7 @@ def test_interactive_pipeline_deploy_include_schedules(
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_pipeline_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_pipeline_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -519,7 +519,7 @@ def test_interactive_notebook_deploy_remap(monkeypatch: pytest.MonkeyPatch) -> N
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_notebook_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_notebook_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -567,7 +567,7 @@ def test_interactive_dataflow_deploy_publish(monkeypatch: pytest.MonkeyPatch) ->
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_dataflow_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_dataflow_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -604,7 +604,7 @@ def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_udf_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_udf_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
@@ -737,7 +737,7 @@ def test_interactive_back_reprompts_previous_step(
         captured["kwargs"] = kwargs
         raise typer.Exit(code=0)
 
-    monkeypatch.setattr("fabric_tools.cli.run_notebook_command", fake_run)
+    monkeypatch.setattr("fabric_tools.sync.run_notebook_command", fake_run)
 
     with pytest.raises(typer.Exit) as exc_info:
         run_interactive_wizard()
