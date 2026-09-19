@@ -72,7 +72,7 @@ def run_compare_batch(
         label = None
         if item.target is not None and item.target.item_id is not None:
             label = item_display_name(client, item.target)
-        progress.advance(status_detail("Comparing", "semantic model", label))
+        progress.advance(status_detail("semantic-model", "comparing", label))
         results.append(compare_semantic_model(client, item))
     return results
 

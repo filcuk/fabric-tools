@@ -2,7 +2,5 @@
 
 ## Unreleased
 
-- Download: remote is `-o`, optional local path is `-t` (was `-t` remote / `-f` path)
-- Deploy / compare: local path is `-o` (was `-f`); remote target stays `-t`
-- `--file` / `-f` for paths removed; `-f` is only `--filter`
-- Inspect type filter: `--artifact` / `-a` (was `--item` / `-i`)
+- **Item id/path**: `--origin / -o`, `--target / -t` are polymorphic flags replacing `--remote / -r`, `--file / -f`
+- **Inspect**: `--artifact / -a` replaces `--item / -i`

@@ -15,36 +15,36 @@ def test_short_guid() -> None:
 
 def test_progress_message() -> None:
     assert (
-        status.progress_message(1, 4, "Comparing report (a1b2c3d4…)…")
-        == "1 of 4 · Comparing report (a1b2c3d4…)…"
+        status.progress_message(1, 4, "report: comparing (a1b2c3d4…)…")
+        == "1 of 4 · report: comparing (a1b2c3d4…)…"
     )
 
 
 def test_status_detail() -> None:
     assert (
         status.status_detail(
-            "Downloading", "notebook", "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            "notebook", "downloading", "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
         )
-        == "Downloading notebook (a1b2c3d4…)…"
+        == "notebook: downloading (a1b2c3d4…)…"
     )
-    assert status.status_detail("Comparing", "report", "Sales") == (
-        "Comparing report (Sales)…"
+    assert status.status_detail("report", "comparing", "Sales") == (
+        "report: comparing (Sales)…"
     )
-    assert status.status_detail("Creating", "report") == "Creating report…"
+    assert status.status_detail("report", "creating") == "report: creating…"
 
 
 def test_batch_progress_advance_and_skip(monkeypatch: object) -> None:
     messages: list[str] = []
     monkeypatch.setattr(status, "update", lambda msg: messages.append(msg))
     progress = status.BatchProgress(total=3)
-    progress.advance("Downloading report (aaaaaaaa…)…")
+    progress.advance("report: downloading (aaaaaaaa…)…")
     progress.skip_planned()
-    progress.advance("Downloading report (bbbbbbbb…)…")
+    progress.advance("report: downloading (bbbbbbbb…)…")
     assert progress.current == 2
     assert progress.total == 2
     assert messages == [
-        "1 of 3 · Downloading report (aaaaaaaa…)…",
-        "2 of 2 · Downloading report (bbbbbbbb…)…",
+        "1 of 3 · report: downloading (aaaaaaaa…)…",
+        "2 of 2 · report: downloading (bbbbbbbb…)…",
     ]
 
 
@@ -60,35 +60,105 @@ def test_busy_non_tty_prints_message() -> None:
     console.print = lambda msg, **_kwargs: printed.append(str(msg))
 
     with patch.object(status, "_console", console):
-        with status.busy("Authenticating..."):
-            status.update("Downloading notebook...")
-            status.update("Downloading notebook...")  # duplicate ignored
-            status.update("1 of 2 · Comparing report (a1b2c3d4…)…")
+        with status.busy(status.status_detail("auth", "authenticating")):
+            status.update(status.status_detail("notebook", "downloading"))
+            status.update(status.status_detail("notebook", "downloading"))
+            status.update("1 of 2 · report: comparing (a1b2c3d4…)…")
 
     assert printed == [
-        "Authenticating...",
-        "Downloading notebook...",
-        "1 of 2 · Comparing report (a1b2c3d4…)…",
+        "auth: authenticating…",
+        "notebook: downloading…",
+        "1 of 2 · report: comparing (a1b2c3d4…)…",
     ]
 
 
 def test_busy_nested_restores_parent_message() -> None:
-    updates: list[str] = []
+    class FakeHandle:
+        def __init__(self) -> None:
+            self.messages: list[str] = []
 
-    fake_status = MagicMock()
-    fake_status.update = lambda msg: updates.append(str(msg))
+        def update(self, message: str) -> None:
+            self.messages.append(message)
 
-    console = MagicMock()
-    console.is_terminal = True
-    console.status = MagicMock(
-        return_value=MagicMock(
-            __enter__=MagicMock(return_value=fake_status),
-            __exit__=MagicMock(return_value=False),
-        )
-    )
+        def stop(self) -> None:
+            return None
 
-    with patch.object(status, "_console", console), status.busy("Outer..."):
+    outer = FakeHandle()
+    token = status._active.set(outer)
+    msg_token = status._message.set("Outer...")
+    try:
         with status.busy("Inner..."):
             pass
+    finally:
+        status._message.reset(msg_token)
+        status._active.reset(token)
 
-    assert updates == ["Inner...", "Outer..."]
+    assert outer.messages == ["Inner...", "Outer..."]
+
+
+def test_clear_stops_active_status() -> None:
+    handle = MagicMock()
+    token = status._active.set(handle)
+    try:
+        status.clear()
+        handle.stop.assert_called_once()
+    finally:
+        status._active.reset(token)
+
+    # No active spinner: clear is a no-op.
+    status.clear()
+
+
+def test_busy_handle_stop_skips_console_line() -> None:
+    """Regression: Rich Live.stop() calls console.line(); we must not."""
+    console = MagicMock()
+    console.is_terminal = True
+    console.clear_live = MagicMock()
+    console.pop_render_hook = MagicMock()
+    console.show_cursor = MagicMock()
+    console.control = MagicMock()
+    console.line = MagicMock()
+
+    live = MagicMock()
+    live._lock = __import__("threading").RLock()
+    live._started = True
+    live.console = console
+    live.auto_refresh = False
+    live._refresh_thread = None
+    live.transient = True
+    live._alt_screen = False
+    live._live_render = MagicMock()
+    live._live_render.position_cursor.return_value = ""
+    live._live_render.restore_cursor.return_value = ""
+    live._disable_redirect_io = MagicMock()
+
+    handle = status._BusyHandle(live=live, spinner=MagicMock())
+    handle.stop()
+
+    console.line.assert_not_called()
+    console.show_cursor.assert_called_with(True)
+    live._disable_redirect_io.assert_called_once()
+    live._live_render.position_cursor.assert_called_once()
+    live._live_render.restore_cursor.assert_not_called()
+
+
+def test_print_error_panel_clears_busy_spinner() -> None:
+    from fabric_tools.colours import print_error_panel
+
+    with (
+        patch("fabric_tools.status.clear") as clear_mock,
+        patch("rich.console.Console"),
+    ):
+        print_error_panel("boom")
+    clear_mock.assert_called_once_with()
+
+
+def test_print_warn_panel_clears_busy_spinner() -> None:
+    from fabric_tools.colours import print_warn_panel
+
+    with (
+        patch("fabric_tools.status.clear") as clear_mock,
+        patch("rich.console.Console"),
+    ):
+        print_warn_panel("careful")
+    clear_mock.assert_called_once_with()

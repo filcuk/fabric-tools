@@ -377,10 +377,10 @@ def test_run_download_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> N
         powerbi_client=FakePowerBi(),
     )
     assert messages == [
-        f"1 of 4 · Downloading report ({short_guid(REPORT)})…",
-        f"2 of 4 · Downloading semantic model ({short_guid(MODEL)})…",
-        f"3 of 4 · Downloading report ({short_guid(report_b)})…",
-        f"4 of 4 · Downloading semantic model ({short_guid(model_b)})…",
+        f"1 of 4 · report: downloading ({short_guid(REPORT)})…",
+        f"2 of 4 · semantic-model: downloading ({short_guid(MODEL)})…",
+        f"3 of 4 · report: downloading ({short_guid(report_b)})…",
+        f"4 of 4 · semantic-model: downloading ({short_guid(model_b)})…",
     ]
 
 
@@ -397,7 +397,7 @@ def test_run_download_batch_status_independent(
         [WorkItem(Target(WS, REPORT), tmp_path / "Sales.Report")],  # type: ignore[arg-type]
         independent=True,
     )
-    assert messages == [f"1 of 1 · Downloading report ({short_guid(REPORT)})…"]
+    assert messages == [f"1 of 1 · report: downloading ({short_guid(REPORT)})…"]
 
 
 def test_run_deploy_batch_status_joined_create(
@@ -419,8 +419,8 @@ def test_run_deploy_batch_status_joined_create(
         display_names=["Sales"],
     )
     assert messages == [
-        "1 of 2 · Creating semantic model…",
-        "2 of 2 · Creating report…",
+        "1 of 2 · semantic-model: creating…",
+        "2 of 2 · report: creating…",
     ]
 
 
@@ -443,8 +443,8 @@ def test_run_deploy_batch_status_joined_overwrite(
         semantic_model_ids=[MODEL],
     )
     assert messages == [
-        f"1 of 2 · Deploying semantic model ({short_guid(MODEL)})…",
-        f"2 of 2 · Deploying report ({short_guid(REPORT)})…",
+        f"1 of 2 · semantic-model: deploying ({short_guid(MODEL)})…",
+        f"2 of 2 · report: deploying ({short_guid(REPORT)})…",
     ]
 
 
@@ -463,6 +463,6 @@ def test_run_delete_batch_status(monkeypatch: Any) -> None:
         ],
     )
     assert messages == [
-        f"1 of 2 · Deleting report ({short_guid(REPORT)})…",
-        f"2 of 2 · Deleting report ({short_guid(report_b)})…",
+        f"1 of 2 · report: deleting ({short_guid(REPORT)})…",
+        f"2 of 2 · report: deleting ({short_guid(report_b)})…",
     ]

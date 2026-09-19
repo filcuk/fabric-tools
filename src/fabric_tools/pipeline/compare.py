@@ -81,7 +81,7 @@ def run_compare_batch(
         label = None
         if item.target is not None and item.target.item_id is not None:
             label = item_display_name(client, item.target)
-        progress.advance(status_detail("Comparing", "pipeline", label))
+        progress.advance(status_detail("pipeline", "comparing", label))
         results.append(
             compare_pipeline(client, item, include_schedules=include_schedules)
         )

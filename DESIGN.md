@@ -24,7 +24,8 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Fabric in help | teal (`#8acfb3`) | Help highlighter `fabric` | The word **Fabric** in help prose (not `fabric-tools`) |
 | Root help — banner FABRIC | teal (`#8acfb3`) | Rich truecolor | ASCII art ``FABRIC`` in root `--help` |
 | Root help — banner - / TOOLS | `#1d8e7a` | Rich truecolor | ASCII art hyphen gap and ``TOOLS`` in root `--help` |
-| Primary text | default | no colour | Names, values, plain echoes, spinner messages, unified diffs |
+| Primary text | default | no colour | Names, values, plain echoes, spinner **text**, unified diffs |
+| Activity spinner glyph | green | Rich `"green"` | Dots in `status.busy` / Live spinner only |
 
 ### Error and warning panels
 
@@ -81,6 +82,64 @@ At CLI startup, Typer Rich help styles are set so **long options** (`--target`) 
 In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is bright yellow (`fabric-tools` is left alone).
 
 On **root** `--help` only, the **Fabric** commands panel title and frame use teal (`#8acfb3`); the **Local** panel keeps the default dim border. The ASCII banner colours ``FABRIC`` as `#8acfb3` and the hyphen gap plus ``TOOLS`` as `#1d8e7a`. The subtitle under the banner is **dim**. Subcommand help is unchanged.
+
+### Required options and arguments
+
+Always-required CLI options and arguments must use Typer’s required sentinel (`typer.Option(...)` / `typer.Argument(...)`, or an equivalent with no default). Rich help then shows:
+
+- a leading `*` in the options/arguments table
+- a trailing `[required]` on the help line
+
+Example:
+
+```text
+│ *  --role     -r      TEXT  Model role name. [required]                      │
+│ *  --member           TEXT  Member UPN or Entra group display name …         │
+│                             [required]                                       │
+```
+
+Do **not** fake this with a `None` default plus `(required)` in the help string — that skips the `*` column and looks inconsistent next to true required flags.
+
+**Conditionally required** flags (e.g. `--origin` / `--target` that are optional when `-m` / `-d` supply enough context) keep a `None` default. Mark them in help prose as `(required without -m or -d)` (or the accurate condition). Do not use `...` for those — Click would reject otherwise-valid invocations.
+
+Optional flags may keep an `(optional)` help prefix for scannability; that is separate from the `*` / `[required]` marker.
+
+When a flag is always required via `...`, omit a redundant `(required)` prefix in the help text — Typer already appends `[required]`.
+
+### Activity spinner (busy / status)
+
+Long-running work uses a Rich dots spinner on stderr (`fabric_tools.status.busy` / `update`). Every status line must use:
+
+```text
+<module>: <action> (<name>)…
+```
+
+- **module** — CLI command group (`notebook`, `semantic-model`, `inspect`, `setup`, `auth`, …)
+- **action** — lowercase verb phrase (`downloading`, `adding role member`, `authenticating`)
+- **name** — optional display name or short GUID in parentheses; omit the ` (…)` segment when there is no name
+
+Examples:
+
+```text
+auth: authenticating…
+notebook: downloading…
+1 of 4 · notebook: downloading (Sales)…
+semantic-model: adding role member (Harvest)…
+inspect: listing workspaces…
+setup: checking for updates…
+```
+
+Build lines with `status_detail(module, action, name=None)` (and `progress_message` for `n of m ·` prefixes). Do not put only a name after the module (e.g. `XMLA: Harvest…`); the action is required.
+
+The dots spinner glyph is **green**; the status text stays primary (default). Do not append long hints onto the spinner line (auth stays `auth: authenticating (Windows)…` — device-code URI/user code print as a separate stderr line).
+
+Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error/Warning panels so they are not printed mid-line.
+
+Stopping a spinner must not leave a blank line and must not cursor-up into the previous prompt (use in-place erase, not Rich `restore_cursor`). Live must not redirect stdout/stderr, or `typer.confirm` and other prompts get swallowed into the spinner.
+
+**Never prompt under a live spinner.** Any `typer.confirm` / input must run outside `busy`, or call `status.clear()` first — otherwise the spinner refresh erases the prompt and the CLI appears to hang while waiting on stdin. Do interactive pre-checks (e.g. SqlServer install offer) before entering a spinner.
+
+XMLA role ops update the same spinner across stages (`connecting via XMLA` → `loading model` → `adding role member` / `saving model changes`, etc.) via stderr progress markers from `xmla_role_members.ps1`.
 
 ### Visual swatch
 

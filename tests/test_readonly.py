@@ -12,6 +12,7 @@ from fabric_tools.readonly import (
     READONLY_ENV,
     ReadOnlyError,
     ensure_command_allowed,
+    ensure_mutation_allowed,
     ensure_setup_mutation_allowed,
     is_readonly_enabled,
 )
@@ -69,6 +70,15 @@ def test_ensure_command_blocks_deploy_and_delete(
         ensure_command_allowed(CommandMode.DELETE, dry_run=False)
 
 
+def test_ensure_mutation_blocks_unless_dry_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(READONLY_ENV, "1")
+    ensure_mutation_allowed("semantic-model role member change", dry_run=True)
+    with pytest.raises(ReadOnlyError, match="role member"):
+        ensure_mutation_allowed("semantic-model role member change", dry_run=False)
+
+
 def test_ensure_setup_blocks_mutations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(READONLY_ENV, "1")
     with pytest.raises(ReadOnlyError, match="install"):
@@ -90,6 +100,28 @@ def test_cli_readonly_blocks_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
     result = CliRunner().invoke(
         app,
         ["notebook", "deploy", "-s", "-t", TARGET, "-o", "missing.ipynb"],
+    )
+    assert result.exit_code == EXIT_USER
+    assert READONLY_ENV in (result.stderr or result.output)
+
+
+def test_cli_readonly_blocks_role_member_add(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(READONLY_ENV, "1")
+    result = CliRunner().invoke(
+        app,
+        [
+            "semantic-model",
+            "role",
+            "member",
+            "add",
+            "-s",
+            "-t",
+            TARGET,
+            "-r",
+            "Readers",
+            "--member",
+            "user@contoso.com",
+        ],
     )
     assert result.exit_code == EXIT_USER
     assert READONLY_ENV in (result.stderr or result.output)

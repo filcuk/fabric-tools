@@ -38,6 +38,20 @@ def ensure_command_allowed(mode: CommandMode, *, dry_run: bool) -> None:
     )
 
 
+def ensure_mutation_allowed(action: str, *, dry_run: bool) -> None:
+    """Refuse a named mutating action when read-only (unless dry-run).
+
+    Used for operations outside ``CommandMode`` (e.g. semantic-model role
+    member add/remove). ``--silent`` does not override this guard.
+    """
+    if dry_run or not is_readonly_enabled():
+        return
+    raise ReadOnlyError(
+        f"Refusing {action}: {READONLY_ENV} is set. "
+        "Unset it, or use --dry-run to validate without changes."
+    )
+
+
 def ensure_setup_mutation_allowed(action: str) -> None:
     """Refuse mutating setup actions when read-only."""
     if not is_readonly_enabled():

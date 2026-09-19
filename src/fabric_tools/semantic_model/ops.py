@@ -243,7 +243,7 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Downloading", "semantic model", item_id))
+        progress.advance(status_detail("semantic-model", "downloading", item_id))
         results.append(download_semantic_model(client, item))
     return results
 
@@ -263,13 +263,13 @@ def run_deploy_batch(
             name = display_names[index]
         target = item.target
         if target is not None and target.is_create:
-            progress.advance(status_detail("Creating", "semantic model"))
+            progress.advance(status_detail("semantic-model", "creating"))
         elif target is not None:
             progress.advance(
-                status_detail("Deploying", "semantic model", target.item_id)
+                status_detail("semantic-model", "deploying", target.item_id)
             )
         else:
-            progress.advance(status_detail("Deploying", "semantic model"))
+            progress.advance(status_detail("semantic-model", "deploying"))
         results.append(
             deploy_semantic_model(
                 client,
@@ -287,7 +287,7 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Deleting", "semantic model", item_id))
+        progress.advance(status_detail("semantic-model", "deleting", item_id))
         results.append(delete_semantic_model(client, item))
     return results
 

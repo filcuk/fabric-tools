@@ -305,7 +305,7 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Downloading", "User Data Function", item_id))
+        progress.advance(status_detail("udf", "downloading", item_id))
         results.append(download_udf(client, item))
     return results
 
@@ -329,13 +329,13 @@ def run_deploy_batch(
             guid_map = guid_maps[index]
         target = item.target
         if target is not None and target.is_create:
-            progress.advance(status_detail("Creating", "User Data Function"))
+            progress.advance(status_detail("udf", "creating"))
         elif target is not None:
             progress.advance(
-                status_detail("Deploying", "User Data Function", target.item_id)
+                status_detail("udf", "deploying", target.item_id)
             )
         else:
-            progress.advance(status_detail("Deploying", "User Data Function"))
+            progress.advance(status_detail("udf", "deploying"))
         results.append(
             deploy_udf(
                 client,
@@ -354,7 +354,7 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Deleting", "User Data Function", item_id))
+        progress.advance(status_detail("udf", "deleting", item_id))
         results.append(delete_udf(client, item))
     return results
 

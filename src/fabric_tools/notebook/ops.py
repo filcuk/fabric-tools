@@ -403,7 +403,7 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Downloading", "notebook", item_id))
+        progress.advance(status_detail("notebook", "downloading", item_id))
         results.append(download_notebook(client, item))
     return results
 
@@ -428,7 +428,7 @@ def run_deploy_batch(
             guid_map = guid_maps[index]
         target = item.target
         if target is not None and target.is_create:
-            progress.advance(status_detail("Creating", "notebook"))
+            progress.advance(status_detail("notebook", "creating"))
         elif target is not None and cell_indices is not None:
             cells_label = format_cell_indices(cell_indices)
             item_id = target.item_id
@@ -437,9 +437,9 @@ def run_deploy_batch(
                 detail = f"{detail} ({short_guid(item_id)})"
             progress.advance(f"{detail}…")
         elif target is not None:
-            progress.advance(status_detail("Deploying", "notebook", target.item_id))
+            progress.advance(status_detail("notebook", "deploying", target.item_id))
         else:
-            progress.advance(status_detail("Deploying", "notebook"))
+            progress.advance(status_detail("notebook", "deploying"))
         results.append(
             deploy_notebook(
                 client,
@@ -459,7 +459,7 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Deleting", "notebook", item_id))
+        progress.advance(status_detail("notebook", "deleting", item_id))
         results.append(delete_notebook(client, item))
     return results
 

@@ -232,7 +232,7 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Downloading", "Org App", item_id))
+        progress.advance(status_detail("org-app", "downloading", item_id))
         results.append(download_org_app(client, item))
     return results
 
@@ -253,11 +253,11 @@ def run_deploy_batch(
             else None
         )
         target = item.target
-        action = "Creating" if target is not None and target.is_create else "Deploying"
+        action = "creating" if target is not None and target.is_create else "deploying"
         item_id = (
             target.item_id if target is not None and not target.is_create else None
         )
-        progress.advance(status_detail(action, "Org App", item_id))
+        progress.advance(status_detail("org-app", action, item_id))
         results.append(
             deploy_org_app(
                 client,
@@ -275,7 +275,7 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Deleting", "Org App", item_id))
+        progress.advance(status_detail("org-app", "deleting", item_id))
         results.append(delete_org_app(client, item))
     return results
 
