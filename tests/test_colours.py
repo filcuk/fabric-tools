@@ -79,7 +79,7 @@ def test_print_warn_panel_uses_warning_title(capsys) -> None:
     assert "Cancelled." in err
 
 
-def test_print_compare_results_uses_warning_panel(capsys) -> None:
+def test_print_compare_results_prints_note_messages(capsys) -> None:
     from types import SimpleNamespace
 
     from fabric_tools.cli import _print_compare_results
@@ -98,9 +98,8 @@ def test_print_compare_results_uses_warning_panel(capsys) -> None:
             )
         ]
     )
-    err = capsys.readouterr().err
-    assert "Warning" in err
-    assert "joined model compare" in err
+    out = capsys.readouterr().out
+    assert "joined model compare" in out
 
 
 def test_cli_exit_error_renders_error_panel(monkeypatch) -> None:

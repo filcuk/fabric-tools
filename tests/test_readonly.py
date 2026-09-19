@@ -89,7 +89,7 @@ def test_cli_readonly_blocks_deploy(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(READONLY_ENV, "1")
     result = CliRunner().invoke(
         app,
-        ["notebook", "deploy", "-s", "-t", TARGET, "-f", "missing.ipynb"],
+        ["notebook", "deploy", "-s", "-t", TARGET, "-o", "missing.ipynb"],
     )
     assert result.exit_code == EXIT_USER
     assert READONLY_ENV in (result.stderr or result.output)
@@ -107,7 +107,7 @@ def test_cli_readonly_allows_deploy_dry_run(
     # File-only dry-run skips auth; must not hit the readonly refusal.
     result = CliRunner().invoke(
         app,
-        ["notebook", "deploy", "-d", "-f", str(nb)],
+        ["notebook", "deploy", "-d", "-o", str(nb)],
     )
     assert READONLY_ENV not in (result.stderr or result.output)
     assert result.exit_code == 0

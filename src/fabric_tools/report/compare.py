@@ -63,7 +63,7 @@ def compare_report(
                 ok=False,
                 identical=False,
                 header="compare",
-                error="compare requires a local --file or --origin",
+                error="compare requires a local path or remote --origin",
                 target_ref=item.target.label(),
             )
         ]
@@ -73,7 +73,7 @@ def compare_report(
                 ok=False,
                 identical=False,
                 header="compare",
-                error="compare cannot use both --file and --origin",
+                error="compare cannot mix a local path and a remote --origin",
                 target_ref=item.target.label(),
             )
         ]
@@ -83,7 +83,7 @@ def compare_report(
                 ok=False,
                 identical=False,
                 header=str(item.file),
-                error="compare does not support .pbix (use a *.Report folder or --origin)",
+                error="compare does not support .pbix (use a *.Report folder or remote --origin)",
                 local_name=item.file.name,
                 target_ref=item.target.label(),
             )

@@ -50,7 +50,7 @@ def compare_pipeline(
             ok=False,
             identical=False,
             header="compare",
-            error="compare requires a local --file or --origin",
+            error="compare requires a local path or remote --origin",
             target_ref=item.target.label(),
         )
     if item.file is not None and item.origin is not None:
@@ -58,7 +58,7 @@ def compare_pipeline(
             ok=False,
             identical=False,
             header="compare",
-            error="compare cannot use both --file and --origin",
+            error="compare cannot mix a local path and a remote --origin",
             target_ref=item.target.label(),
         )
 

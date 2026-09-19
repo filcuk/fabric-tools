@@ -222,10 +222,20 @@ def get_item_detail(client: FabricClient, target: Target) -> dict[str, Any]:
 
 
 def _parse_single_target(raw: str) -> Target:
+    """Parse one inspect ``--target`` (always a remote; never a local path)."""
+    text = raw.strip()
+    if not text:
+        raise InspectError(
+            "inspect --target expects a single workspace or workspace:item value"
+        )
     try:
-        targets = parse_target_values([raw])
+        targets = parse_target_values([text])
     except ParseError as exc:
-        raise InspectError(str(exc)) from exc
+        message = str(exc)
+        # Polymorphic CLI treats bare non-GUIDs as paths; inspect never accepts paths.
+        if "local path" in message:
+            raise InspectError(f"invalid workspace id: '{text}'") from exc
+        raise InspectError(message) from exc
     if len(targets) != 1:
         raise InspectError(
             f"inspect --target expects a single workspace or "
@@ -241,9 +251,7 @@ def _field(row: dict[str, Any], key: str) -> str:
     return str(value)
 
 
-def _detail_pairs(
-    row: dict[str, Any], keys: tuple[str, ...]
-) -> list[tuple[str, str]]:
+def _detail_pairs(row: dict[str, Any], keys: tuple[str, ...]) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     for key in keys:
         if key not in row:
