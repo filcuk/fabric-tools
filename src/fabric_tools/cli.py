@@ -50,6 +50,7 @@ from fabric_tools.manifest import (
     resolve_manifest_path,
     save_manifest,
     semantic_model_id_overrides_from_results,
+    semantic_model_ids_from_manifest,
     work_items_from_manifest,
 )
 from fabric_tools.parsing import (
@@ -73,6 +74,10 @@ if TYPE_CHECKING:
 _MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
     "Alone: load targets/origins (and local paths). With a successful run or dry-run: write/update the manifest."
+)
+_FILTER_HELP = (
+    "(optional) Case-insensitive displayName substring; "
+    "only valid with workspaceId:* on --origin or --target."
 )
 _GUID_REMAP_HELP = (
     "(optional, deploy only) JSON file remapping source GUID → target GUID. "
@@ -569,6 +574,12 @@ def manifest_delete(
         "--manifest",
         "-m",
         help="Deployment manifest stem or path (.ftdep) to delete locally.",
+    ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
     ),
     silent: bool = typer.Option(
         False,
@@ -1487,6 +1498,12 @@ def notebook_download(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -1507,6 +1524,7 @@ def notebook_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -1550,6 +1568,12 @@ def notebook_deploy(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -1576,6 +1600,7 @@ def notebook_deploy(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         names=name,
         cells=cells,
         manifest=manifest,
@@ -1605,6 +1630,12 @@ def notebook_compare(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -1625,6 +1656,7 @@ def notebook_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         ignore_outputs=not include_outputs,
         manifest=manifest,
     )
@@ -1646,6 +1678,12 @@ def notebook_delete(
         help="(optional) Load workspace:artifact targets from a .ftdep "
         "(entries must have itemId). Not rewritten after delete.",
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -1665,6 +1703,7 @@ def notebook_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -1693,6 +1732,12 @@ def dataflow_download(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -1713,6 +1758,7 @@ def dataflow_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -1748,6 +1794,12 @@ def dataflow_deploy(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -1781,6 +1833,7 @@ def dataflow_deploy(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         names=name,
         manifest=manifest,
         remap_values=remap,
@@ -1810,6 +1863,12 @@ def dataflow_compare(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -1824,6 +1883,7 @@ def dataflow_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -1844,6 +1904,12 @@ def dataflow_delete(
         help="(optional) Load workspace:artifact targets from a .ftdep "
         "(entries must have itemId). Not rewritten after delete.",
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -1863,6 +1929,7 @@ def dataflow_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -1891,6 +1958,12 @@ def org_app_download(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -1911,6 +1984,7 @@ def org_app_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -1946,6 +2020,12 @@ def org_app_deploy(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -1966,6 +2046,7 @@ def org_app_deploy(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         names=name,
         manifest=manifest,
     )
@@ -1993,6 +2074,12 @@ def org_app_compare(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -2007,6 +2094,7 @@ def org_app_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2027,6 +2115,12 @@ def org_app_delete(
         help="(optional) Load workspace:artifact targets from a .ftdep "
         "(entries must have itemId). Not rewritten after delete.",
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2046,6 +2140,7 @@ def org_app_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2069,6 +2164,12 @@ def variable_library_download(
         "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False, "--silent", "-s", help="(optional) Skip confirmation prompts."
     ),
@@ -2086,6 +2187,7 @@ def variable_library_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2114,6 +2216,12 @@ def variable_library_deploy(
         "or origin display name.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False, "--silent", "-s", help="(optional) Skip confirmation prompts."
     ),
@@ -2131,6 +2239,7 @@ def variable_library_deploy(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         names=name,
         manifest=manifest,
     )
@@ -2152,6 +2261,12 @@ def variable_library_compare(
         help="(required without -m or -d) Local path or remote workspace:artifact source. Must 1:1 match --target.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -2166,6 +2281,7 @@ def variable_library_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2186,6 +2302,12 @@ def variable_library_delete(
         help="(optional) Load workspace:artifact targets from a .ftdep "
         "(entries must have itemId). Not rewritten after delete.",
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False, "--silent", "-s", help="(optional) Skip confirmation prompts."
     ),
@@ -2202,6 +2324,7 @@ def variable_library_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2225,6 +2348,12 @@ def environment_download(
         "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False, "--silent", "-s", help="(optional) Skip confirmation prompts."
     ),
@@ -2242,6 +2371,7 @@ def environment_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2270,6 +2400,12 @@ def environment_deploy(
         "or origin display name.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False, "--silent", "-s", help="(optional) Skip confirmation prompts."
     ),
@@ -2287,6 +2423,7 @@ def environment_deploy(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         names=name,
         manifest=manifest,
     )
@@ -2309,6 +2446,12 @@ def environment_compare(
         "against --target. Must 1:1 match --target.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -2323,6 +2466,7 @@ def environment_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2343,6 +2487,12 @@ def environment_delete(
         help="(optional) Load workspace:artifact targets from a .ftdep "
         "(entries must have itemId). Not rewritten after delete.",
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False, "--silent", "-s", help="(optional) Skip confirmation prompts."
     ),
@@ -2359,6 +2509,7 @@ def environment_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2387,6 +2538,12 @@ def semantic_model_download(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2407,6 +2564,7 @@ def semantic_model_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2439,6 +2597,12 @@ def semantic_model_deploy(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2468,6 +2632,7 @@ def semantic_model_deploy(
         names=name,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
         independent=independent,
     )
@@ -2494,6 +2659,12 @@ def semantic_model_compare(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -2508,6 +2679,7 @@ def semantic_model_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2526,6 +2698,12 @@ def semantic_model_delete(
         "--manifest",
         "-m",
         help=_MANIFEST_HELP,
+    ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
     ),
     silent: bool = typer.Option(
         False,
@@ -2546,6 +2724,7 @@ def semantic_model_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2574,6 +2753,12 @@ def report_download(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2601,6 +2786,7 @@ def report_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
         independent=independent,
     )
@@ -2634,6 +2820,12 @@ def report_deploy(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2662,6 +2854,7 @@ def report_deploy(
         names=name,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
         independent=independent,
     )
@@ -2688,6 +2881,12 @@ def report_compare(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -2708,6 +2907,7 @@ def report_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
         independent=independent,
     )
@@ -2728,6 +2928,12 @@ def report_delete(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2747,6 +2953,7 @@ def report_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2775,6 +2982,12 @@ def dataflow_gen1_download(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2795,6 +3008,7 @@ def dataflow_gen1_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2830,6 +3044,12 @@ def dataflow_gen1_deploy(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2850,6 +3070,7 @@ def dataflow_gen1_deploy(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         names=name,
         manifest=manifest,
     )
@@ -2877,6 +3098,12 @@ def dataflow_gen1_compare(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -2891,6 +3118,7 @@ def dataflow_gen1_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2911,6 +3139,12 @@ def dataflow_gen1_delete(
         help="(optional) Load workspace:artifact targets from a .ftdep "
         "(entries must have itemId). Not rewritten after delete.",
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2930,6 +3164,7 @@ def dataflow_gen1_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -2958,6 +3193,12 @@ def paginated_report_download(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -2978,6 +3219,7 @@ def paginated_report_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -3013,6 +3255,12 @@ def paginated_report_deploy(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -3033,6 +3281,7 @@ def paginated_report_deploy(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         names=name,
         manifest=manifest,
     )
@@ -3060,6 +3309,12 @@ def paginated_report_compare(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -3074,6 +3329,7 @@ def paginated_report_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -3094,6 +3350,12 @@ def paginated_report_delete(
         help="(optional) Load workspace:artifact targets from a .ftdep "
         "(entries must have itemId). Not rewritten after delete.",
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -3113,6 +3375,7 @@ def paginated_report_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -3141,6 +3404,12 @@ def pipeline_download(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -3168,6 +3437,7 @@ def pipeline_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
         include_schedules=include_schedules,
     )
@@ -3204,6 +3474,12 @@ def pipeline_deploy(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -3238,6 +3514,7 @@ def pipeline_deploy(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         names=name,
         manifest=manifest,
         include_schedules=include_schedules,
@@ -3267,6 +3544,12 @@ def pipeline_compare(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -3288,6 +3571,7 @@ def pipeline_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
         include_schedules=include_schedules,
     )
@@ -3309,6 +3593,12 @@ def pipeline_delete(
         help="(optional) Load workspace:artifact targets from a .ftdep "
         "(entries must have itemId). Not rewritten after delete.",
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -3328,6 +3618,7 @@ def pipeline_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -3356,6 +3647,12 @@ def udf_download(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -3376,6 +3673,7 @@ def udf_download(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -3411,6 +3709,12 @@ def udf_deploy(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -3437,6 +3741,7 @@ def udf_deploy(
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         names=name,
         manifest=manifest,
         remap_values=remap,
@@ -3465,6 +3770,12 @@ def udf_compare(
         "-m",
         help=_MANIFEST_HELP,
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -3479,6 +3790,7 @@ def udf_compare(
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -3499,6 +3811,12 @@ def udf_delete(
         help="(optional) Load workspace:artifact targets from a .ftdep "
         "(entries must have itemId). Not rewritten after delete.",
     ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
     silent: bool = typer.Option(
         False,
         "--silent",
@@ -3518,6 +3836,7 @@ def udf_delete(
         target_values=target,
         silent=silent,
         dry_run=dry_run,
+        name_filter=name_filter,
         manifest=manifest,
     )
 
@@ -3528,6 +3847,7 @@ def run_notebook_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     cells: list[str] | None = None,
@@ -3570,18 +3890,46 @@ def run_notebook_command(
     if remap_values and mode is not CommandMode.DEPLOY:
         _exit_error("--remap / -r is only valid with deploy")
 
+    expand_client = None
     try:
         cell_indices = parse_cell_indices(cells)
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_notebook_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_NOTEBOOK, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_notebook_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_NOTEBOOK],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_notebook_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
         validate_cells_usage(mode, items, cell_indices, dry_run=dry_run)
     except (ParseError, ManifestError, CellSelectionError) as exc:
         _exit_error(str(exc))
@@ -3615,9 +3963,9 @@ def run_notebook_command(
         map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
-        client: FabricClient | None = None
+        client: FabricClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = FabricClient()
                     _authenticate_client(client)
@@ -3682,9 +4030,11 @@ def run_notebook_command(
     except ParseError as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = FabricClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_notebook_download_files(client, items)
@@ -3803,6 +4153,7 @@ def run_dataflow_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -3840,17 +4191,45 @@ def run_dataflow_command(
     if publish and mode is not CommandMode.DEPLOY:
         _exit_error("--publish / -p is only valid with deploy")
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_dataflow_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_DATAFLOW, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_dataflow_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_DATAFLOW],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_dataflow_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
@@ -3883,9 +4262,9 @@ def run_dataflow_command(
         map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
-        client: FabricClient | None = None
+        client: FabricClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = FabricClient()
                     _authenticate_client(client)
@@ -3954,9 +4333,11 @@ def run_dataflow_command(
     except ParseError as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = FabricClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_dataflow_download_files(client, items)
@@ -4071,6 +4452,7 @@ def run_org_app_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -4093,24 +4475,52 @@ def run_org_app_command(
     from fabric_tools.status import busy
     from fabric_tools.validate import run_dry_run_org_app
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_org_app_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_ORG_APP, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_org_app_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_ORG_APP],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_org_app_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
     if dry_run:
-        client: FabricClient | None = None
+        client: FabricClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = FabricClient()
                     _authenticate_client(client)
@@ -4169,9 +4579,11 @@ def run_org_app_command(
     except ParseError as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = FabricClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_org_app_download_files(client, items)
@@ -4282,6 +4694,7 @@ def run_variable_library_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -4312,24 +4725,52 @@ def run_variable_library_command(
         run_download_batch as run_variable_library_download,
     )
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_variable_library_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_VARIABLE_LIBRARY, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_variable_library_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_VARIABLE_LIBRARY],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_variable_library_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
     if dry_run:
-        client: FabricClient | None = None
+        client: FabricClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = FabricClient()
                     _authenticate_client(client)
@@ -4383,9 +4824,11 @@ def run_variable_library_command(
     except ParseError as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = FabricClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_variable_library_download_files(client, items)
@@ -4490,6 +4933,7 @@ def run_environment_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -4516,24 +4960,52 @@ def run_environment_command(
     from fabric_tools.status import busy
     from fabric_tools.validate import run_dry_run_environment
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_environment_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_ENVIRONMENT, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_environment_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_ENVIRONMENT],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_environment_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
     if dry_run:
-        client: FabricClient | None = None
+        client: FabricClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = FabricClient()
                     _authenticate_client(client)
@@ -4587,9 +5059,11 @@ def run_environment_command(
     except ParseError as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = FabricClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_environment_download_files(client, items)
@@ -4694,6 +5168,7 @@ def run_semantic_model_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -4731,17 +5206,45 @@ def run_semantic_model_command(
             "(delete always follows service cascade)."
         )
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_semantic_model_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_SEMANTIC_MODEL, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_semantic_model_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_SEMANTIC_MODEL],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_semantic_model_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
@@ -4759,9 +5262,9 @@ def run_semantic_model_command(
     _ = independent
 
     if dry_run:
-        client: FabricClient | None = None
+        client: FabricClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = FabricClient()
                     _authenticate_client(client)
@@ -4820,9 +5323,11 @@ def run_semantic_model_command(
     except ParseError as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = FabricClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_semantic_model_download_files(client, items)
@@ -4933,6 +5438,7 @@ def run_report_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -4977,24 +5483,52 @@ def run_report_command(
             "(delete always removes the report only)."
         )
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins, sm_ids = (
-            _resolve_report_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_REPORT, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins, sm_ids = (
+                    _resolve_report_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_REPORT],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins, sm_ids = (
+                _resolve_report_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
     if dry_run:
-        client: FabricClient | None = None
+        client: FabricClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = FabricClient()
                     _authenticate_client(client)
@@ -5054,9 +5588,11 @@ def run_report_command(
     except ParseError as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = FabricClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_report_download_files(client, items)
@@ -5188,6 +5724,7 @@ def run_dataflow_gen1_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -5219,24 +5756,52 @@ def run_dataflow_gen1_command(
     from fabric_tools.status import busy
     from fabric_tools.validate import run_dry_run_dataflow_gen1
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_dataflow_gen1_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = PowerBiClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_DATAFLOW_GEN1, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_dataflow_gen1_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_DATAFLOW_GEN1],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_dataflow_gen1_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
     if dry_run:
-        client: PowerBiClient | None = None
+        client: PowerBiClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = PowerBiClient()
                     _authenticate_client(client)
@@ -5295,9 +5860,11 @@ def run_dataflow_gen1_command(
     except (ParseError, DataflowDefinitionError) as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = PowerBiClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = PowerBiClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_dataflow_gen1_download_files(client, items)
@@ -5408,6 +5975,7 @@ def run_paginated_report_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -5441,24 +6009,52 @@ def run_paginated_report_command(
     from fabric_tools.status import busy
     from fabric_tools.validate import run_dry_run_paginated_report
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_paginated_report_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = PowerBiClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_PAGINATED_REPORT, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_paginated_report_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_PAGINATED_REPORT],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_paginated_report_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
     if dry_run:
-        client: PowerBiClient | None = None
+        client: PowerBiClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = PowerBiClient()
                     _authenticate_client(client)
@@ -5517,9 +6113,11 @@ def run_paginated_report_command(
     except (ParseError, PaginatedReportDefinitionError) as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = PowerBiClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = PowerBiClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_paginated_report_download_files(client, items)
@@ -5630,6 +6228,7 @@ def run_pipeline_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -5665,17 +6264,45 @@ def run_pipeline_command(
     if remap_values and mode is not CommandMode.DEPLOY:
         _exit_error("--remap / -r is only valid with deploy")
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_pipeline_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_PIPELINE, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_pipeline_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_PIPELINE],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_pipeline_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
@@ -5708,9 +6335,9 @@ def run_pipeline_command(
         map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
-        client: FabricClient | None = None
+        client: FabricClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = FabricClient()
                     _authenticate_client(client)
@@ -5774,9 +6401,11 @@ def run_pipeline_command(
     except ParseError as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = FabricClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_pipeline_download_files(client, items)
@@ -5895,6 +6524,7 @@ def run_udf_command(
     target_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    name_filter: str | None = None,
     origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
@@ -5938,17 +6568,45 @@ def run_udf_command(
     if remap_values and mode is not CommandMode.DEPLOY:
         _exit_error("--remap / -r is only valid with deploy")
 
+    expand_client = None
     try:
-        items, resolved_names, has_targets, has_files, has_origins = (
-            _resolve_udf_inputs(
-                mode,
-                target_values=target_values,
-                origin_values=origin_values,
-                dry_run=dry_run,
-                names=names,
-                manifest=manifest,
-            )
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=origin_values,
+            target_values=target_values,
+            mode=mode,
+            name_filter=name_filter,
         )
+        if needs_expand:
+            with busy("Authenticating..."):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_UDF, expand_client)
+            with busy("Expanding selectors..."):
+                items, resolved_names, has_targets, has_files, has_origins = (
+                    _resolve_udf_inputs(
+                        mode,
+                        target_values=target_values,
+                        origin_values=origin_values,
+                        dry_run=dry_run,
+                        names=names,
+                        manifest=manifest,
+                        name_filter=name_filter,
+                        list_items_fn=list_fn,
+                        kind_label=_KIND_EXPAND_LABELS[KIND_UDF],
+                    )
+                )
+        else:
+            items, resolved_names, has_targets, has_files, has_origins = (
+                _resolve_udf_inputs(
+                    mode,
+                    target_values=target_values,
+                    origin_values=origin_values,
+                    dry_run=dry_run,
+                    names=names,
+                    manifest=manifest,
+                    name_filter=name_filter,
+                )
+            )
     except (ParseError, ManifestError) as exc:
         _exit_error(str(exc))
 
@@ -5981,9 +6639,9 @@ def run_udf_command(
         map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
-        client: FabricClient | None = None
+        client: FabricClient | None = expand_client
         try:
-            if has_targets or has_origins:
+            if (has_targets or has_origins) and client is None:
                 with busy("Authenticating..."):
                     client = FabricClient()
                     _authenticate_client(client)
@@ -6047,9 +6705,11 @@ def run_udf_command(
     except ParseError as exc:
         _exit_error(str(exc))
 
-    with busy("Authenticating..."):
-        client = FabricClient()
-        _authenticate_client(client)
+    client = expand_client
+    if client is None:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_udf_download_files(client, items)
@@ -6166,8 +6826,27 @@ def _resolve_sync_inputs(
     names: list[str | None] | list[str] | None,
     manifest: str | None,
     deploy_create_only: bool = False,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve polymorphic --origin/--target from CLI and/or a deployment manifest."""
+    """Resolve polymorphic --origin/--target from CLI and/or a deployment manifest.
+
+    When CLI remotes include ``workspaceId:*``, *list_items_fn* must list items for
+    one workspace (already authenticated). *name_filter* applies to every wildcard
+    side in the invocation.
+    """
+    from fabric_tools.parsing import (
+        build_work_items_from_classified,
+        classify_cli_endpoints,
+    )
+    from fabric_tools.remote_expand import (
+        ExpandError,
+        classified_has_wildcard,
+        expand_classified,
+        validate_filter_usage,
+    )
+
     has_cli = bool(target_values or origin_values)
     manifest_names: list[str | None] | None = None
 
@@ -6175,14 +6854,37 @@ def _resolve_sync_inputs(
         if origin_values:
             raise ParseError("delete only accepts remote --target selector(s)")
         if target_values:
-            items = build_work_items_from_cli(
-                mode,
+            classified = classify_cli_endpoints(
                 origin_values=None,
                 target_values=target_values,
+                mode=mode,
+            )
+            validate_filter_usage(
+                name_filter, has_wildcard=classified_has_wildcard(classified)
+            )
+            if classified_has_wildcard(classified):
+                if list_items_fn is None or not kind_label:
+                    raise ParseError(
+                        "workspace:* requires an authenticated client before expand"
+                    )
+                try:
+                    classified = expand_classified(
+                        classified,
+                        list_items=list_items_fn,
+                        name_filter=name_filter,
+                        kind_label=kind_label,
+                    )
+                except ExpandError as exc:
+                    raise ParseError(str(exc)) from exc
+            items = build_work_items_from_classified(
+                mode,
+                classified,
                 dry_run=dry_run,
                 deploy_create_only=deploy_create_only,
             )
             return items, None, True, False, False
+        if name_filter:
+            validate_filter_usage(name_filter, has_wildcard=False)
         if manifest:
             path = resolve_manifest_path(manifest)
             loaded = load_manifest(path)
@@ -6192,10 +6894,38 @@ def _resolve_sync_inputs(
         return items, None, False, False, False
 
     if has_cli:
-        items = build_work_items_from_cli(
-            mode,
+        classified = classify_cli_endpoints(
             origin_values=origin_values,
             target_values=target_values,
+            mode=mode,
+        )
+        validate_filter_usage(
+            name_filter, has_wildcard=classified_has_wildcard(classified)
+        )
+        if classified_has_wildcard(classified):
+            if deploy_create_only:
+                raise ParseError(
+                    "dataflow-gen1 deploy does not support workspace:* "
+                    "(create-only; use concrete workspace targets)"
+                )
+            if list_items_fn is None or not kind_label:
+                raise ParseError(
+                    "workspace:* requires an authenticated client before expand"
+                )
+            try:
+                classified = expand_classified(
+                    classified,
+                    list_items=list_items_fn,
+                    name_filter=name_filter,
+                    kind_label=kind_label,
+                )
+            except ExpandError as exc:
+                raise ParseError(str(exc)) from exc
+        elif name_filter:
+            validate_filter_usage(name_filter, has_wildcard=False)
+        items = build_work_items_from_classified(
+            mode,
+            classified,
             dry_run=dry_run,
             deploy_create_only=deploy_create_only,
         )
@@ -6203,6 +6933,9 @@ def _resolve_sync_inputs(
         has_files = any(item.file is not None for item in items)
         has_origins = any(item.origin is not None for item in items)
         return items, names, has_targets, has_files, has_origins
+
+    if name_filter:
+        validate_filter_usage(name_filter, has_wildcard=False)
 
     if manifest:
         path = resolve_manifest_path(manifest)
@@ -6256,6 +6989,87 @@ def _resolve_sync_inputs(
     return items, names, False, False, False
 
 
+def _cli_needs_wildcard_expand(
+    *,
+    origin_values: list[str] | None,
+    target_values: list[str] | None,
+    mode: CommandMode,
+    name_filter: str | None,
+) -> bool:
+    """Validate ``--filter`` and report whether ``workspaceId:*`` needs API expand."""
+    from fabric_tools.parsing import classify_cli_endpoints
+    from fabric_tools.remote_expand import (
+        classified_has_wildcard,
+        validate_filter_usage,
+    )
+
+    if not (origin_values or target_values):
+        validate_filter_usage(name_filter, has_wildcard=False)
+        return False
+    classified = classify_cli_endpoints(
+        origin_values=origin_values,
+        target_values=target_values,
+        mode=mode,
+    )
+    has_wildcard = classified_has_wildcard(classified)
+    validate_filter_usage(name_filter, has_wildcard=has_wildcard)
+    return has_wildcard
+
+
+def _list_items_fn_for_kind(kind: str, client: object) -> Callable[[str], list]:
+    """Return a workspace→item-list callback for wildcard expansion."""
+    fabric_types = {
+        KIND_NOTEBOOK: "Notebook",
+        KIND_DATAFLOW: "Dataflow",
+        KIND_PIPELINE: "DataPipeline",
+        KIND_UDF: "UserDataFunction",
+        KIND_REPORT: "Report",
+        KIND_ORG_APP: "OrgApp",
+        KIND_VARIABLE_LIBRARY: "VariableLibrary",
+        KIND_ENVIRONMENT: "Environment",
+        KIND_SEMANTIC_MODEL: "SemanticModel",
+    }
+    if kind == KIND_DATAFLOW_GEN1:
+
+        def list_gen1(workspace_id: str) -> list:
+            return list(client.list_dataflows(workspace_id))  # type: ignore[attr-defined]
+
+        return list_gen1
+    if kind == KIND_PAGINATED_REPORT:
+
+        def list_paginated(workspace_id: str) -> list:
+            return [
+                row
+                for row in client.list_reports(workspace_id)  # type: ignore[attr-defined]
+                if row.get("reportType") == "PaginatedReport"
+            ]
+
+        return list_paginated
+    item_type = fabric_types.get(kind)
+    if item_type is None:
+        raise ParseError(f"workspace:* is not supported for kind {kind}")
+
+    def list_fabric(workspace_id: str) -> list:
+        return list(client.list_items(workspace_id, type=item_type))  # type: ignore[attr-defined]
+
+    return list_fabric
+
+
+_KIND_EXPAND_LABELS = {
+    KIND_NOTEBOOK: "Notebook",
+    KIND_DATAFLOW: "Dataflow",
+    KIND_DATAFLOW_GEN1: "dataflow-gen1",
+    KIND_PIPELINE: "DataPipeline",
+    KIND_UDF: "UserDataFunction",
+    KIND_REPORT: "Report",
+    KIND_ORG_APP: "OrgApp",
+    KIND_VARIABLE_LIBRARY: "VariableLibrary",
+    KIND_ENVIRONMENT: "Environment",
+    KIND_SEMANTIC_MODEL: "SemanticModel",
+    KIND_PAGINATED_REPORT: "PaginatedReport",
+}
+
+
 def _resolve_dataflow_inputs(
     mode: CommandMode,
     *,
@@ -6264,6 +7078,9 @@ def _resolve_dataflow_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_DATAFLOW endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6275,6 +7092,9 @@ def _resolve_dataflow_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 
@@ -6311,6 +7131,9 @@ def _resolve_org_app_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_ORG_APP endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6322,6 +7145,9 @@ def _resolve_org_app_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 
@@ -6358,6 +7184,9 @@ def _resolve_variable_library_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_VARIABLE_LIBRARY endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6369,6 +7198,9 @@ def _resolve_variable_library_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 
@@ -6405,6 +7237,9 @@ def _resolve_environment_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_ENVIRONMENT endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6416,6 +7251,9 @@ def _resolve_environment_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 
@@ -6452,6 +7290,9 @@ def _resolve_semantic_model_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_SEMANTIC_MODEL endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6463,6 +7304,9 @@ def _resolve_semantic_model_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 
@@ -6499,9 +7343,24 @@ def _resolve_report_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
-) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
+) -> tuple[
+    list[WorkItem],
+    list[str | None] | list[str] | None,
+    bool,
+    bool,
+    bool,
+    list[str | None] | None,
+]:
     """Resolve KIND_REPORT endpoints from CLI and/or a deployment manifest."""
-    return _resolve_sync_inputs(
+    sm_ids: list[str | None] | None = None
+    if manifest and not (target_values or origin_values):
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        sm_ids = semantic_model_ids_from_manifest(loaded)
+    items, resolved_names, has_targets, has_files, has_origins = _resolve_sync_inputs(
         mode,
         expected_kind=KIND_REPORT,
         target_values=target_values,
@@ -6510,7 +7369,11 @@ def _resolve_report_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
+    return items, resolved_names, has_targets, has_files, has_origins, sm_ids
 
 
 def _resolve_report_deploy_names(
@@ -6546,6 +7409,9 @@ def _resolve_dataflow_gen1_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_DATAFLOW_GEN1 endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6557,6 +7423,9 @@ def _resolve_dataflow_gen1_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=True,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 
@@ -6596,6 +7465,9 @@ def _resolve_paginated_report_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_PAGINATED_REPORT endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6607,6 +7479,9 @@ def _resolve_paginated_report_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 
@@ -6643,6 +7518,9 @@ def _resolve_pipeline_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_PIPELINE endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6654,6 +7532,9 @@ def _resolve_pipeline_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 
@@ -6690,6 +7571,9 @@ def _resolve_udf_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_UDF endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6701,6 +7585,9 @@ def _resolve_udf_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 
@@ -6759,6 +7646,9 @@ def _resolve_notebook_inputs(
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    name_filter: str | None = None,
+    list_items_fn: Callable[[str], list] | None = None,
+    kind_label: str | None = None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
     """Resolve KIND_NOTEBOOK endpoints from CLI and/or a deployment manifest."""
     return _resolve_sync_inputs(
@@ -6770,6 +7660,9 @@ def _resolve_notebook_inputs(
         names=names,
         manifest=manifest,
         deploy_create_only=False,
+        name_filter=name_filter,
+        list_items_fn=list_items_fn,
+        kind_label=kind_label,
     )
 
 

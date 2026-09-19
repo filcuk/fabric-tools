@@ -77,12 +77,19 @@ def _is_csv_value_continuation(prev: str, nxt: str) -> bool:
 class Target:
     workspace_id: str
     item_id: str | None = None
+    wildcard: bool = False
 
     @property
     def is_create(self) -> bool:
-        return self.item_id is None
+        return self.item_id is None and not self.wildcard
+
+    @property
+    def is_wildcard(self) -> bool:
+        return self.wildcard
 
     def label(self) -> str:
+        if self.wildcard:
+            return f"{self.workspace_id}:*"
         if self.item_id:
             return f"{self.workspace_id}:{self.item_id}"
         return self.workspace_id
@@ -514,6 +521,12 @@ def _pair_sources(
 
 
 def _require_items(targets: list[Target], mode: CommandMode) -> None:
+    wildcards = [t.label() for t in targets if t.wildcard]
+    if wildcards:
+        raise ParseError(
+            f"{mode.value} received unexpanded workspace:* selector(s): "
+            f"{', '.join(wildcards)}"
+        )
     missing = [t.label() for t in targets if t.is_create]
     if missing:
         raise ParseError(
@@ -542,6 +555,12 @@ def _require_homogeneous_deploy(targets: list[Target]) -> None:
 
 
 def _require_create_only_deploy(targets: list[Target]) -> None:
+    wildcards = [t.label() for t in targets if t.wildcard]
+    if wildcards:
+        raise ParseError(
+            "dataflow-gen1 deploy supports create only (workspace targets); "
+            f"got workspace:* selector(s): {', '.join(wildcards)}"
+        )
     updates = [t.label() for t in targets if not t.is_create]
     if updates:
         raise ParseError(
@@ -574,8 +593,7 @@ def _classify_one_flag_value(
                 current_ws = remote.workspace_id
             continue
         if _looks_like_failed_remote(piece):
-            # Starts with a GUID-shaped token but failed validation — surface as remote error.
-            _expand_scoped_targets(piece, allow_create=allow_create, option=option)
+            raise ParseError(f"invalid {option} remote selector: '{piece}'")
         paths.append(Path(piece))
         current_ws = None
 
@@ -592,8 +610,8 @@ def _looks_like_failed_remote(piece: str) -> bool:
     text = piece.strip()
     if ":" not in text:
         return _is_guid(text)
-    left, _right = text.split(":", 1)
-    return _is_guid(left.strip())
+    left, right = text.split(":", 1)
+    return _is_guid(left.strip()) and right.strip() != ""
 
 
 def _try_parse_remote_token(
@@ -621,6 +639,8 @@ def _try_parse_remote_token(
                     f"missing artifact id on '{piece}'"
                 )
             return Target(workspace_id=workspace_id, item_id=None)
+        if item_raw == "*":
+            return Target(workspace_id=workspace_id, item_id=None, wildcard=True)
         if not _is_guid(item_raw):
             return None
         return Target(

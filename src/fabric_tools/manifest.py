@@ -689,6 +689,11 @@ def _parse_entry(
         item_id = None
     elif isinstance(item_raw, str):
         item_id = item_raw.strip() or None
+        if item_id == "*":
+            raise ManifestError(
+                f"entries[{index}].itemId must be a concrete GUID "
+                f"(workspace:* is not allowed in manifests) in {path}"
+            )
     else:
         raise ManifestError(
             f"entries[{index}].itemId must be a string or null in {path}"
@@ -731,6 +736,11 @@ def _parse_entry(
     if has_origin_ws and has_origin_item:
         origin_workspace_id = str(origin_ws_raw).strip()
         origin_item_id = str(origin_item_raw).strip()
+        if origin_item_id == "*":
+            raise ManifestError(
+                f"entries[{index}].originItemId must be a concrete GUID "
+                f"(workspace:* is not allowed in manifests) in {path}"
+            )
 
     display_name = raw.get("displayName")
     if display_name is not None and not isinstance(display_name, str):

@@ -55,6 +55,9 @@ fabric-tools notebook download -s -o <workspaceId>:<notebookId> -t .\etl.ipynb -
 # Compare and deploy a local notebook vs the remote Fabric version using the manifest
 fabric-tools notebook compare -m etl
 fabric-tools notebook deploy -m etl
+
+# Delete every notebook in a workspace whose name contains "etl"
+fabric-tools notebook delete -t <workspaceId>:* -f etl
 ```
 
 ## Support

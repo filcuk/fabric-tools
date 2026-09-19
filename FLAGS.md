@@ -39,11 +39,13 @@ is **`--artifact` / `-a`**, not `-i`.
 |------|-------|---------|-------------|
 | `--origin` | `-o` | Where content comes **from** | Local path **or** remote selector |
 | `--target` | `-t` | Where content goes **to** / destination | Local path **or** remote selector (by mode) |
-| `--filter` | `-f` | `displayName` substring | Text; inspect today; sync wildcards planned |
+| `--filter` | `-f` | `displayName` substring | Text; inspect always; sync only with `workspaceId:*` |
 
-Remote selector shapes: `workspaceId`, `workspaceId:itemId` (and bare-GUID shorthand
+Remote selector shapes: `workspaceId`, `workspaceId:itemId`, `workspaceId:*` (and bare-GUID shorthand
 inside a CSV after a qualified `workspace:…` piece). Multiplicity: repeat flags and/or
-comma-separated lists.
+comma-separated lists. Expand `*` after auth (Fabric `list_items` type filter, or Power BI
+list APIs for gen1 / paginated reports); zero matches is an error. Manifests stay concrete
+(no `*` / filters in `.ftdep`).
 
 ### Mode usage
 
