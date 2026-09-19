@@ -50,6 +50,10 @@ _TOOL_KIND = {
 }
 
 _BACK_VALUE = "__back__"
+_RLS_LIST = "role_list"
+_RLS_MEMBER_ADD = "role_member_add"
+_RLS_MEMBER_REMOVE = "role_member_remove"
+_RLS_ACTIVITIES = frozenset({_RLS_LIST, _RLS_MEMBER_ADD, _RLS_MEMBER_REMOVE})
 _STEPS = ("tool", "activity", "run_mode", "source", "inputs", "options", "proceed")
 _STEP_KEYS: dict[str, tuple[str, ...]] = {
     "tool": ("tool",),
@@ -64,6 +68,8 @@ _STEP_KEYS: dict[str, tuple[str, ...]] = {
         "include_schedules",
         "publish",
         "remap_values",
+        "role_name",
+        "member_name",
     ),
     "proceed": (),
 }
@@ -71,6 +77,10 @@ _STEP_KEYS: dict[str, tuple[str, ...]] = {
 
 class _Back(Exception):
     """User asked to return to the previous major wizard step."""
+
+
+def _is_rls_activity(activity: str) -> bool:
+    return activity in _RLS_ACTIVITIES
 
 
 def run_interactive_wizard() -> None:
@@ -85,6 +95,7 @@ def run_interactive_wizard() -> None:
         run_pipeline_command,
         run_report_command,
         run_semantic_model_command,
+        run_semantic_model_role_command,
         run_udf_command,
         run_variable_library_command,
     )
@@ -124,14 +135,31 @@ def run_interactive_wizard() -> None:
 
     tool = str(answers["tool"])
     activity = str(answers["activity"])
-    mode = CommandMode(activity)
     run_mode = str(answers["run_mode"])
     dry_run = run_mode != "execute"
     targets: list[str] = list(answers.get("targets") or [])
+    silent = bool(answers.get("silent", False))
+
+    if tool == "semantic-model" and _is_rls_activity(activity):
+        role_action = {
+            _RLS_LIST: "list",
+            _RLS_MEMBER_ADD: "member_add",
+            _RLS_MEMBER_REMOVE: "member_remove",
+        }[activity]
+        run_semantic_model_role_command(
+            role_action,
+            target_values=targets or None,
+            silent=silent,
+            dry_run=dry_run,
+            role_name=answers.get("role_name"),
+            member_name=answers.get("member_name"),
+        )
+        return
+
+    mode = CommandMode(activity)
     files: list[str] = list(answers.get("files") or [])
     origins: list[str] = list(answers.get("origins") or [])
     names: list[str] = list(answers.get("names") or [])
-    silent = bool(answers.get("silent", False))
     ignore_outputs = bool(answers.get("ignore_outputs", False))
     independent = bool(answers.get("independent", False))
     include_schedules = bool(answers.get("include_schedules", False))
@@ -354,6 +382,8 @@ def _needs_source_step(answers: dict[str, Any]) -> bool:
     run_mode = answers.get("run_mode")
     if activity is None or run_mode is None:
         return False
+    if _is_rls_activity(str(activity)):
+        return False
     mode = CommandMode(str(activity))
     if mode is CommandMode.DELETE:
         return False
@@ -396,28 +426,59 @@ def _run_step(step: str, answers: dict[str, Any]) -> None:
         return
 
     if step == "activity":
+        tool = str(answers["tool"])
+        activity_choices: list[str | Choice] = [
+            "download",
+            "deploy",
+            "compare",
+            "delete",
+        ]
+        if tool == "semantic-model":
+            activity_choices.extend(
+                [
+                    Choice("RLS: list roles", value=_RLS_LIST),
+                    Choice("RLS: add member", value=_RLS_MEMBER_ADD),
+                    Choice("RLS: remove member", value=_RLS_MEMBER_REMOVE),
+                ]
+            )
         answers["activity"] = _select(
             "Select activity",
-            choices=["download", "deploy", "compare", "delete"],
+            choices=activity_choices,
             default=answers.get("activity") or "download",
         )
         return
 
     if step == "run_mode":
         activity = str(answers["activity"])
-        mode = CommandMode(activity)
-        if mode is CommandMode.DELETE:
+        if _is_rls_activity(activity):
+            if activity == _RLS_LIST:
+                execute_label = "Execute (list RLS roles)"
+            elif activity == _RLS_MEMBER_ADD:
+                execute_label = "Execute (add RLS member)"
+            else:
+                execute_label = "Execute (remove RLS member)"
             run_choices = [
-                Choice("Execute (delete)", value="execute"),
+                Choice(execute_label, value="execute"),
                 Choice("Dry-run: validate remote targets only", value="dry_targets"),
             ]
         else:
-            run_choices = [
-                Choice(f"Execute ({activity})", value="execute"),
-                Choice("Dry-run: validate targets and sources", value="dry_both"),
-                Choice("Dry-run: validate remote targets only", value="dry_targets"),
-                Choice("Dry-run: validate local files only", value="dry_files"),
-            ]
+            mode = CommandMode(activity)
+            if mode is CommandMode.DELETE:
+                run_choices = [
+                    Choice("Execute (delete)", value="execute"),
+                    Choice(
+                        "Dry-run: validate remote targets only", value="dry_targets"
+                    ),
+                ]
+            else:
+                run_choices = [
+                    Choice(f"Execute ({activity})", value="execute"),
+                    Choice("Dry-run: validate targets and sources", value="dry_both"),
+                    Choice(
+                        "Dry-run: validate remote targets only", value="dry_targets"
+                    ),
+                    Choice("Dry-run: validate local files only", value="dry_files"),
+                ]
         answers["run_mode"] = _select(
             "How should this run?",
             choices=run_choices,
@@ -488,7 +549,10 @@ def _origin_label(tool: str) -> str:
 def _resolved_source_kind(answers: dict[str, Any]) -> str:
     if "source_kind" in answers:
         return str(answers["source_kind"])
-    mode = CommandMode(str(answers["activity"]))
+    activity = str(answers["activity"])
+    if _is_rls_activity(activity):
+        return "none"
+    mode = CommandMode(activity)
     run_mode = str(answers["run_mode"])
     if mode is CommandMode.DELETE or run_mode == "dry_targets":
         return "none"
@@ -497,7 +561,7 @@ def _resolved_source_kind(answers: dict[str, Any]) -> str:
 
 def _collect_inputs(answers: dict[str, Any]) -> None:
     tool = str(answers["tool"])
-    mode = CommandMode(str(answers["activity"]))
+    activity = str(answers["activity"])
     run_mode = str(answers["run_mode"])
     source_kind = _resolved_source_kind(answers)
     file_prompt = _file_prompt(tool)
@@ -507,15 +571,24 @@ def _collect_inputs(answers: dict[str, Any]) -> None:
     origins: list[str] = []
     names: list[str] = []
 
-    if mode is CommandMode.DELETE or run_mode == "dry_targets":
+    if _is_rls_activity(activity) or activity == "delete" or run_mode == "dry_targets":
+        target_mode = (
+            CommandMode.DELETE
+            if _is_rls_activity(activity) or activity == "delete"
+            else CommandMode(activity)
+        )
         while True:
-            target = _text(_target_prompt(mode, tool=tool), allow_empty=bool(targets))
+            target = _text(
+                _target_prompt(target_mode, tool=tool),
+                allow_empty=bool(targets),
+            )
             if not target:
                 break
             targets.append(target)
             if not _confirm("Add another target?", default=False):
                 break
-    elif mode is CommandMode.DOWNLOAD and run_mode != "dry_files":
+    elif activity == "download" and run_mode != "dry_files":
+        mode = CommandMode.DOWNLOAD
         typer.echo("\nEnter target(s). Local path defaults to remote name + extension.")
         while True:
             target = _text(_target_prompt(mode, tool=tool), allow_empty=bool(targets))
@@ -536,6 +609,7 @@ def _collect_inputs(answers: dict[str, Any]) -> None:
             if not _confirm("Add another file?", default=False):
                 break
     elif source_kind == "origin":
+        mode = CommandMode(activity)
         typer.echo("\nEnter origin/target pairs.")
         while True:
             origin = _text(
@@ -562,6 +636,7 @@ def _collect_inputs(answers: dict[str, Any]) -> None:
             if not _confirm("Add another origin/target pair?", default=False):
                 break
     else:
+        mode = CommandMode(activity)
         typer.echo("\nEnter file/target pairs.")
         while True:
             path = _text(
@@ -597,7 +672,6 @@ def _collect_inputs(answers: dict[str, Any]) -> None:
 def _collect_options(answers: dict[str, Any]) -> None:
     tool = str(answers["tool"])
     activity = str(answers["activity"])
-    mode = CommandMode(activity)
     run_mode = str(answers["run_mode"])
     dry_run = run_mode != "execute"
     targets: list[str] = list(answers.get("targets") or [])
@@ -607,6 +681,45 @@ def _collect_options(answers: dict[str, Any]) -> None:
 
     silent = False
     ignore_outputs = False
+    role_name: str | None = None
+    member_name: str | None = None
+
+    if _is_rls_activity(activity):
+        if activity in {_RLS_MEMBER_ADD, _RLS_MEMBER_REMOVE}:
+            role_name = _text("RLS role name", allow_empty=False)
+            member_name = _text(
+                "Member UPN or Entra group display name",
+                allow_empty=False,
+            )
+        if not dry_run:
+            silent = _confirm(
+                "Silent mode (skip confirmation prompts)?",
+                default=False,
+            )
+
+        typer.echo("\nSummary:")
+        typer.echo(f"  tool:     {tool}")
+        typer.echo(f"  activity: {_rls_activity_label(activity)}")
+        typer.echo(f"  dry-run:  {dry_run}")
+        typer.echo(f"  silent:   {silent}")
+        if targets:
+            typer.echo(f"  targets:  {', '.join(targets)}")
+        if role_name:
+            typer.echo(f"  role:     {role_name}")
+        if member_name:
+            typer.echo(f"  member:   {member_name}")
+
+        answers["silent"] = silent
+        answers["ignore_outputs"] = False
+        answers["independent"] = False
+        answers["include_schedules"] = False
+        answers["publish"] = False
+        answers["remap_values"] = None
+        answers["role_name"] = role_name
+        answers["member_name"] = member_name
+        return
+
+    mode = CommandMode(activity)
     if not dry_run and mode is not CommandMode.COMPARE:
         silent = _confirm("Silent mode (skip confirmation prompts)?", default=False)
     if tool == "notebook" and mode is CommandMode.COMPARE and not dry_run:
@@ -693,6 +806,16 @@ def _collect_options(answers: dict[str, Any]) -> None:
     answers["include_schedules"] = include_schedules
     answers["publish"] = publish
     answers["remap_values"] = remap_values
+    answers["role_name"] = None
+    answers["member_name"] = None
+
+
+def _rls_activity_label(activity: str) -> str:
+    return {
+        _RLS_LIST: "RLS: list roles",
+        _RLS_MEMBER_ADD: "RLS: add member",
+        _RLS_MEMBER_REMOVE: "RLS: remove member",
+    }.get(activity, activity)
 
 
 def _target_prompt(mode: CommandMode, *, tool: str) -> str:
@@ -733,7 +856,7 @@ def _escape_key_bindings() -> KeyBindings:
 def _select(
     message: str,
     *,
-    choices: list[str] | list[Choice],
+    choices: Sequence[str | Choice],
     default: str | None = None,
     instruction: str | None = None,
     allow_back: bool = True,

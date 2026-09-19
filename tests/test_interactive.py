@@ -745,3 +745,144 @@ def test_interactive_back_reprompts_previous_step(
     assert captured["mode"] is CommandMode.DOWNLOAD
     assert captured["kwargs"]["dry_run"] is False
     assert captured["kwargs"].get("file_values") is None
+
+
+def test_interactive_semantic_model_rls_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    selects = iter(
+        [
+            "semantic-model",
+            "role_list",
+            "execute",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+        ]
+    )
+    texts = iter(
+        [
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+
+    def fake_run(action: str, **kwargs: Any) -> None:
+        captured["action"] = action
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.sync.run_semantic_model_role_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["action"] == "list"
+    assert captured["kwargs"]["target_values"] == [
+        "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222"
+    ]
+    assert captured["kwargs"]["dry_run"] is False
+    assert captured["kwargs"]["role_name"] is None
+    assert captured["kwargs"]["member_name"] is None
+
+
+def test_interactive_semantic_model_rls_member_add(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selects = iter(
+        [
+            "semantic-model",
+            "role_member_add",
+            "dry_targets",
+            _yn(False),
+            _yn(True),
+        ]
+    )
+    texts = iter(
+        [
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+            "SalesReaders",
+            "user@contoso.com",
+        ]
+    )
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+
+    def fake_run(action: str, **kwargs: Any) -> None:
+        captured["action"] = action
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.sync.run_semantic_model_role_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["action"] == "member_add"
+    assert captured["kwargs"]["dry_run"] is True
+    assert captured["kwargs"]["role_name"] == "SalesReaders"
+    assert captured["kwargs"]["member_name"] == "user@contoso.com"
+    assert captured["kwargs"]["silent"] is False
+
+
+def test_interactive_semantic_model_rls_member_remove(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selects = iter(
+        [
+            "semantic-model",
+            "role_member_remove",
+            "execute",
+            _yn(False),
+            _yn(True),
+            _yn(True),
+        ]
+    )
+    texts = iter(
+        [
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+            "SalesReaders",
+            "user@contoso.com",
+        ]
+    )
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+
+    def fake_run(action: str, **kwargs: Any) -> None:
+        captured["action"] = action
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.sync.run_semantic_model_role_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["action"] == "member_remove"
+    assert captured["kwargs"]["dry_run"] is False
+    assert captured["kwargs"]["silent"] is True
+    assert captured["kwargs"]["role_name"] == "SalesReaders"
+    assert captured["kwargs"]["member_name"] == "user@contoso.com"
