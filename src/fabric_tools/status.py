@@ -129,6 +129,18 @@ def update(message: str) -> None:
         _message.set(message)
 
 
+def clear() -> None:
+    """Stop the active spinner so following stderr output is not mid-line.
+
+    Safe to call when no ``busy`` context is active. The outer ``busy``
+    ``finally`` still resets context tokens; calling ``stop`` twice is fine.
+    """
+    status = _active.get()
+    if status is None:
+        return
+    status.stop()
+
+
 def current_message() -> str | None:
     """Return the active status message, if any."""
     return _message.get()

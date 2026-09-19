@@ -207,6 +207,9 @@ def print_error_panel(message: str) -> None:
     from rich.console import Console
     from rich.panel import Panel
 
+    from fabric_tools.status import clear
+
+    clear()
     Console(stderr=True).print(
         Panel(
             str(message),
@@ -222,6 +225,9 @@ def print_warn_panel(message: str) -> None:
     from rich.console import Console
     from rich.panel import Panel
 
+    from fabric_tools.status import clear
+
+    clear()
     Console(stderr=True).print(
         Panel(
             str(message),
