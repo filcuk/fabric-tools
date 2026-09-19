@@ -12,7 +12,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 
 - `src/fabric_tools/` — package root
   - `cli/` — Typer surface only (`app.py`, `options.py`, `lifecycle.py`, `commands/<kind>.py`); entrypoint `fabric_tools.cli:run`
-  - `sync/` — orchestration API shared by CLI, interactive, and pack (`common.py`, `kinds/<kind>.py` with `run_*_command`; shared `KindSpec` orchestrator planned next)
+  - `sync/` — orchestration API shared by CLI, interactive, and pack (`common.py`, `orchestrator.py` with `KindSpec` / `run_sync_command`, `kinds/<kind>.py` facades exposing `run_*_command`)
   - `xmla_roles.py` — Windows PowerShell + SqlServer (PSGallery) client for semantic-model RLS role members (`xmla_role_members.ps1`)
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save); calls `fabric_tools.sync`
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (schema v3 packs: top-level `kind: "pack"`; per-entry `kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `environment` \| `variable-library` \| `org-app` \| `semantic-model` \| `report` \| `paginated-report`; optional pack/entry `remap` path refs)
