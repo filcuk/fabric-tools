@@ -1,15 +1,13 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Spike: list / add / remove semantic-model RLS role members via Power BI XMLA (TOM).
+  List / add / remove semantic-model RLS role members via Power BI XMLA (TOM).
 
 .DESCRIPTION
   Reads one JSON request from stdin (includes accessToken — never pass the token on argv).
   Requires the SqlServer module from the PowerShell Gallery (TOM assemblies).
-  Prefer calling via: fabric-tools debug xmla-roles …
-
-.NOTES
-  Capacity must allow XMLA read/write. Membership only (not DAX filter edits).
+  Emits stage lines on stderr: ##fabric-tools## stage=<name>
+  Final result JSON on stdout.
 #>
 [CmdletBinding()]
 param()
@@ -17,7 +15,20 @@ param()
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+$script:CurrentStage = 'starting'
+
+function Write-Stage([string]$Stage) {
+    $script:CurrentStage = $Stage
+    # stderr so Python can update the spinner without corrupting stdout JSON.
+    # Flush immediately — redirected stderr is often block-buffered.
+    [Console]::Error.WriteLine("##fabric-tools## stage=$Stage")
+    [Console]::Error.Flush()
+}
+
 function Write-Response([hashtable]$Body, [int]$ExitCode = 0) {
+    if (-not $Body.ContainsKey('stage')) {
+        $Body['stage'] = $script:CurrentStage
+    }
     $json = $Body | ConvertTo-Json -Compress -Depth 8
     [Console]::Out.Write($json)
     exit $ExitCode
@@ -29,6 +40,7 @@ function Write-Err([string]$Code, [string]$Message, [string]$Detail = $null) {
         changed = $false
         code    = $Code
         message = $Message
+        stage   = $script:CurrentStage
     }
     if ($Detail) { $body.detail = $Detail }
     Write-Response -Body $body -ExitCode 2
@@ -72,6 +84,12 @@ try {
     $workspace = [string]$req.workspaceName
     $database = [string]$req.databaseName
     $token = [string]$req.accessToken
+    $connectTimeout = 15
+    if ($null -ne $req.connectTimeoutSeconds) {
+        try { $connectTimeout = [int]$req.connectTimeoutSeconds } catch { $connectTimeout = 15 }
+    }
+    if ($connectTimeout -lt 5) { $connectTimeout = 5 }
+    if ($connectTimeout -gt 600) { $connectTimeout = 600 }
 
     if ([string]::IsNullOrWhiteSpace($action)) {
         Write-Err 'invalid_request' 'Missing action (list | member_add | member_remove).'
@@ -93,12 +111,42 @@ try {
         )
     }
 
-    Import-Module SqlServer -ErrorAction Stop
+    Write-Stage 'loading_module'
+    try {
+        Import-Module SqlServer -ErrorAction Stop
+    }
+    catch {
+        Write-Err 'module_load_failed' (
+            "Failed to Import-Module SqlServer: $($_.Exception.Message)"
+        ) $_.Exception.ToString()
+    }
 
-    # URL-encode each path segment of the workspace display name for the XMLA URI.
-    $encodedWs = ($workspace -split '/' | ForEach-Object { [uri]::EscapeDataString($_) }) -join '/'
-    $dataSource = "powerbi://api.powerbi.com/v1.0/myorg/$encodedWs"
-    $connectionString = "Data Source=$dataSource;Initial Catalog=$database"
+    # Prefer Python-built dataSource (personal workspace uses XMLA v2 URL).
+    $dataSource = [string]$req.dataSource
+    if ([string]::IsNullOrWhiteSpace($dataSource)) {
+        $encodedWs = ($workspace -split '/' | ForEach-Object { [uri]::EscapeDataString($_) }) -join '/'
+        $dataSource = "powerbi://api.powerbi.com/v1.0/myorg/$encodedWs"
+    }
+    $connectionString = (
+        "Data Source=$dataSource;Initial Catalog=$database;" +
+        "Connect Timeout=$connectTimeout"
+    )
+
+    Write-Stage 'connecting'
+    # AMO Connect often ignores Connect Timeout and can hang forever. An external
+    # killer process is more reliable than an in-process thread (native Connect
+    # can prevent Environment.Exit from running promptly).
+    $killerArgs = @(
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        ("Start-Sleep -Seconds {0}; Stop-Process -Id {1} -Force " +
+         '-ErrorAction SilentlyContinue') -f $connectTimeout, $PID
+    )
+    # Reuse the current host (pwsh.exe or powershell.exe) — $PSHOME differs per host.
+    $hostExe = (Get-Process -Id $PID).Path
+    $killer = Start-Process -FilePath $hostExe `
+        -ArgumentList $killerArgs -WindowStyle Hidden -PassThru
 
     $server = New-Object Microsoft.AnalysisServices.Tabular.Server
     try {
@@ -109,7 +157,8 @@ try {
         # Older SqlServer builds may lack AccessToken; fall back to password=token.
         $connectionString = (
             "Data Source=$dataSource;Initial Catalog=$database;" +
-            "User ID=;Password=$token;Persist Security Info=True;Impersonation Level=Impersonate"
+            "User ID=;Password=$token;Persist Security Info=True;" +
+            "Impersonation Level=Impersonate;Connect Timeout=$connectTimeout"
         )
     }
 
@@ -117,13 +166,28 @@ try {
         $server.Connect($connectionString)
     }
     catch {
-        Write-Err 'connect_failed' $_.Exception.Message $_.Exception.ToString()
+        if ($null -ne $killer -and -not $killer.HasExited) {
+            Stop-Process -Id $killer.Id -Force -ErrorAction SilentlyContinue
+        }
+        Write-Err 'connect_failed' (
+            "XMLA connect failed for '$dataSource' / model '$database' " +
+            "(stage=connecting). Confirm the workspace is on Premium/PPU/Fabric " +
+            "capacity with XMLA read/write (My workspace needs an assigned capacity). " +
+            $_.Exception.Message
+        ) $_.Exception.ToString()
+    }
+    if ($null -ne $killer -and -not $killer.HasExited) {
+        Stop-Process -Id $killer.Id -Force -ErrorAction SilentlyContinue
     }
 
     try {
+        Write-Stage 'loading_model'
         $db = $server.Databases.FindByName($database)
         if ($null -eq $db) {
-            Write-Err 'database_not_found' "Semantic model '$database' not found on XMLA endpoint."
+            Write-Err 'database_not_found' (
+                "Semantic model '$database' not found on XMLA endpoint " +
+                "for workspace '$workspace'."
+            )
         }
         $model = $db.Model
         if ($null -eq $model) {
@@ -132,6 +196,7 @@ try {
 
         switch ($action) {
             'list' {
+                Write-Stage 'listing_roles'
                 $roles = @()
                 foreach ($role in $model.Roles) {
                     $roles += Role-Snapshot $role
@@ -144,6 +209,7 @@ try {
                 }
             }
             'member_add' {
+                Write-Stage 'adding_member'
                 $roleName = [string]$req.roleName
                 $memberName = [string]$req.member.memberName
                 if ([string]::IsNullOrWhiteSpace($roleName)) {
@@ -154,7 +220,9 @@ try {
                 }
                 $role = $model.Roles.Find($roleName)
                 if ($null -eq $role) {
-                    Write-Err 'role_not_found' "Role '$roleName' not found on model '$database'."
+                    Write-Err 'role_not_found' (
+                        "Role '$roleName' not found on model '$database'."
+                    )
                 }
                 foreach ($existing in $role.Members) {
                     if ([string]::Equals($existing.MemberName, $memberName, [StringComparison]::OrdinalIgnoreCase)) {
@@ -178,7 +246,16 @@ try {
                     $member.MemberID = $memberId
                 }
                 [void]$role.Members.Add($member)
-                $model.SaveChanges()
+                Write-Stage 'saving'
+                try {
+                    $model.SaveChanges()
+                }
+                catch {
+                    Write-Err 'save_failed' (
+                        "SaveChanges failed while adding '$memberName' to role " +
+                        "'$roleName' on '$database': $($_.Exception.Message)"
+                    ) $_.Exception.ToString()
+                }
                 Write-Response @{
                     ok      = $true
                     changed = $true
@@ -187,6 +264,7 @@ try {
                 }
             }
             'member_remove' {
+                Write-Stage 'removing_member'
                 $roleName = [string]$req.roleName
                 $memberName = [string]$req.member.memberName
                 if ([string]::IsNullOrWhiteSpace($roleName)) {
@@ -197,7 +275,9 @@ try {
                 }
                 $role = $model.Roles.Find($roleName)
                 if ($null -eq $role) {
-                    Write-Err 'role_not_found' "Role '$roleName' not found on model '$database'."
+                    Write-Err 'role_not_found' (
+                        "Role '$roleName' not found on model '$database'."
+                    )
                 }
                 $toRemove = $null
                 foreach ($existing in $role.Members) {
@@ -215,7 +295,16 @@ try {
                     }
                 }
                 [void]$role.Members.Remove($toRemove)
-                $model.SaveChanges()
+                Write-Stage 'saving'
+                try {
+                    $model.SaveChanges()
+                }
+                catch {
+                    Write-Err 'save_failed' (
+                        "SaveChanges failed while removing '$memberName' from role " +
+                        "'$roleName' on '$database': $($_.Exception.Message)"
+                    ) $_.Exception.ToString()
+                }
                 Write-Response @{
                     ok      = $true
                     changed = $true

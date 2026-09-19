@@ -171,7 +171,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Compare: multi-part unified diff (relative paths; JSON/`.pbism`/`.bim` pretty-printed)
 - Delete: Fabric soft delete; service also removes dependent reports — confirm lists known consumers in the workspace (Power BI report list, best-effort); **no** `--independent` (cascade cannot be opted out)
 - Overwrite confirm lists other reports bound to the model (best-effort)
-- Role membership (`semantic-model role list|member add|member remove`): Windows-only; PowerShell + SqlServer (PSGallery) TOM over XMLA; `-t` / `workspaceId:*` / `-f`; membership only (not DAX filters); capacity needs XMLA read/write; `FABRIC_TOOLS_READONLY` blocks member add/remove execute (dry-run allowed); missing SqlServer → offer `Install-Module SqlServer -Scope CurrentUser` unless `-s`
+- Role membership (`semantic-model role list|member add|member remove`): Windows-only; PowerShell + SqlServer (PSGallery) TOM over XMLA; `-t` / `workspaceId:*` / `-f`; membership only (not DAX filters); capacity needs XMLA read/write; personal (My) workspace uses XMLA v2 URL from token claims and requires a non-null `capacityId` (preflight `xmla_capacity_required`); staged spinner (`connecting via XMLA` → `loading model` → mutate/save); hard connect watchdog + timeouts via `FABRIC_TOOLS_XMLA_TIMEOUT` (25s) / `FABRIC_TOOLS_XMLA_CONNECT_TIMEOUT` (15s); failures include stage; `FABRIC_TOOLS_READONLY` blocks member add/remove execute (dry-run allowed); SqlServer module checked once up front outside any spinner — missing → offer `Install-Module SqlServer -Scope CurrentUser` (fail fast with hint under `-s`); never prompt under a live spinner
 
 ### Reports (`report`)
 

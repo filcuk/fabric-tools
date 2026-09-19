@@ -59,7 +59,12 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     ),
     EnvVarSpec(
         "FABRIC_TOOLS_XMLA_TIMEOUT",
-        "XMLA role-operation timeout in seconds (default 120).",
+        "XMLA role-operation timeout in seconds (default 25).",
+        "value",
+    ),
+    EnvVarSpec(
+        "FABRIC_TOOLS_XMLA_CONNECT_TIMEOUT",
+        "XMLA connect timeout in seconds (default 15; capped by overall timeout).",
         "value",
     ),
     EnvVarSpec(

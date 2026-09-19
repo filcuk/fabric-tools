@@ -324,7 +324,18 @@ def test_announce_updates_when_status_is_authenticating(monkeypatch) -> None:
 
 def test_device_code_prompt_announces_code(monkeypatch) -> None:
     messages: list[str] = []
+    printed: list[str] = []
+
+    class FakeConsole:
+        def __init__(self, *a, **k) -> None:
+            pass
+
+        def print(self, msg: object, **_k: object) -> None:
+            printed.append(str(msg))
+
     monkeypatch.setattr(auth, "_announce", messages.append)
+    monkeypatch.setattr("rich.console.Console", FakeConsole)
     auth._device_code_prompt("https://microsoft.com/devicelogin", "ABCD1234", None)
-    assert "ABCD1234" in messages[0]
-    assert "https://microsoft.com/devicelogin" in messages[0]
+    assert messages == [auth.status_detail("auth", "authenticating", "device code")]
+    assert "ABCD1234" in printed[0]
+    assert "https://microsoft.com/devicelogin" in printed[0]

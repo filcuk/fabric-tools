@@ -24,7 +24,8 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Fabric in help | teal (`#8acfb3`) | Help highlighter `fabric` | The word **Fabric** in help prose (not `fabric-tools`) |
 | Root help — banner FABRIC | teal (`#8acfb3`) | Rich truecolor | ASCII art ``FABRIC`` in root `--help` |
 | Root help — banner - / TOOLS | `#1d8e7a` | Rich truecolor | ASCII art hyphen gap and ``TOOLS`` in root `--help` |
-| Primary text | default | no colour | Names, values, plain echoes, spinner messages, unified diffs |
+| Primary text | default | no colour | Names, values, plain echoes, spinner **text**, unified diffs |
+| Activity spinner glyph | green | Rich `"green"` | Dots in `status.busy` / Live spinner only |
 
 ### Error and warning panels
 
@@ -130,9 +131,15 @@ setup: checking for updates…
 
 Build lines with `status_detail(module, action, name=None)` (and `progress_message` for `n of m ·` prefixes). Do not put only a name after the module (e.g. `XMLA: Harvest…`); the action is required.
 
+The dots spinner glyph is **green**; the status text stays primary (default). Do not append long hints onto the spinner line (auth stays `auth: authenticating (Windows)…` — device-code URI/user code print as a separate stderr line).
+
 Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error/Warning panels so they are not printed mid-line.
 
-Stopping a spinner must not leave a blank line (Rich `Live.stop` calls `console.line()` by default — `fabric_tools.status` skips that so the next confirm or spinner stays tight under the previous output).
+Stopping a spinner must not leave a blank line and must not cursor-up into the previous prompt (use in-place erase, not Rich `restore_cursor`). Live must not redirect stdout/stderr, or `typer.confirm` and other prompts get swallowed into the spinner.
+
+**Never prompt under a live spinner.** Any `typer.confirm` / input must run outside `busy`, or call `status.clear()` first — otherwise the spinner refresh erases the prompt and the CLI appears to hang while waiting on stdin. Do interactive pre-checks (e.g. SqlServer install offer) before entering a spinner.
+
+XMLA role ops update the same spinner across stages (`connecting via XMLA` → `loading model` → `adding role member` / `saving model changes`, etc.) via stderr progress markers from `xmla_role_members.ps1`.
 
 ### Visual swatch
 

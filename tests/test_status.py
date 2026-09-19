@@ -128,6 +128,7 @@ def test_busy_handle_stop_skips_console_line() -> None:
     live.transient = True
     live._alt_screen = False
     live._live_render = MagicMock()
+    live._live_render.position_cursor.return_value = ""
     live._live_render.restore_cursor.return_value = ""
     live._disable_redirect_io = MagicMock()
 
@@ -137,6 +138,8 @@ def test_busy_handle_stop_skips_console_line() -> None:
     console.line.assert_not_called()
     console.show_cursor.assert_called_with(True)
     live._disable_redirect_io.assert_called_once()
+    live._live_render.position_cursor.assert_called_once()
+    live._live_render.restore_cursor.assert_not_called()
 
 
 def test_print_error_panel_clears_busy_spinner() -> None:

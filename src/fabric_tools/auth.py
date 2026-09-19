@@ -278,9 +278,14 @@ def _device_code_prompt(
     verification_uri: str, user_code: str, expires_on: object
 ) -> None:
     del expires_on
-    _announce(
-        f"{status_detail('auth', 'authenticating', 'device code')} open {verification_uri} and enter {user_code}"
+    # Stable line (not spinner text) so the code survives status updates.
+    from rich.console import Console
+
+    Console(stderr=True).print(
+        f"To sign in, open {verification_uri} and enter {user_code}",
+        highlight=False,
     )
+    _announce(status_detail("auth", "authenticating", "device code"))
 
 
 def _broker_credential(*, interactive: bool = True) -> TokenCredential | None:
@@ -359,8 +364,7 @@ def create_credential() -> TokenCredential:
                             label="Windows sign-in prompt",
                         )
                     ),
-                    f"{status_detail('auth', 'authenticating', 'Windows')} check the taskbar or another "
-                    "monitor if no dialog appears",
+                    status_detail("auth", "authenticating", "Windows"),
                 )
             )
 
@@ -372,7 +376,7 @@ def create_credential() -> TokenCredential:
                     InteractiveBrowserCredential(**user_kwargs)
                 )
             ),
-            f"{status_detail('auth', 'authenticating', 'browser')} a sign-in window should open",
+            status_detail("auth", "authenticating", "browser"),
         )
     )
     credentials.append(

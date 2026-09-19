@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
+from rich.text import Text
 
 _console = Console(stderr=True)
 _active: ContextVar[_BusyHandle | None] = ContextVar(
@@ -27,6 +28,9 @@ _GUID_RE = re.compile(
 # Prefix used while Azure auth is in progress (nested busy / update guard).
 AUTH_STATUS_PREFIX = "auth: authenticating"
 
+# Spinner glyph colour (text stays primary / default — see DESIGN.md).
+_SPINNER_STYLE = "green"
+
 
 @dataclass
 class _BusyHandle:
@@ -36,10 +40,16 @@ class _BusyHandle:
     spinner: Spinner
 
     def update(self, message: str) -> None:
-        self.spinner.update(text=message)
+        self.spinner.update(text=Text(message))
 
     def stop(self) -> None:
-        """End live rendering without Rich's trailing ``console.line()``."""
+        """End live rendering without Rich's trailing ``console.line()``.
+
+        Clears the spinner line in place via ``position_cursor`` (erase current
+        live lines). Do **not** use ``restore_cursor``: for a 1-line spinner it
+        cursor-ups into the previous line (confirm prompt / prior output) and
+        leaves a blank gap.
+        """
         live = self.live
         with live._lock:
             if not live._started:
@@ -49,13 +59,12 @@ class _BusyHandle:
             if live.auto_refresh and live._refresh_thread is not None:
                 live._refresh_thread.stop()
                 live._refresh_thread = None
-            # Rich Live.stop() calls console.line() here — that blank line is
-            # what jumps the next spinner / confirm prompt down. Skip it.
             live._disable_redirect_io()
             live.console.pop_render_hook()
             live.console.show_cursor(True)
             if live.transient and not live._alt_screen:
-                live.console.control(live._live_render.restore_cursor())
+                # Erase the spinner line(s) only — stay on that row.
+                live.console.control(live._live_render.position_cursor())
 
 
 def short_guid(value: str, *, length: int = 8) -> str:
@@ -117,6 +126,9 @@ def busy(message: str) -> Iterator[None]:
     Stopping does **not** advance the cursor (unlike Rich ``Status`` /
     ``Live.stop``), so the next prompt or spinner is not pushed down a blank
     line after confirms.
+
+    Live must not redirect stdout/stderr — otherwise ``typer.confirm`` and auth
+    hints are swallowed into the spinner and overwrite the prompt.
     """
     parent = _active.get()
     if parent is not None:
@@ -140,12 +152,14 @@ def busy(message: str) -> Iterator[None]:
             _message.reset(token_msg)
         return
 
-    spinner = Spinner("dots", text=message)
+    spinner = Spinner("dots", text=Text(message), style=_SPINNER_STYLE)
     live = Live(
         spinner,
         console=_console,
         refresh_per_second=12.5,
         transient=True,
+        redirect_stdout=False,
+        redirect_stderr=False,
     )
     handle = _BusyHandle(live=live, spinner=spinner)
     live.start()

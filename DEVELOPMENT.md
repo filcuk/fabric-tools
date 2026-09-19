@@ -94,7 +94,11 @@ Product commands: `fabric-tools semantic-model role list|member add|member remov
 
 **Backend:** Windows `pwsh` (preferred) or Windows PowerShell 5.1 + **SqlServer** module from PSGallery (Analysis Services / TOM). Not a bundled native helper. REST dataset permissions are not RLS role members.
 
-**Script:** shipped as `fabric_tools/xmla_role_members.ps1` (also [`scripts/xmla_role_members.ps1`](scripts/xmla_role_members.ps1) in the repo). Override with `FABRIC_TOOLS_XMLA_SCRIPT`. Token on stdin JSON only. Default operation timeout is 120s (`FABRIC_TOOLS_XMLA_TIMEOUT`).
+**Module check:** the CLI runs `ensure_sqlserver_module` **once, up front** (before auth/confirm, outside any spinner). If SqlServer is missing it prompts `Install from PSGallery for CurrentUser now?` (or fails immediately with the install hint under `-s`). Never prompt under a live spinner — the prompt is erased on the next refresh and looks like a hang. The install itself runs under its own spinner with a long timeout (it can take minutes). Note `find_powershell` prefers `pwsh` — the module must be installed for the host that is actually used.
+
+**Script:** shipped as `fabric_tools/xmla_role_members.ps1` (also [`scripts/xmla_role_members.ps1`](scripts/xmla_role_members.ps1) in the repo). Override with `FABRIC_TOOLS_XMLA_SCRIPT`. Token on stdin JSON only. Connect timeout defaults to 15s (`FABRIC_TOOLS_XMLA_CONNECT_TIMEOUT`); the Python runner kills the PowerShell process tree after connect+5s (≤ overall `FABRIC_TOOLS_XMLA_TIMEOUT`, default 25s) because AMO often ignores `Connect Timeout`. An external `Stop-Process` killer backs that up inside the script. Stage markers on stderr drive the spinner; failures include the stage and data-source URL.
+
+**Personal workspace (My workspace):** XMLA requires the v2 URL `powerbi://api.powerbi.com/v2.0/{tenantId}/home/myworkspace/{UPN|oid}` (not `v1.0/myorg/My workspace`, which hangs in client libraries). fabric-tools builds this from workspace `type: Personal` / display name and the signed-in token claims (object id preferred). **The workspace must also have a `capacityId`** (Premium / PPU / Fabric with XMLA read/write). fabric-tools checks `capacityId` up front — a personal workspace with no capacity fails immediately with `xmla_capacity_required` instead of AMO's opaque `Authentication failed for all authenticators`. Role existence is only checked after a successful connect.
 
 ```powershell
 py -3 -m fabric_tools semantic-model role --help

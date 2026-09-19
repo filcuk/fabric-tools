@@ -477,8 +477,8 @@ xmla_roles_app = typer.Typer(
 debug_app.add_typer(xmla_roles_app, name="xmla-roles")
 
 
-def _debug_resolve_model_names(target: str) -> tuple[str, str, str]:
-    """Return (workspace_display_name, model_display_name, access_token)."""
+def _debug_resolve_model_names(target: str) -> tuple[str, str, str, str | None]:
+    """Return (workspace_display_name, model_display_name, access_token, workspace_type)."""
     from fabric_tools.auth import POWER_BI_SCOPE, create_credential, get_access_token
     from fabric_tools.client import FabricApiError, FabricClient
     from fabric_tools.inspect_cmd import InspectError, parse_item_get_target
@@ -510,11 +510,19 @@ def _debug_resolve_model_names(target: str) -> tuple[str, str, str]:
         _exit_error("Semantic model has no displayName for XMLA database name.")
     item_type = item.get("type")
     if item_type and item_type != "SemanticModel":
-        _exit_error(
-            f"Target type is {item_type!r}; expected SemanticModel.",
-            code=EXIT_USER,
-        )
-    return ws_name.strip(), model_name.strip(), token
+        _exit_error(f"Target type is {item_type!r}; expected SemanticModel.")
+    ws_type = workspace.get("type")
+    ws_type_str = ws_type if isinstance(ws_type, str) else None
+    from fabric_tools.xmla_roles import (
+        XmlaRolesError,
+        ensure_workspace_supports_xmla,
+    )
+
+    try:
+        ensure_workspace_supports_xmla(workspace)
+    except XmlaRolesError as exc:
+        _exit_error(str(exc), code=EXIT_API)
+    return ws_name.strip(), model_name.strip(), token, ws_type_str
 
 
 def _debug_xmla_invoke(
@@ -526,11 +534,31 @@ def _debug_xmla_invoke(
     silent: bool = False,
 ) -> None:
     from fabric_tools.status import busy, status_detail
-    from fabric_tools.xmla_roles import XmlaRolesError, invoke_xmla_roles
+    from fabric_tools.status import update as status_update
+    from fabric_tools.xmla_roles import (
+        XmlaRolesError,
+        ensure_sqlserver_module,
+        invoke_xmla_roles,
+        stage_action,
+    )
 
     try:
-        workspace_name, database_name, token = _debug_resolve_model_names(target)
+        # Module check first, outside any spinner, so the install prompt is visible.
+        ensure_sqlserver_module(offer_install=not silent, silent=silent)
+        workspace_name, database_name, token, ws_type = _debug_resolve_model_names(
+            target
+        )
         with busy(status_detail("semantic-model", "running role operation")):
+
+            def _on_progress(stage: str) -> None:
+                status_update(
+                    status_detail(
+                        "semantic-model",
+                        stage_action(stage),
+                        database_name,
+                    )
+                )
+
             result = invoke_xmla_roles(
                 action=action,  # type: ignore[arg-type]
                 workspace_name=workspace_name,
@@ -538,13 +566,17 @@ def _debug_xmla_invoke(
                 access_token=token,
                 role_name=role,
                 member_name=member,
-                offer_install=not silent,
+                workspace_type=ws_type,
+                offer_install=False,
                 silent=silent,
+                on_progress=_on_progress,
+                check_module=False,
             )
     except XmlaRolesError as exc:
+        stage = f" (stage={exc.stage})" if exc.stage else ""
         detail = f"\n{exc.detail}" if exc.detail else ""
         code = f" [{exc.code}]" if exc.code else ""
-        _exit_error(f"{exc}{code}{detail}", code=EXIT_API)
+        _exit_error(f"{exc}{stage}{code}{detail}", code=EXIT_API)
     except typer.Exit:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -5801,7 +5833,9 @@ def run_semantic_model_role_command(
     from fabric_tools.xmla_roles import (
         XmlaRolesError,
         XmlaRolesResult,
+        ensure_sqlserver_module,
         invoke_xmla_roles,
+        stage_action,
     )
 
     if action in {"member_add", "member_remove"}:
@@ -5814,6 +5848,15 @@ def run_semantic_model_role_command(
 
     if sys.platform != "win32":
         _exit_error("semantic-model role commands require Windows PowerShell.")
+
+    # Check the SqlServer module once, before auth/confirm and outside any spinner,
+    # so the Install-Module prompt is visible (a prompt under a live spinner is
+    # erased and looks like a hang).
+    if not dry_run:
+        try:
+            ensure_sqlserver_module(offer_install=not silent, silent=silent)
+        except XmlaRolesError as exc:
+            _exit_error(str(exc), code=EXIT_API)
 
     expand_client: FabricClient | None = None
     try:
@@ -5871,7 +5914,8 @@ def run_semantic_model_role_command(
 
     try:
         confirm_rows: list[tuple[str, str, str, str, str]] = []
-        resolved: list[tuple[str, str, str, str]] = []
+        # (workspace_name, model_name, model_id, ws_label, workspace_type)
+        resolved: list[tuple[str, str, str, str, str | None]] = []
         with busy(status_detail("semantic-model", "resolving models")):
             for item in items:
                 assert item.target is not None and item.target.item_id is not None
@@ -5902,12 +5946,21 @@ def run_semantic_model_role_command(
                     )
                 ws_label = resolve_workspace_name(client, item.target.workspace_id)
                 model_label = semantic_model_display_name(client, item.target)
+                ws_type = workspace.get("type")
+                ws_type_str = ws_type if isinstance(ws_type, str) else None
+                try:
+                    from fabric_tools.xmla_roles import ensure_workspace_supports_xmla
+
+                    ensure_workspace_supports_xmla(workspace)
+                except XmlaRolesError as exc:
+                    _exit_error(str(exc), code=EXIT_API)
                 resolved.append(
                     (
                         ws_name.strip(),
                         model_name.strip(),
                         item.target.item_id,
                         ws_label,
+                        ws_type_str,
                     )
                 )
                 if action in {"member_add", "member_remove"}:
@@ -5923,7 +5976,7 @@ def run_semantic_model_role_command(
                     )
 
         if dry_run:
-            for _ws_name, model_name, model_id, ws_label in resolved:
+            for _ws_name, model_name, model_id, ws_label, _ws_type in resolved:
                 if action == "list":
                     typer.secho(
                         f"[dry-run] would list roles on semantic model "
@@ -5961,22 +6014,24 @@ def run_semantic_model_role_command(
                 outcomes: list[
                     tuple[str, str, str, XmlaRolesResult | XmlaRolesError]
                 ] = []
-                for ws_name, model_name, model_id, ws_label in resolved:
+                for ws_name, model_name, model_id, ws_label, ws_type in resolved:
                     status_update(
                         status_detail(
                             "semantic-model",
-                            (
-                                "listing roles"
-                                if action == "list"
-                                else (
-                                    "adding role member"
-                                    if action == "member_add"
-                                    else "removing role member"
-                                )
-                            ),
+                            "connecting via XMLA",
                             model_name,
                         )
                     )
+
+                    def _on_progress(stage: str, *, _name: str = model_name) -> None:
+                        status_update(
+                            status_detail(
+                                "semantic-model",
+                                stage_action(stage),
+                                _name,
+                            )
+                        )
+
                     try:
                         result = invoke_xmla_roles(
                             action=action,  # type: ignore[arg-type]
@@ -5985,8 +6040,11 @@ def run_semantic_model_role_command(
                             access_token=token,
                             role_name=role_name,
                             member_name=member_name,
-                            offer_install=not silent,
+                            workspace_type=ws_type,
+                            offer_install=False,
                             silent=silent,
+                            on_progress=_on_progress,
+                            check_module=False,
                         )
                         outcomes.append((model_name, model_id, ws_label, result))
                     except XmlaRolesError as exc:
@@ -5996,9 +6054,10 @@ def run_semantic_model_role_command(
         except XmlaRolesError as exc:
             if exc.code == "cancelled":
                 _exit_warn(str(exc) or "Cancelled.")
+            stage = f" (stage={exc.stage})" if exc.stage else ""
             detail = f"\n{exc.detail}" if exc.detail else ""
             code = f" [{exc.code}]" if exc.code else ""
-            _exit_error(f"{exc}{code}{detail}", code=EXIT_API)
+            _exit_error(f"{exc}{stage}{code}{detail}", code=EXIT_API)
         except KeyboardInterrupt:
             _exit_warn("Cancelled.")
 
@@ -6007,12 +6066,13 @@ def run_semantic_model_role_command(
             if isinstance(outcome, XmlaRolesError):
                 if outcome.code == "cancelled":
                     _exit_warn(str(outcome) or "Cancelled.")
+                stage = f" (stage={outcome.stage})" if outcome.stage else ""
                 detail = f"\n{outcome.detail}" if outcome.detail else ""
                 code = f" [{outcome.code}]" if outcome.code else ""
                 print_error_panel(
                     (
                         f"{model_name} ({model_id}) in {ws_label}: "
-                        f"{outcome}{code}{detail}"
+                        f"{outcome}{stage}{code}{detail}"
                     ).strip()
                     or "XMLA role operation failed."
                 )
