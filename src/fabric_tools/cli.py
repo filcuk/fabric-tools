@@ -50,7 +50,6 @@ from fabric_tools.manifest import (
     resolve_manifest_path,
     save_manifest,
     semantic_model_id_overrides_from_results,
-    semantic_model_ids_from_manifest,
     work_items_from_manifest,
 )
 from fabric_tools.parsing import (
@@ -58,9 +57,7 @@ from fabric_tools.parsing import (
     ParseError,
     WorkItem,
     build_work_items,
-    parse_file_values,
-    parse_origin_values,
-    parse_target_values,
+    build_work_items_from_cli,
     rejoin_spaced_csv_argv,
 )
 from fabric_tools.readonly import (
@@ -75,7 +72,7 @@ if TYPE_CHECKING:
 
 _MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
-    "Alone: load targets/files/origins. With a successful run or dry-run: write/update the manifest."
+    "Alone: load targets/origins (and local paths). With a successful run or dry-run: write/update the manifest."
 )
 _GUID_REMAP_HELP = (
     "(optional, deploy only) JSON file remapping source GUID → target GUID. "
@@ -324,7 +321,7 @@ app.add_typer(report_app, name="report", rich_help_panel="Fabric")
 
 paginated_report_app = typer.Typer(
     name="paginated-report",
-    help="Power BI paginated reports (.rdl).",
+    help="Power BI paginated reports.",
     no_args_is_help=True,
     context_settings=_HELP_CONTEXT,
 )
@@ -829,7 +826,7 @@ def pack_delete(
 
 @inspect_workspace_app.command(
     "list",
-    short_help="[-f <FILTER>] [-i <TYPE>]  List accessible Fabric workspaces.",
+    short_help="[-f <FILTER>] [-a <TYPE>]  List accessible Fabric workspaces.",
 )
 def inspect_workspace_list(
     name_filter: str | None = typer.Option(
@@ -840,8 +837,8 @@ def inspect_workspace_list(
     ),
     item_type: str | None = typer.Option(
         None,
-        "--item",
-        "-i",
+        "--artifact",
+        "-a",
         help="Workspace type filter (Personal, Workspace, AdminWorkspace).",
     ),
 ) -> None:
@@ -914,7 +911,7 @@ def inspect_workspace_get(
 
 @inspect_item_app.command(
     "list",
-    short_help="-t <workspaceId> [-f <FILTER>] [-i <TYPE>]  List items in a workspace.",
+    short_help="-t <workspaceId> [-f <FILTER>] [-a <TYPE>]  List items in a workspace.",
 )
 def inspect_item_list(
     target: str = typer.Option(
@@ -931,8 +928,8 @@ def inspect_item_list(
     ),
     item_type: str | None = typer.Option(
         None,
-        "--item",
-        "-i",
+        "--artifact",
+        "-a",
         help="Fabric item type filter (Notebook, Dataflow, Report, …).",
     ),
 ) -> None:
@@ -1468,21 +1465,21 @@ def setup_update(
 
 @notebook_app.command("download")
 def notebook_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local .ipynb or *.Notebook folder. "
-        "Defaults to remote display name with .ipynb in the current folder. "
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One file may broadcast to all targets.",
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -1507,7 +1504,7 @@ def notebook_download(
     run_notebook_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -1524,21 +1521,13 @@ def notebook_deploy(
         "workspace:artifact (overwrite). Repeatable or comma-separated "
         "(spaces after commas OK).",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local .ipynb or *.Notebook folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One file may broadcast to all targets. Mutually exclusive with --origin.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact source. "
+        help="(required without -m or -d) Local path or remote workspace:artifact source. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+        "One origin may broadcast to all targets.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -1553,7 +1542,7 @@ def notebook_deploy(
         "-c",
         help="(optional, overwrite .ipynb only) 1-based cell indices to replace "
         "(e.g. 1,3,5 or 1, 3, 5). Single notebook only; whole cells including outputs. "
-        "Not valid with --origin.",
+        "Requires a local --origin .ipynb (not a remote origin).",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -1584,7 +1573,6 @@ def notebook_deploy(
     run_notebook_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
@@ -1603,23 +1591,13 @@ def notebook_compare(
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "With --file: one workspace only. Must 1:1 match --file or --origin.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local .ipynb or *.Notebook folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+        "With a local --origin path: one workspace only. Must 1:1 match --origin.",
     ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact to compare against "
-        "--target. Must 1:1 match --target (no broadcast). "
-        "Mutually exclusive with --file.",
+        help="(required without -m or -d) Local path or remote workspace:artifact to compare against --target. Must 1:1 match --target (no broadcast).",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -1644,7 +1622,6 @@ def notebook_compare(
     run_notebook_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -1686,7 +1663,6 @@ def notebook_delete(
     run_notebook_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -1695,21 +1671,21 @@ def notebook_delete(
 
 @dataflow_app.command("download")
 def dataflow_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local *.Dataflow folder. "
-        "Defaults to remote display name with .Dataflow in the current folder. "
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One folder may broadcast to all targets.",
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -1734,7 +1710,7 @@ def dataflow_download(
     run_dataflow_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -1751,21 +1727,13 @@ def dataflow_deploy(
         "workspace:artifact (overwrite). Repeatable or comma-separated "
         "(spaces after commas OK).",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.Dataflow folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One folder may broadcast to all targets. Mutually exclusive with --origin.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact source. "
+        help="(required without -m or -d) Local path or remote workspace:artifact source. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+        "One origin may broadcast to all targets.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -1810,7 +1778,6 @@ def dataflow_deploy(
     run_dataflow_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
@@ -1829,23 +1796,13 @@ def dataflow_compare(
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "With --file: one workspace only. Must 1:1 match --file or --origin.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.Dataflow folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+        "With a local --origin path: one workspace only. Must 1:1 match --origin.",
     ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact to compare against "
-        "--target. Must 1:1 match --target (no broadcast). "
-        "Mutually exclusive with --file.",
+        help="(required without -m or -d) Local path or remote workspace:artifact to compare against --target. Must 1:1 match --target (no broadcast).",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -1864,7 +1821,6 @@ def dataflow_compare(
     run_dataflow_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -1905,7 +1861,6 @@ def dataflow_delete(
     run_dataflow_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -1914,21 +1869,21 @@ def dataflow_delete(
 
 @org_app_app.command("download")
 def org_app_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local *.OrgApp folder. "
-        "Defaults to remote display name with .OrgApp in the current folder. "
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One folder may broadcast to all targets.",
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -1953,7 +1908,7 @@ def org_app_download(
     run_org_app_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -1970,21 +1925,13 @@ def org_app_deploy(
         "workspace:artifact (overwrite). Repeatable or comma-separated "
         "(spaces after commas OK).",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.OrgApp folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One folder may broadcast to all targets. Mutually exclusive with --origin.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact source. "
+        help="(required without -m or -d) Local path or remote workspace:artifact source. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+        "One origin may broadcast to all targets.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -2016,7 +1963,6 @@ def org_app_deploy(
     run_org_app_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
@@ -2033,23 +1979,13 @@ def org_app_compare(
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "With --file: one workspace only. Must 1:1 match --file or --origin.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.OrgApp folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+        "With a local --origin path: one workspace only. Must 1:1 match --origin.",
     ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact to compare against "
-        "--target. Must 1:1 match --target (no broadcast). "
-        "Mutually exclusive with --file.",
+        help="(required without -m or -d) Local path or remote workspace:artifact to compare against --target. Must 1:1 match --target (no broadcast).",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -2068,7 +2004,6 @@ def org_app_compare(
     run_org_app_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -2109,7 +2044,6 @@ def org_app_delete(
     run_org_app_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2118,20 +2052,21 @@ def org_app_delete(
 
 @variable_library_app.command("download")
 def variable_library_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated. One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local *.VariableLibrary folder. Defaults to remote "
-        "display name with .VariableLibrary in the current folder. Repeatable "
-        "or comma-separated; one folder may broadcast to all targets.",
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
     silent: bool = typer.Option(
@@ -2148,7 +2083,7 @@ def variable_library_download(
     run_variable_library_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2164,21 +2099,12 @@ def variable_library_deploy(
         help="(required without -m or -d) workspace GUID (create) or "
         "workspace:artifact (overwrite). Repeatable or comma-separated.",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.VariableLibrary folder. "
-        "Repeatable or comma-separated; one folder may broadcast to all targets. "
-        "Mutually exclusive with --origin.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact source. "
-        "Repeatable or comma-separated; one origin may broadcast to all targets. "
-        "Mutually exclusive with --file.",
+        help="(required without -m or -d) Local path or remote workspace:artifact source. "
+        "Repeatable or comma-separated; one origin may broadcast to all targets.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -2202,7 +2128,6 @@ def variable_library_deploy(
     run_variable_library_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
@@ -2218,21 +2143,13 @@ def variable_library_compare(
         "--target",
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
-        "Must 1:1 match --file or --origin.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.VariableLibrary folder. "
-        "Must 1:1 match --target. Mutually exclusive with --origin.",
+        "Must 1:1 match --origin.",
     ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact source. "
-        "Must 1:1 match --target. Mutually exclusive with --file.",
+        help="(required without -m or -d) Local path or remote workspace:artifact source. Must 1:1 match --target.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
     dry_run: bool = typer.Option(
@@ -2246,7 +2163,6 @@ def variable_library_compare(
     run_variable_library_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -2284,7 +2200,6 @@ def variable_library_delete(
     run_variable_library_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2293,20 +2208,21 @@ def variable_library_delete(
 
 @environment_app.command("download")
 def environment_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local *.Environment folder. Defaults to remote display "
-        "name with .Environment in the current folder. Repeatable or "
-        "comma-separated; one folder may broadcast to all targets.",
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
     silent: bool = typer.Option(
@@ -2323,7 +2239,7 @@ def environment_download(
     run_environment_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2339,19 +2255,11 @@ def environment_deploy(
         help="(required without -m or -d) workspace GUID (create) or "
         "workspace:artifact (overwrite). Repeatable or comma-separated.",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.Environment folder. "
-        "Repeatable or comma-separated; one folder may broadcast to all targets. "
-        "Mutually exclusive with --origin.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact source. "
+        help="(required without -m or -d) Fabric workspace:artifact source. "
         "Repeatable or comma-separated; one origin may broadcast to all targets.",
     ),
     name: list[str] | None = typer.Option(
@@ -2376,7 +2284,6 @@ def environment_deploy(
     run_environment_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
@@ -2392,20 +2299,13 @@ def environment_compare(
         "--target",
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
-        "Must 1:1 match --file or --origin.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.Environment folder. "
-        "Must 1:1 match --target. Mutually exclusive with --origin.",
+        "Must 1:1 match --origin.",
     ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact to compare "
+        help="(required without -m or -d) Fabric workspace:artifact to compare "
         "against --target. Must 1:1 match --target.",
     ),
     manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
@@ -2420,7 +2320,6 @@ def environment_compare(
     run_environment_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -2458,7 +2357,6 @@ def environment_delete(
     run_environment_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2467,21 +2365,21 @@ def environment_delete(
 
 @semantic_model_app.command("download")
 def semantic_model_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local *.SemanticModel folder. "
-        "Defaults to remote name with .SemanticModel in the current folder. "
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One folder may broadcast to all targets.",
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -2506,7 +2404,7 @@ def semantic_model_download(
     run_semantic_model_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2522,18 +2420,11 @@ def semantic_model_deploy(
         help="(required without -m or -d) workspace GUID (create) or "
         "workspace:artifact (overwrite). Repeatable or comma-separated.",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.SemanticModel folder. "
-        "Repeatable or comma-separated. One folder may broadcast to all targets.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(optional) Remote workspace:artifact source (mutually exclusive with --file).",
+        help="(required without -m or -d) Local path or remote workspace:artifact source.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -2573,7 +2464,6 @@ def semantic_model_deploy(
     run_semantic_model_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         names=name,
         silent=silent,
@@ -2592,18 +2482,11 @@ def semantic_model_compare(
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.SemanticModel folder. "
-        "Repeatable or comma-separated (1:1 with targets).",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(optional) Remote workspace:artifact source (mutually exclusive with --file).",
+        help="(required without -m or -d) Local path or remote workspace:artifact source.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -2622,7 +2505,6 @@ def semantic_model_compare(
     run_semantic_model_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -2662,7 +2544,6 @@ def semantic_model_delete(
     run_semantic_model_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2671,20 +2552,21 @@ def semantic_model_delete(
 
 @report_app.command("download")
 def report_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local *.Report folder or .pbix path. "
-        "Defaults to remote name with .Report in the current folder. "
-        "Repeatable or comma-separated. One path may broadcast to all targets.",
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -2716,7 +2598,7 @@ def report_download(
     run_report_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2733,18 +2615,11 @@ def report_deploy(
         help="(required without -m or -d) workspace GUID (create) or "
         "workspace:artifact (overwrite). Repeatable or comma-separated.",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.Report folder or .pbix. "
-        "Repeatable or comma-separated. One path may broadcast to all targets.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(optional) Remote workspace:artifact source (mutually exclusive with --file).",
+        help="(required without -m or -d) Local path or remote workspace:artifact source.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -2783,7 +2658,6 @@ def report_deploy(
     run_report_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         names=name,
         silent=silent,
@@ -2802,18 +2676,11 @@ def report_compare(
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.Report folder. "
-        "Repeatable or comma-separated (1:1 with targets). .pbix is not supported.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(optional) Remote workspace:artifact source (mutually exclusive with --file).",
+        help="(required without -m or -d) Local path or remote workspace:artifact source.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -2838,7 +2705,6 @@ def report_compare(
     run_report_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -2879,7 +2745,6 @@ def report_delete(
     run_report_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2888,21 +2753,21 @@ def report_delete(
 
 @dataflow_gen1_app.command("download")
 def dataflow_gen1_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local model.json path. "
-        "Defaults to remote name with .json in the current folder. "
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One file may broadcast to all targets.",
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -2927,7 +2792,7 @@ def dataflow_gen1_download(
     run_dataflow_gen1_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -2944,21 +2809,13 @@ def dataflow_gen1_deploy(
         "Repeatable or comma-separated (spaces after commas OK). "
         "Overwrite (workspace:artifact) is not supported.",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local model.json path. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One file may broadcast to all targets. Mutually exclusive with --origin.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Power BI workspace:artifact source. "
+        help="(required without -m or -d) Local path or remote workspace:artifact source. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+        "One origin may broadcast to all targets.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -2990,7 +2847,6 @@ def dataflow_gen1_deploy(
     run_dataflow_gen1_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
@@ -3007,23 +2863,13 @@ def dataflow_gen1_compare(
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "With --file: one workspace only. Must 1:1 match --file or --origin.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local model.json path. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+        "With a local --origin path: one workspace only. Must 1:1 match --origin.",
     ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Power BI workspace:artifact to compare against "
-        "--target. Must 1:1 match --target (no broadcast). "
-        "Mutually exclusive with --file.",
+        help="(required without -m or -d) Local path or remote workspace:artifact to compare against --target. Must 1:1 match --target (no broadcast).",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -3042,7 +2888,6 @@ def dataflow_gen1_compare(
     run_dataflow_gen1_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -3083,7 +2928,6 @@ def dataflow_gen1_delete(
     run_dataflow_gen1_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -3092,21 +2936,21 @@ def dataflow_gen1_delete(
 
 @paginated_report_app.command("download")
 def paginated_report_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local .rdl path. "
-        "Defaults to remote name with .rdl in the current folder. "
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One file may broadcast to all targets.",
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -3131,7 +2975,7 @@ def paginated_report_download(
     run_paginated_report_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -3148,21 +2992,13 @@ def paginated_report_deploy(
         "workspace:artifact (overwrite). "
         "Repeatable or comma-separated (spaces after commas OK).",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local .rdl path. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One file may broadcast to all targets. Mutually exclusive with --origin.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Power BI workspace:artifact source. "
+        help="(required without -m or -d) Local path or remote workspace:artifact source. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+        "One origin may broadcast to all targets.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -3194,7 +3030,6 @@ def paginated_report_deploy(
     run_paginated_report_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
@@ -3211,23 +3046,13 @@ def paginated_report_compare(
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "With --file: one workspace only. Must 1:1 match --file or --origin.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local .rdl path. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+        "With a local --origin path: one workspace only. Must 1:1 match --origin.",
     ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Power BI workspace:artifact to compare against "
-        "--target. Must 1:1 match --target (no broadcast). "
-        "Mutually exclusive with --file.",
+        help="(required without -m or -d) Local path or remote workspace:artifact to compare against --target. Must 1:1 match --target (no broadcast).",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -3246,7 +3071,6 @@ def paginated_report_compare(
     run_paginated_report_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -3287,7 +3111,6 @@ def paginated_report_delete(
     run_paginated_report_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -3296,21 +3119,21 @@ def paginated_report_delete(
 
 @pipeline_app.command("download")
 def pipeline_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local *.DataPipeline folder. "
-        "Defaults to remote display name with .DataPipeline in the current folder. "
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One folder may broadcast to all targets.",
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -3342,7 +3165,7 @@ def pipeline_download(
     run_pipeline_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -3360,21 +3183,13 @@ def pipeline_deploy(
         "workspace:artifact (overwrite). Repeatable or comma-separated "
         "(spaces after commas OK).",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.DataPipeline folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One folder may broadcast to all targets. Mutually exclusive with --origin.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact source. "
+        help="(required without -m or -d) Local path or remote workspace:artifact source. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+        "One origin may broadcast to all targets.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -3420,7 +3235,6 @@ def pipeline_deploy(
     run_pipeline_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
@@ -3439,23 +3253,13 @@ def pipeline_compare(
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "With --file: one workspace only. Must 1:1 match --file or --origin.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.DataPipeline folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+        "With a local --origin path: one workspace only. Must 1:1 match --origin.",
     ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact to compare against "
-        "--target. Must 1:1 match --target (no broadcast). "
-        "Mutually exclusive with --file.",
+        help="(required without -m or -d) Local path or remote workspace:artifact to compare against --target. Must 1:1 match --target (no broadcast).",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -3481,7 +3285,6 @@ def pipeline_compare(
     run_pipeline_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -3523,7 +3326,6 @@ def pipeline_delete(
     run_pipeline_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -3532,21 +3334,21 @@ def pipeline_delete(
 
 @udf_app.command("download")
 def udf_download(
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(required without -m or -d) Remote workspace:artifact to download. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
     target: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(optional) Local *.UserDataFunction folder. "
-        "Defaults to remote display name with .UserDataFunction in the current folder. "
+        help="(optional) Local destination path. "
+        "Defaults to remote display name with the kind extension in the current folder. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One folder may broadcast to all targets.",
+        "One path may broadcast to all origins.",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -3571,7 +3373,7 @@ def udf_download(
     run_udf_command(
         CommandMode.DOWNLOAD,
         target_values=target,
-        file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -3588,21 +3390,13 @@ def udf_deploy(
         "workspace:artifact (overwrite). Repeatable or comma-separated "
         "(spaces after commas OK).",
     ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.UserDataFunction folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One folder may broadcast to all targets. Mutually exclusive with --origin.",
-    ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact source. "
+        help="(required without -m or -d) Local path or remote workspace:artifact source. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+        "One origin may broadcast to all targets.",
     ),
     name: list[str] | None = typer.Option(
         None,
@@ -3640,7 +3434,6 @@ def udf_deploy(
     run_udf_command(
         CommandMode.DEPLOY,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=silent,
         dry_run=dry_run,
@@ -3658,23 +3451,13 @@ def udf_compare(
         "-t",
         help="(required without -m or -d) workspace:artifact GUID. "
         "Repeatable or comma-separated (spaces after commas OK). "
-        "With --file: one workspace only. Must 1:1 match --file or --origin.",
-    ),
-    file: list[str] | None = typer.Option(
-        None,
-        "--file",
-        "-f",
-        help="(required without -m/-o or -d) Local *.UserDataFunction folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+        "With a local --origin path: one workspace only. Must 1:1 match --origin.",
     ),
     origin: list[str] | None = typer.Option(
         None,
         "--origin",
         "-o",
-        help="(alternative to --file) Fabric workspace:artifact to compare against "
-        "--target. Must 1:1 match --target (no broadcast). "
-        "Mutually exclusive with --file.",
+        help="(required without -m or -d) Local path or remote workspace:artifact to compare against --target. Must 1:1 match --target (no broadcast).",
     ),
     manifest: str | None = typer.Option(
         None,
@@ -3693,7 +3476,6 @@ def udf_compare(
     run_udf_command(
         CommandMode.COMPARE,
         target_values=target,
-        file_values=file,
         origin_values=origin,
         silent=True,
         dry_run=dry_run,
@@ -3734,7 +3516,6 @@ def udf_delete(
     run_udf_command(
         CommandMode.DELETE,
         target_values=target,
-        file_values=None,
         silent=silent,
         dry_run=dry_run,
         manifest=manifest,
@@ -3745,7 +3526,6 @@ def run_notebook_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -3796,7 +3576,6 @@ def run_notebook_command(
             _resolve_notebook_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -4022,7 +3801,6 @@ def run_dataflow_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -4067,7 +3845,6 @@ def run_dataflow_command(
             _resolve_dataflow_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -4292,7 +4069,6 @@ def run_org_app_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -4322,7 +4098,6 @@ def run_org_app_command(
             _resolve_org_app_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -4505,7 +4280,6 @@ def run_variable_library_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -4543,7 +4317,6 @@ def run_variable_library_command(
             _resolve_variable_library_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -4715,7 +4488,6 @@ def run_environment_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -4749,7 +4521,6 @@ def run_environment_command(
             _resolve_environment_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -4921,7 +4692,6 @@ def run_semantic_model_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -4966,7 +4736,6 @@ def run_semantic_model_command(
             _resolve_semantic_model_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -5162,7 +4931,6 @@ def run_report_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -5214,7 +4982,6 @@ def run_report_command(
             _resolve_report_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -5419,7 +5186,6 @@ def run_dataflow_gen1_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -5458,7 +5224,6 @@ def run_dataflow_gen1_command(
             _resolve_dataflow_gen1_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -5641,7 +5406,6 @@ def run_paginated_report_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -5682,7 +5446,6 @@ def run_paginated_report_command(
             _resolve_paginated_report_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -5865,7 +5628,6 @@ def run_pipeline_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -5908,7 +5670,6 @@ def run_pipeline_command(
             _resolve_pipeline_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -6132,7 +5893,6 @@ def run_udf_command(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
     origin_values: list[str] | None = None,
@@ -6183,7 +5943,6 @@ def run_udf_command(
             _resolve_udf_inputs(
                 mode,
                 target_values=target_values,
-                file_values=file_values,
                 origin_values=origin_values,
                 dry_run=dry_run,
                 names=names,
@@ -6397,46 +6156,59 @@ def run_udf_command(
         client.close()
 
 
-def _resolve_dataflow_inputs(
+def _resolve_sync_inputs(
     mode: CommandMode,
     *,
+    expected_kind: str,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
+    deploy_create_only: bool = False,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve Gen2 targets/files/origins from CLI and/or a deployment manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
+    """Resolve polymorphic --origin/--target from CLI and/or a deployment manifest."""
+    has_cli = bool(target_values or origin_values)
     manifest_names: list[str | None] | None = None
 
     if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
+        if origin_values:
+            raise ParseError("delete only accepts remote --target selector(s)")
+        if target_values:
+            items = build_work_items_from_cli(
+                mode,
+                origin_values=None,
+                target_values=target_values,
+                dry_run=dry_run,
+                deploy_create_only=deploy_create_only,
+            )
+            return items, None, True, False, False
+        if manifest:
             path = resolve_manifest_path(manifest)
             loaded = load_manifest(path)
-            items = delete_targets_from_manifest(loaded, expected_kind=KIND_DATAFLOW)
+            items = delete_targets_from_manifest(loaded, expected_kind=expected_kind)
             return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
+        items = build_work_items(mode, [], [], dry_run=dry_run)
+        return items, None, False, False, False
 
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
+    if has_cli:
+        items = build_work_items_from_cli(
+            mode,
+            origin_values=origin_values,
+            target_values=target_values,
+            dry_run=dry_run,
+            deploy_create_only=deploy_create_only,
+        )
+        has_targets = any(item.target is not None for item in items)
+        has_files = any(item.file is not None for item in items)
+        has_origins = any(item.origin is not None for item in items)
+        return items, names, has_targets, has_files, has_origins
+
+    if manifest:
         path = resolve_manifest_path(manifest)
         loaded = load_manifest(path)
         loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_DATAFLOW
+            loaded, expected_kind=expected_kind
         )
         targets = [item.target for item in loaded_items if item.target is not None]
         files = [item.file for item in loaded_items if item.file is not None]
@@ -6461,16 +6233,49 @@ def _resolve_dataflow_inputs(
             raise ManifestError(
                 f"manifest {path} has incomplete entries (need origin on each)"
             )
-    else:
-        targets = []
-        files = []
-        origins = []
+        items = build_work_items(
+            mode,
+            targets,
+            files,
+            origins=origins,
+            dry_run=dry_run,
+            deploy_create_only=deploy_create_only,
+        )
+        effective_names: list[str | None] | list[str] | None = (
+            names if names else manifest_names
+        )
+        return items, effective_names, bool(targets), bool(files), bool(origins)
 
-    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
+    items = build_work_items_from_cli(
+        mode,
+        origin_values=None,
+        target_values=None,
+        dry_run=dry_run,
+        deploy_create_only=deploy_create_only,
     )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
+    return items, names, False, False, False
+
+
+def _resolve_dataflow_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve KIND_DATAFLOW endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
+        mode,
+        expected_kind=KIND_DATAFLOW,
+        target_values=target_values,
+        origin_values=origin_values,
+        dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
+    )
 
 
 def _resolve_dataflow_deploy_names(
@@ -6502,76 +6307,22 @@ def _resolve_org_app_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve Org App targets/files/origins from CLI and/or a manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(loaded, expected_kind=KIND_ORG_APP)
-            return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_ORG_APP
-        )
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-
-    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
+    """Resolve KIND_ORG_APP endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
+        mode,
+        expected_kind=KIND_ORG_APP,
+        target_values=target_values,
+        origin_values=origin_values,
+        dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
     )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _resolve_org_app_deploy_names(
@@ -6603,76 +6354,22 @@ def _resolve_variable_library_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve Variable Library CLI and/or manifest inputs."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(
-                loaded, expected_kind=KIND_VARIABLE_LIBRARY
-            )
-            return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_VARIABLE_LIBRARY
-        )
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
+    """Resolve KIND_VARIABLE_LIBRARY endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
+        mode,
+        expected_kind=KIND_VARIABLE_LIBRARY,
+        target_values=target_values,
+        origin_values=origin_values,
+        dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
     )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _resolve_variable_library_deploy_names(
@@ -6704,76 +6401,22 @@ def _resolve_environment_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve Environment targets/files/origins from CLI and/or a manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(loaded, expected_kind=KIND_ENVIRONMENT)
-            return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_ENVIRONMENT
-        )
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-
-    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
+    """Resolve KIND_ENVIRONMENT endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
+        mode,
+        expected_kind=KIND_ENVIRONMENT,
+        target_values=target_values,
+        origin_values=origin_values,
+        dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
     )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _resolve_environment_deploy_names(
@@ -6805,78 +6448,22 @@ def _resolve_semantic_model_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve semantic-model targets/files/origins from CLI and/or a manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(
-                loaded, expected_kind=KIND_SEMANTIC_MODEL
-            )
-            return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_SEMANTIC_MODEL
-        )
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-
-    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
+    """Resolve KIND_SEMANTIC_MODEL endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
+        mode,
+        expected_kind=KIND_SEMANTIC_MODEL,
+        target_values=target_values,
+        origin_values=origin_values,
+        dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
     )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _resolve_semantic_model_deploy_names(
@@ -6908,85 +6495,22 @@ def _resolve_report_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
-) -> tuple[
-    list[WorkItem],
-    list[str | None] | list[str] | None,
-    bool,
-    bool,
-    bool,
-    list[str | None] | None,
-]:
-    """Resolve report targets/files/origins from CLI and/or a manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-    sm_ids: list[str | None] | None = None
-
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(loaded, expected_kind=KIND_REPORT)
-            return items, None, True, False, False, None
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False, None
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_REPORT
-        )
-        sm_ids = semantic_model_ids_from_manifest(loaded)
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-
-    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve KIND_REPORT endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
+        mode,
+        expected_kind=KIND_REPORT,
+        target_values=target_values,
+        origin_values=origin_values,
+        dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
     )
-    return items, effective_names, bool(targets), bool(files), bool(origins), sm_ids
 
 
 def _resolve_report_deploy_names(
@@ -7018,85 +6542,22 @@ def _resolve_dataflow_gen1_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve Gen1 targets/files/origins from CLI and/or a deployment manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(
-                loaded, expected_kind=KIND_DATAFLOW_GEN1
-            )
-            return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_DATAFLOW_GEN1
-        )
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-
-    items = build_work_items(
+    """Resolve KIND_DATAFLOW_GEN1 endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
         mode,
-        targets,
-        files,
-        origins=origins,
+        expected_kind=KIND_DATAFLOW_GEN1,
+        target_values=target_values,
+        origin_values=origin_values,
         dry_run=dry_run,
+        names=names,
+        manifest=manifest,
         deploy_create_only=True,
     )
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
-    )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _resolve_dataflow_gen1_deploy_names(
@@ -7131,84 +6592,22 @@ def _resolve_paginated_report_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve paginated-report targets/files/origins from CLI and/or a manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(
-                loaded, expected_kind=KIND_PAGINATED_REPORT
-            )
-            return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_PAGINATED_REPORT
-        )
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-
-    items = build_work_items(
+    """Resolve KIND_PAGINATED_REPORT endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
         mode,
-        targets,
-        files,
-        origins=origins,
+        expected_kind=KIND_PAGINATED_REPORT,
+        target_values=target_values,
+        origin_values=origin_values,
         dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
     )
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
-    )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _resolve_paginated_report_deploy_names(
@@ -7240,76 +6639,22 @@ def _resolve_pipeline_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve pipeline targets/files/origins from CLI and/or a deployment manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(loaded, expected_kind=KIND_PIPELINE)
-            return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_PIPELINE
-        )
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-
-    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
+    """Resolve KIND_PIPELINE endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
+        mode,
+        expected_kind=KIND_PIPELINE,
+        target_values=target_values,
+        origin_values=origin_values,
+        dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
     )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _resolve_pipeline_deploy_names(
@@ -7341,76 +6686,22 @@ def _resolve_udf_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve UDF targets/files/origins from CLI and/or a deployment manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(loaded, expected_kind=KIND_UDF)
-            return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_UDF
-        )
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-
-    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
+    """Resolve KIND_UDF endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
+        mode,
+        expected_kind=KIND_UDF,
+        target_values=target_values,
+        origin_values=origin_values,
+        dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
     )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _resolve_udf_deploy_names(
@@ -7464,76 +6755,22 @@ def _resolve_notebook_inputs(
     mode: CommandMode,
     *,
     target_values: list[str] | None,
-    file_values: list[str] | None,
     origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
 ) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
-    """Resolve targets/files/origins from CLI and/or a deployment manifest."""
-    cli_targets = parse_target_values(target_values)
-    cli_files = parse_file_values(file_values)
-    cli_origins = parse_origin_values(origin_values)
-    manifest_names: list[str | None] | None = None
-
-    if mode is CommandMode.DELETE:
-        if cli_files or cli_origins:
-            raise ParseError("delete does not support --file or --origin")
-        if cli_targets:
-            targets = cli_targets
-        elif manifest:
-            path = resolve_manifest_path(manifest)
-            loaded = load_manifest(path)
-            items = delete_targets_from_manifest(loaded, expected_kind=KIND_NOTEBOOK)
-            return items, None, True, False, False
-        else:
-            targets = []
-        items = build_work_items(mode, targets, [], dry_run=dry_run)
-        return items, None, bool(targets), False, False
-
-    if cli_targets or cli_files or cli_origins:
-        targets = cli_targets
-        files = cli_files
-        origins = cli_origins
-    elif manifest:
-        path = resolve_manifest_path(manifest)
-        loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(
-            loaded, expected_kind=KIND_NOTEBOOK
-        )
-        targets = [item.target for item in loaded_items if item.target is not None]
-        files = [item.file for item in loaded_items if item.file is not None]
-        origins = [item.origin for item in loaded_items if item.origin is not None]
-        if len(targets) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace on each)"
-            )
-        if files and origins:
-            raise ManifestError(
-                f"manifest {path} mixes file and origin entries in one load"
-            )
-        if not files and not origins:
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file or origin on each)"
-            )
-        if files and len(files) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need file on each)"
-            )
-        if origins and len(origins) != len(loaded_items):
-            raise ManifestError(
-                f"manifest {path} has incomplete entries (need origin on each)"
-            )
-    else:
-        targets = []
-        files = []
-        origins = []
-
-    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
-    effective_names: list[str | None] | list[str] | None = (
-        names if names else manifest_names
+    """Resolve KIND_NOTEBOOK endpoints from CLI and/or a deployment manifest."""
+    return _resolve_sync_inputs(
+        mode,
+        expected_kind=KIND_NOTEBOOK,
+        target_values=target_values,
+        origin_values=origin_values,
+        dry_run=dry_run,
+        names=names,
+        manifest=manifest,
+        deploy_create_only=False,
     )
-    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _write_manifest_after_success(

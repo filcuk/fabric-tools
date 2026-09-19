@@ -65,15 +65,15 @@ def validate_cells_usage(
     if len(items) != 1:
         raise ParseError(
             "--cells requires exactly one notebook pair "
-            "(one --target and one --file; multi-target is not supported)"
+            "(one remote --target and one local --origin .ipynb; multi-target is not supported)"
         )
     item = items[0]
     if item.origin is not None:
         raise ParseError(
-            "--cells requires a local --file (.ipynb); not valid with --origin"
+            "--cells requires a local --origin .ipynb; not valid with a remote --origin"
         )
     if item.file is None:
-        raise ParseError("--cells requires a local --file (.ipynb)")
+        raise ParseError("--cells requires a local --origin .ipynb")
     try:
         fmt = detect_format(item.file)
     except DefinitionError as exc:

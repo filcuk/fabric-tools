@@ -150,7 +150,7 @@ def run_interactive_wizard() -> None:
         and (
             bool(files)
             or bool(origins)
-            # Download may omit --file; paths are filled from remote names before save.
+            # Download may omit --target path; filled from remote names before save.
             or (mode is CommandMode.DOWNLOAD and not dry_run)
         )
     )
@@ -161,12 +161,20 @@ def run_interactive_wizard() -> None:
         else None
     )
 
+    # Polymorphic CLI: download uses --origin=remote and optional --target=path;
+    # deploy/compare use --target=remote and --origin=path|remote.
+    if mode is CommandMode.DOWNLOAD:
+        cli_targets = files or None
+        cli_origins = targets or None
+    else:
+        cli_targets = targets or None
+        cli_origins = files or origins or None
+
     if tool == "dataflow-gen1":
         run_dataflow_gen1_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -175,9 +183,8 @@ def run_interactive_wizard() -> None:
     elif tool == "dataflow":
         run_dataflow_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -188,9 +195,8 @@ def run_interactive_wizard() -> None:
     elif tool == "org-app":
         run_org_app_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -199,9 +205,8 @@ def run_interactive_wizard() -> None:
     elif tool == "variable-library":
         run_variable_library_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -210,9 +215,8 @@ def run_interactive_wizard() -> None:
     elif tool == "environment":
         run_environment_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -221,9 +225,8 @@ def run_interactive_wizard() -> None:
     elif tool == "pipeline":
         run_pipeline_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -234,9 +237,8 @@ def run_interactive_wizard() -> None:
     elif tool == "udf":
         run_udf_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -246,9 +248,8 @@ def run_interactive_wizard() -> None:
     elif tool == "semantic-model":
         run_semantic_model_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -257,9 +258,8 @@ def run_interactive_wizard() -> None:
     elif tool == "report":
         run_report_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -269,9 +269,8 @@ def run_interactive_wizard() -> None:
     elif tool == "paginated-report":
         run_paginated_report_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
@@ -280,9 +279,8 @@ def run_interactive_wizard() -> None:
     else:
         run_notebook_command(
             mode,
-            target_values=targets or None,
-            file_values=files or None,
-            origin_values=origins or None,
+            target_values=cli_targets,
+            origin_values=cli_origins,
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,

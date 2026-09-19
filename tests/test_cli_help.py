@@ -99,14 +99,14 @@ def test_inspect_help_lists_workspace_and_item_synopses() -> None:
 def test_inspect_workspace_help_lists_flag_synopses() -> None:
     result = CliRunner().invoke(app, ["inspect", "workspace", "--help"])
     assert result.exit_code == 0
-    assert "[-f <FILTER>] [-i <TYPE>]" in result.stdout
+    assert "[-f <FILTER>] [-a <TYPE>]" in result.stdout
     assert "-t <workspaceId>" in result.stdout
 
 
 def test_inspect_item_help_lists_flag_synopses() -> None:
     result = CliRunner().invoke(app, ["inspect", "item", "--help"])
     assert result.exit_code == 0
-    assert "-t <workspaceId> [-f <FILTER>] [-i <TYPE>]" in result.stdout
+    assert "-t <workspaceId> [-f <FILTER>] [-a <TYPE>]" in result.stdout
     assert "-t <workspaceId:itemId>" in result.stdout
 
 
@@ -253,12 +253,14 @@ def test_udf_rejects_service_principal(monkeypatch) -> None:
             "udf",
             "download",
             "-d",
-            "-t",
+            "-o",
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ],
     )
     assert result.exit_code != 0
-    assert "service principal" in (result.stderr or result.stdout).lower()
+    combined = ((result.stderr or "") + (result.stdout or "")).lower()
+    assert "user data function" in combined
+    assert "unset those variables" in combined
 
 
 def test_notebook_delete_help() -> None:

@@ -152,9 +152,7 @@ def apply_help_theme() -> None:
     rich_utils.STYLE_USAGE = HELP_STYLE_USAGE
     rich_utils.STYLE_USAGE_COMMAND = HELP_STYLE_USAGE_COMMAND
     rich_utils.OptionHighlighter.highlights = list(_HELP_OPTION_HIGHLIGHTS)
-    rich_utils.NegativeOptionHighlighter.highlights = list(
-        _HELP_NEGATIVE_HIGHLIGHTS
-    )
+    rich_utils.NegativeOptionHighlighter.highlights = list(_HELP_NEGATIVE_HIGHLIGHTS)
     # Module-level instances are built at import with the old patterns.
     rich_utils.highlighter = rich_utils.OptionHighlighter()
     rich_utils.negative_highlighter = rich_utils.NegativeOptionHighlighter()
@@ -208,11 +206,10 @@ def print_error_panel(message: str) -> None:
     """Print a Typer-style Error panel on stderr (red border, title Error)."""
     from rich.console import Console
     from rich.panel import Panel
-    from rich.text import Text
 
     Console(stderr=True).print(
         Panel(
-            Text(str(message)),
+            str(message),
             border_style=STYLE_ERROR,
             title="Error",
             title_align="left",
@@ -224,11 +221,10 @@ def print_warn_panel(message: str) -> None:
     """Print a Warning panel on stderr (yellow border, title Warning)."""
     from rich.console import Console
     from rich.panel import Panel
-    from rich.text import Text
 
     Console(stderr=True).print(
         Panel(
-            Text(str(message)),
+            str(message),
             border_style=STYLE_WARN,
             title="Warning",
             title_align="left",
