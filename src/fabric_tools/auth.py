@@ -10,6 +10,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fabric_tools.status import AUTH_STATUS_PREFIX, status_detail
+
 if TYPE_CHECKING:
     from azure.core.credentials import AccessToken, TokenCredential
     from azure.identity import AuthenticationRecord, TokenCachePersistenceOptions
@@ -122,7 +124,7 @@ def _announce(message: str) -> None:
 
     # Do not overwrite download/deploy/compare progress during later token refreshes.
     active = current_message()
-    if active is not None and not active.startswith("Authenticating"):
+    if active is not None and not active.startswith(AUTH_STATUS_PREFIX):
         return
     update(message)
 
@@ -277,7 +279,7 @@ def _device_code_prompt(
 ) -> None:
     del expires_on
     _announce(
-        f"Authenticating (device code)... open {verification_uri} and enter {user_code}"
+        f"{status_detail('auth', 'authenticating', 'device code')} open {verification_uri} and enter {user_code}"
     )
 
 
@@ -341,7 +343,7 @@ def create_credential() -> TokenCredential:
                         label="Windows account sign-in",
                     )
                 ),
-                "Authenticating (Windows account)...",
+                status_detail("auth", "authenticating", "Windows account"),
             )
         )
 
@@ -357,7 +359,7 @@ def create_credential() -> TokenCredential:
                             label="Windows sign-in prompt",
                         )
                     ),
-                    "Authenticating (Windows)... check the taskbar or another "
+                    f"{status_detail('auth', 'authenticating', 'Windows')} check the taskbar or another "
                     "monitor if no dialog appears",
                 )
             )
@@ -370,7 +372,7 @@ def create_credential() -> TokenCredential:
                     InteractiveBrowserCredential(**user_kwargs)
                 )
             ),
-            "Authenticating (browser)... a sign-in window should open",
+            f"{status_detail('auth', 'authenticating', 'browser')} a sign-in window should open",
         )
     )
     credentials.append(
@@ -383,7 +385,7 @@ def create_credential() -> TokenCredential:
                     )
                 )
             ),
-            "Authenticating (device code)...",
+            status_detail("auth", "authenticating", "device code"),
         )
     )
     return ChainedTokenCredential(*credentials)

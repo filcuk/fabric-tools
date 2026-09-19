@@ -78,7 +78,7 @@ def download_report(
 
     if is_pbix_path(dest):
         if progress is not None:
-            progress.advance(status_detail("Downloading", "report", target.item_id))
+            progress.advance(status_detail("report", "downloading", target.item_id))
         return _download_pbix(
             item,
             independent=independent,
@@ -86,7 +86,7 @@ def download_report(
         )
 
     if progress is not None:
-        progress.advance(status_detail("Downloading", "report", target.item_id))
+        progress.advance(status_detail("report", "downloading", target.item_id))
 
     try:
         detect_report_path(dest)
@@ -116,7 +116,7 @@ def download_report(
         if model_id:
             if progress is not None:
                 progress.advance(
-                    status_detail("Downloading", "semantic model", model_id)
+                    status_detail("semantic-model", "downloading", model_id)
                 )
             model_dest = dest.parent / f"{display_name_from_path(dest)}.SemanticModel"
             try:
@@ -176,8 +176,8 @@ def deploy_report(
         if progress is not None:
             progress.advance(
                 status_detail(
-                    "Creating" if target.is_create else "Deploying",
                     "report",
+                    "creating" if target.is_create else "deploying",
                     target.item_id,
                 )
             )
@@ -237,8 +237,8 @@ def deploy_report(
     if progress is not None:
         progress.advance(
             status_detail(
-                "Creating" if target.is_create else "Deploying",
                 "report",
+                "creating" if target.is_create else "deploying",
                 target.item_id,
             )
         )
@@ -402,7 +402,7 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Deleting", "report", item_id))
+        progress.advance(status_detail("report", "deleting", item_id))
         results.append(delete_report(client, item))
     return results
 
@@ -551,7 +551,7 @@ def _deploy_joined_folder(
 
     report_name = display_name or display_name_from_path(item.file)
     model_name = sm_display_name(join_model_path)
-    verb = "Creating" if target.is_create else "Deploying"
+    action = "creating" if target.is_create else "deploying"
 
     try:
         model_definition = pack_sm_definition(join_model_path)
@@ -573,7 +573,7 @@ def _deploy_joined_folder(
     try:
         if target.is_create:
             if progress is not None:
-                progress.advance(status_detail(verb, "semantic model"))
+                progress.advance(status_detail("semantic-model", action))
             created_model = create_semantic_model(
                 client,
                 target.workspace_id,
@@ -607,7 +607,7 @@ def _deploy_joined_folder(
                     target.item_id,
                 )
             if progress is not None:
-                progress.advance(status_detail(verb, "semantic model", model_id))
+                progress.advance(status_detail("semantic-model", action, model_id))
             update_semantic_model_definition(
                 client,
                 target.workspace_id,
@@ -622,7 +622,7 @@ def _deploy_joined_folder(
         report_definition = pack_definition(item.file, pbir_override=pbir)
 
         if progress is not None:
-            progress.advance(status_detail(verb, "report", target.item_id))
+            progress.advance(status_detail("report", action, target.item_id))
 
         if target.is_create:
             created = create_report(

@@ -105,6 +105,33 @@ Optional flags may keep an `(optional)` help prefix for scannability; that is se
 
 When a flag is always required via `...`, omit a redundant `(required)` prefix in the help text — Typer already appends `[required]`.
 
+### Activity spinner (busy / status)
+
+Long-running work uses a Rich dots spinner on stderr (`fabric_tools.status.busy` / `update`). Every status line must use:
+
+```text
+<module>: <action> (<name>)…
+```
+
+- **module** — CLI command group (`notebook`, `semantic-model`, `inspect`, `setup`, `auth`, …)
+- **action** — lowercase verb phrase (`downloading`, `adding role member`, `authenticating`)
+- **name** — optional display name or short GUID in parentheses; omit the ` (…)` segment when there is no name
+
+Examples:
+
+```text
+auth: authenticating…
+notebook: downloading…
+1 of 4 · notebook: downloading (Sales)…
+semantic-model: adding role member (Harvest)…
+inspect: listing workspaces…
+setup: checking for updates…
+```
+
+Build lines with `status_detail(module, action, name=None)` (and `progress_message` for `n of m ·` prefixes). Do not put only a name after the module (e.g. `XMLA: Harvest…`); the action is required.
+
+Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error/Warning panels so they are not printed mid-line.
+
 ### Visual swatch
 
 `fabric-tools debug color` (hidden from root `--help`) prints a two-column swatch using the same alignment as key/value rows: **right-aligned** colour name (in that style), then **left-aligned** primary text describing the role. A single `dim` row covers muted hints and secondary columns/keys. Use it to review terminal rendering after palette changes.

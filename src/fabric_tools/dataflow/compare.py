@@ -72,7 +72,7 @@ def run_compare_batch(
         label = None
         if item.target is not None and item.target.item_id is not None:
             label = item_display_name(client, item.target)
-        progress.advance(status_detail("Comparing", "dataflow", label))
+        progress.advance(status_detail("dataflow", "comparing", label))
         results.append(compare_dataflow(client, item))
     return results
 

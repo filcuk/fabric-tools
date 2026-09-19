@@ -161,13 +161,13 @@ def run_deploy_batch(
             name = display_names[index]
         target = item.target
         if target is not None and target.is_create:
-            progress.advance(status_detail("Creating", "paginated-report"))
+            progress.advance(status_detail("paginated-report", "creating"))
         elif target is not None:
             progress.advance(
-                status_detail("Overwriting", "paginated-report", target.item_id)
+                status_detail("paginated-report", "overwriting", target.item_id)
             )
         else:
-            progress.advance(status_detail("Deploying", "paginated-report"))
+            progress.advance(status_detail("paginated-report", "deploying"))
         results.append(
             deploy_paginated_report(
                 client,
@@ -185,7 +185,7 @@ def run_delete_batch(client: PowerBiClient, items: list[WorkItem]) -> list[OpRes
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Deleting", "paginated-report", item_id))
+        progress.advance(status_detail("paginated-report", "deleting", item_id))
         results.append(delete_paginated_report(client, item))
     return results
 

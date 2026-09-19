@@ -15,36 +15,36 @@ def test_short_guid() -> None:
 
 def test_progress_message() -> None:
     assert (
-        status.progress_message(1, 4, "Comparing report (a1b2c3d4…)…")
-        == "1 of 4 · Comparing report (a1b2c3d4…)…"
+        status.progress_message(1, 4, "report: comparing (a1b2c3d4…)…")
+        == "1 of 4 · report: comparing (a1b2c3d4…)…"
     )
 
 
 def test_status_detail() -> None:
     assert (
         status.status_detail(
-            "Downloading", "notebook", "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            "notebook", "downloading", "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
         )
-        == "Downloading notebook (a1b2c3d4…)…"
+        == "notebook: downloading (a1b2c3d4…)…"
     )
-    assert status.status_detail("Comparing", "report", "Sales") == (
-        "Comparing report (Sales)…"
+    assert status.status_detail("report", "comparing", "Sales") == (
+        "report: comparing (Sales)…"
     )
-    assert status.status_detail("Creating", "report") == "Creating report…"
+    assert status.status_detail("report", "creating") == "report: creating…"
 
 
 def test_batch_progress_advance_and_skip(monkeypatch: object) -> None:
     messages: list[str] = []
     monkeypatch.setattr(status, "update", lambda msg: messages.append(msg))
     progress = status.BatchProgress(total=3)
-    progress.advance("Downloading report (aaaaaaaa…)…")
+    progress.advance("report: downloading (aaaaaaaa…)…")
     progress.skip_planned()
-    progress.advance("Downloading report (bbbbbbbb…)…")
+    progress.advance("report: downloading (bbbbbbbb…)…")
     assert progress.current == 2
     assert progress.total == 2
     assert messages == [
-        "1 of 3 · Downloading report (aaaaaaaa…)…",
-        "2 of 2 · Downloading report (bbbbbbbb…)…",
+        "1 of 3 · report: downloading (aaaaaaaa…)…",
+        "2 of 2 · report: downloading (bbbbbbbb…)…",
     ]
 
 
@@ -60,15 +60,15 @@ def test_busy_non_tty_prints_message() -> None:
     console.print = lambda msg, **_kwargs: printed.append(str(msg))
 
     with patch.object(status, "_console", console):
-        with status.busy("Authenticating..."):
-            status.update("Downloading notebook...")
-            status.update("Downloading notebook...")  # duplicate ignored
-            status.update("1 of 2 · Comparing report (a1b2c3d4…)…")
+        with status.busy(status.status_detail("auth", "authenticating")):
+            status.update(status.status_detail("notebook", "downloading"))
+            status.update(status.status_detail("notebook", "downloading"))
+            status.update("1 of 2 · report: comparing (a1b2c3d4…)…")
 
     assert printed == [
-        "Authenticating...",
-        "Downloading notebook...",
-        "1 of 2 · Comparing report (a1b2c3d4…)…",
+        "auth: authenticating…",
+        "notebook: downloading…",
+        "1 of 2 · report: comparing (a1b2c3d4…)…",
     ]
 
 

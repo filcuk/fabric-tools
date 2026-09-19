@@ -286,10 +286,11 @@ def test_announcing_credential_updates_status(monkeypatch) -> None:
     monkeypatch.setattr(auth, "_announce", messages.append)
     inner = MagicMock()
     inner.get_token.return_value = AccessToken("tok", 9999999999)
-    wrapped = auth._AnnouncingCredential(inner, "Authenticating (browser)...")
+    msg = auth.status_detail("auth", "authenticating", "browser")
+    wrapped = auth._AnnouncingCredential(inner, msg)
     assert wrapped.get_token("scope").token == "tok"
     assert wrapped.get_token("scope").token == "tok"
-    assert messages == ["Authenticating (browser)..."]
+    assert messages == [msg]
 
 
 def test_announce_does_not_overwrite_non_auth_status(monkeypatch) -> None:
@@ -300,9 +301,9 @@ def test_announce_does_not_overwrite_non_auth_status(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "fabric_tools.status.current_message",
-        lambda: "1 of 2 · Comparing report (aaaaaaaa…)…",
+        lambda: "1 of 2 · report: comparing (aaaaaaaa…)…",
     )
-    auth._announce("Authenticating (Windows account)...")
+    auth._announce(auth.status_detail("auth", "authenticating", "Windows account"))
     assert updates == []
 
 
@@ -314,10 +315,11 @@ def test_announce_updates_when_status_is_authenticating(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "fabric_tools.status.current_message",
-        lambda: "Authenticating...",
+        lambda: auth.AUTH_STATUS_PREFIX + "…",
     )
-    auth._announce("Authenticating (Windows account)...")
-    assert updates == ["Authenticating (Windows account)..."]
+    msg = auth.status_detail("auth", "authenticating", "Windows account")
+    auth._announce(msg)
+    assert updates == [msg]
 
 
 def test_device_code_prompt_announces_code(monkeypatch) -> None:

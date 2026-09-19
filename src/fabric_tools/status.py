@@ -21,6 +21,9 @@ _GUID_RE = re.compile(
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 
+# Prefix used while Azure auth is in progress (nested busy / update guard).
+AUTH_STATUS_PREFIX = "auth: authenticating"
+
 
 def short_guid(value: str, *, length: int = 8) -> str:
     """Return a truncated GUID for spinner text (e.g. ``a1b2c3d4…``)."""
@@ -34,14 +37,16 @@ def progress_message(current: int, total: int, detail: str) -> str:
     return f"{current} of {total} · {detail}"
 
 
-def status_detail(verb: str, kind: str, label: str | None = None) -> str:
-    """Build spinner detail text: ``Comparing report (Sales)…``.
+def status_detail(module: str, action: str, name: str | None = None) -> str:
+    """Build spinner text: ``notebook: downloading (Sales)…``.
 
-    Full GUIDs are shortened; other labels (display names) are shown clipped.
+    *module* is the CLI group (e.g. ``notebook``, ``semantic-model``, ``auth``).
+    *action* is a lowercase verb phrase (e.g. ``downloading``, ``adding role member``).
+    *name* is an optional display name or short GUID; omitted when absent.
     """
-    if label:
-        return f"{verb} {kind} ({_format_label(label)})…"
-    return f"{verb} {kind}…"
+    if name:
+        return f"{module}: {action} ({_format_label(name)})…"
+    return f"{module}: {action}…"
 
 
 def _format_label(label: str, *, max_length: int = 48) -> str:

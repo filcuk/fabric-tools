@@ -16,7 +16,7 @@ from fabric_tools.org_app.definition import (
 )
 from fabric_tools.parsing import Target, WorkItem, default_download_paths
 from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
-from fabric_tools.status import busy
+from fabric_tools.status import busy, status_detail
 from fabric_tools.variable_library.definition import (
     display_name_from_path as variable_library_name_from_path,
 )
@@ -183,7 +183,7 @@ def resolve_notebook_download_files(
             "download work items must all omit --target path or all provide it"
         )
 
-    with busy("Resolving download paths..."):
+    with busy(status_detail("notebook", "resolving download paths")):
         names = [
             notebook_display_name(client, item.target)
             if item.target is not None
@@ -209,7 +209,7 @@ def resolve_dataflow_gen1_download_files(
             "download work items must all omit --target path or all provide it"
         )
 
-    with busy("Resolving download paths..."):
+    with busy(status_detail("dataflow-gen1", "resolving download paths")):
         names = [
             dataflow_gen1_display_name(client, item.target)
             if item.target is not None
@@ -235,7 +235,7 @@ def resolve_paginated_report_download_files(
             "download work items must all omit --target path or all provide it"
         )
 
-    with busy("Resolving download paths..."):
+    with busy(status_detail("paginated-report", "resolving download paths")):
         names = [
             paginated_report_display_name(client, item.target)
             if item.target is not None
@@ -261,7 +261,7 @@ def resolve_dataflow_download_files(
             "download work items must all omit --target path or all provide it"
         )
 
-    with busy("Resolving download paths..."):
+    with busy(status_detail("dataflow", "resolving download paths")):
         names = [
             dataflow_display_name(client, item.target)
             if item.target is not None
@@ -287,7 +287,7 @@ def resolve_org_app_download_files(
             "download work items must all omit --target path or all provide it"
         )
 
-    with busy("Resolving download paths..."):
+    with busy(status_detail("org-app", "resolving download paths")):
         names = [
             org_app_display_name(client, item.target)
             if item.target is not None
@@ -312,7 +312,7 @@ def resolve_variable_library_download_files(
         raise ValueError(
             "download work items must all omit --target path or all provide it"
         )
-    with busy("Resolving download paths..."):
+    with busy(status_detail("variable-library", "resolving download paths")):
         names = [
             variable_library_display_name(client, item.target)
             if item.target is not None
@@ -337,7 +337,7 @@ def resolve_environment_download_files(
         raise ValueError(
             "download work items must all omit --target path or all provide it"
         )
-    with busy("Resolving download paths..."):
+    with busy(status_detail("environment", "resolving download paths")):
         names = [
             environment_display_name(client, item.target)
             if item.target is not None
@@ -369,7 +369,7 @@ def confirm_download_overwrites(
         return
 
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("notebook", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
@@ -397,7 +397,7 @@ def confirm_download_overwrites_dataflow_gen1(
         return
 
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("dataflow-gen1", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_powerbi_dataflow_name(client, item.target)
@@ -425,7 +425,7 @@ def confirm_download_overwrites_paginated_report(
         return
 
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("paginated-report", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_powerbi_paginated_report_name(client, item.target)
@@ -453,7 +453,7 @@ def confirm_download_overwrites_dataflow(
         return
 
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("dataflow", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
@@ -481,7 +481,7 @@ def confirm_download_overwrites_org_app(
         return
 
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("org-app", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
@@ -508,7 +508,7 @@ def confirm_download_overwrites_variable_library(
     if not existing:
         return
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("variable-library", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
@@ -535,7 +535,7 @@ def confirm_download_overwrites_environment(
     if not existing:
         return
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("environment", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
@@ -564,7 +564,7 @@ def confirm_deploy_actions(
 
     if first.is_create:
         lines = ["About to create notebook(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("notebook", "resolving targets")):
             for index, item in enumerate(items):
                 assert item.target is not None
                 workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -595,7 +595,7 @@ def confirm_deploy_actions(
         lines = [f"About to overwrite cell(s) [{cells_label}] in remote notebook:"]
     else:
         lines = ["About to overwrite remote notebook(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("notebook", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -620,7 +620,7 @@ def confirm_deploy_create_dataflow_gen1(
         return
 
     lines = ["About to create dataflow-gen1 item(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("dataflow-gen1", "resolving targets")):
         for index, item in enumerate(items):
             assert item.target is not None
             workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
@@ -659,7 +659,7 @@ def confirm_deploy_actions_paginated_report(
 
     if first.is_create:
         lines = ["About to create paginated-report item(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("paginated-report", "resolving targets")):
             for index, item in enumerate(items):
                 assert item.target is not None
                 workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
@@ -686,7 +686,7 @@ def confirm_deploy_actions_paginated_report(
         return
 
     lines = ["About to overwrite remote paginated-report item(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("paginated-report", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
@@ -716,7 +716,7 @@ def confirm_deploy_actions_dataflow(
 
     if first.is_create:
         lines = ["About to create dataflow(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("dataflow", "resolving targets")):
             for index, item in enumerate(items):
                 assert item.target is not None
                 workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -745,7 +745,7 @@ def confirm_deploy_actions_dataflow(
         return
 
     lines = ["About to overwrite remote dataflow(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("dataflow", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -777,7 +777,7 @@ def confirm_deploy_actions_org_app(
 
     if first.is_create:
         lines = ["About to create Org App(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("org-app", "resolving targets")):
             for index, item in enumerate(items):
                 assert item.target is not None
                 workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -802,7 +802,7 @@ def confirm_deploy_actions_org_app(
         return
 
     lines = ["About to overwrite remote Org App(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("org-app", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -828,7 +828,7 @@ def confirm_deploy_actions_variable_library(
         return
     if first.is_create:
         lines = ["About to create Variable Library item(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("variable-library", "resolving targets")):
             for index, item in enumerate(items):
                 assert item.target is not None
                 workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -848,7 +848,7 @@ def confirm_deploy_actions_variable_library(
         confirm_or_abort("\n".join(lines), silent=False)
         return
     lines = ["About to overwrite remote Variable Library item(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("variable-library", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -874,7 +874,7 @@ def confirm_deploy_actions_environment(
         return
     if first.is_create:
         lines = ["About to create Environment(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("environment", "resolving targets")):
             for index, item in enumerate(items):
                 assert item.target is not None
                 workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -894,7 +894,7 @@ def confirm_deploy_actions_environment(
         confirm_or_abort("\n".join(lines), silent=False)
         return
     lines = ["About to overwrite remote Environment(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("environment", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -916,7 +916,7 @@ def confirm_delete_actions(
         return
 
     lines = ["About to delete remote notebook(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("notebook", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -937,7 +937,7 @@ def confirm_delete_dataflow_gen1(
         return
 
     lines = ["About to delete remote dataflow-gen1 item(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("dataflow-gen1", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
@@ -958,7 +958,7 @@ def confirm_delete_paginated_report(
         return
 
     lines = ["About to delete remote paginated-report item(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("paginated-report", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
@@ -979,7 +979,7 @@ def confirm_delete_dataflow(
         return
 
     lines = ["About to delete remote dataflow(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("dataflow", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1000,7 +1000,7 @@ def confirm_delete_org_app(
         return
 
     lines = ["About to delete remote Org App(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("org-app", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1020,7 +1020,7 @@ def confirm_delete_variable_library(
     if silent or not items:
         return
     lines = ["About to delete remote Variable Library item(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("variable-library", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1040,7 +1040,7 @@ def confirm_delete_environment(
     if silent or not items:
         return
     lines = ["About to delete remote Environment(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("environment", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1076,7 +1076,7 @@ def resolve_semantic_model_download_files(
             "download work items must all omit --target path or all provide it"
         )
 
-    with busy("Resolving download paths..."):
+    with busy(status_detail("semantic-model", "resolving download paths")):
         names = [
             semantic_model_display_name(client, item.target)
             if item.target is not None
@@ -1104,7 +1104,7 @@ def confirm_download_overwrites_semantic_model(
         return
 
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("semantic-model", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1166,7 +1166,7 @@ def confirm_deploy_actions_semantic_model(
 
     if creates:
         lines = ["About to create semantic model(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("semantic-model", "resolving targets")):
             for index, item in enumerate(items):
                 if item.target is None or not item.target.is_create:
                     continue
@@ -1199,7 +1199,7 @@ def confirm_deploy_actions_semantic_model(
             "About to overwrite remote semantic model(s).",
             "Other reports bound to these models may be affected:",
         ]
-        with busy("Resolving targets and impact..."):
+        with busy(status_detail("semantic-model", "resolving targets and impact")):
             for item in overwrites:
                 assert item.target is not None and item.target.item_id is not None
                 workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1234,7 +1234,7 @@ def confirm_delete_semantic_model(
         "About to delete semantic model(s).",
         "Fabric deletes upstream models and destroys dependent reports:",
     ]
-    with busy("Resolving targets and dependents..."):
+    with busy(status_detail("semantic-model", "resolving targets and dependents")):
         for item in items:
             assert item.target is not None and item.target.item_id is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1306,7 +1306,7 @@ def resolve_report_download_files(
             "download work items must all omit --target path or all provide it"
         )
 
-    with busy("Resolving download paths..."):
+    with busy(status_detail("report", "resolving download paths")):
         names = [
             report_display_name(client, item.target)
             if item.target is not None
@@ -1334,7 +1334,7 @@ def confirm_download_overwrites_report(
         return
 
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("report", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1370,7 +1370,7 @@ def confirm_deploy_actions_report(
 
     if creates:
         lines = ["About to create report(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("report", "resolving targets")):
             for index, item in enumerate(items):
                 if item.target is None or not item.target.is_create:
                     continue
@@ -1419,7 +1419,7 @@ def confirm_deploy_actions_report(
 
     if overwrites:
         lines = ["About to overwrite remote report(s):"]
-        with busy("Resolving targets and impact..."):
+        with busy(status_detail("report", "resolving targets and impact")):
             for index, item in enumerate(items):
                 if item.target is None or item.target.item_id is None:
                     continue
@@ -1473,7 +1473,7 @@ def confirm_delete_report(
         "About to delete report(s).",
         "Deleting a report leaves its semantic model intact:",
     ]
-    with busy("Resolving targets..."):
+    with busy(status_detail("report", "resolving targets")):
         for item in items:
             assert item.target is not None and item.target.item_id is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1539,7 +1539,7 @@ def resolve_pipeline_download_files(
             "download work items must all omit --target path or all provide it"
         )
 
-    with busy("Resolving download paths..."):
+    with busy(status_detail("pipeline", "resolving download paths")):
         names = [
             pipeline_display_name(client, item.target)
             if item.target is not None
@@ -1571,7 +1571,7 @@ def confirm_download_overwrites_pipeline(
         return
 
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("pipeline", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
@@ -1604,7 +1604,7 @@ def confirm_deploy_actions_pipeline(
 
     if first.is_create:
         lines = ["About to create pipeline(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("pipeline", "resolving targets")):
             for index, item in enumerate(items):
                 assert item.target is not None
                 workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1641,7 +1641,7 @@ def confirm_deploy_actions_pipeline(
         return
 
     lines = ["About to overwrite remote pipeline(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("pipeline", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1676,7 +1676,7 @@ def confirm_delete_pipeline(
         return
 
     lines = ["About to delete remote pipeline(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("pipeline", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1712,7 +1712,7 @@ def resolve_udf_download_files(
             "download work items must all omit --target path or all provide it"
         )
 
-    with busy("Resolving download paths..."):
+    with busy(status_detail("udf", "resolving download paths")):
         names = [
             udf_display_name(client, item.target)
             if item.target is not None
@@ -1744,7 +1744,7 @@ def confirm_download_overwrites_udf(
         return
 
     lines = ["About to overwrite local path(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("udf", "resolving targets")):
         for item in existing:
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
@@ -1774,7 +1774,7 @@ def confirm_deploy_actions_udf(
 
     if first.is_create:
         lines = ["About to create User Data Function(s):"]
-        with busy("Resolving targets..."):
+        with busy(status_detail("udf", "resolving targets")):
             for index, item in enumerate(items):
                 assert item.target is not None
                 workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1801,7 +1801,7 @@ def confirm_deploy_actions_udf(
         return
 
     lines = ["About to overwrite remote User Data Function(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("udf", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
@@ -1825,7 +1825,7 @@ def confirm_delete_udf(
         return
 
     lines = ["About to delete remote User Data Function(s):"]
-    with busy("Resolving targets..."):
+    with busy(status_detail("udf", "resolving targets")):
         for item in items:
             assert item.target is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)

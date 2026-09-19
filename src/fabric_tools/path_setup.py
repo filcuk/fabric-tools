@@ -565,7 +565,7 @@ def perform_setup_update(*, silent: bool = False) -> dict[str, str | bool]:
         raise PathSetupError("setup update is currently supported on Windows only.")
 
     from fabric_tools.confirm import confirm_or_abort
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.update_check import (
         RELEASE_EXE_NAME,
         check_for_update,
@@ -573,7 +573,7 @@ def perform_setup_update(*, silent: bool = False) -> dict[str, str | bool]:
         save_update_cache,
     )
 
-    with busy("Checking for updates..."):
+    with busy(status_detail("setup", "checking for updates")):
         result = check_for_update()
     save_update_cache(result)
 
@@ -603,7 +603,7 @@ def perform_setup_update(*, silent: bool = False) -> dict[str, str | bool]:
     staging.mkdir(parents=True, exist_ok=True)
     exe_path = staging / EXE_NAME
 
-    with busy(f"Downloading {result.tag_name}..."):
+    with busy(status_detail("setup", "downloading", result.tag_name)):
         download_release_asset(result.asset_url, exe_path)
 
     helper = staging / APPLY_UPDATE_HELPER_NAME
