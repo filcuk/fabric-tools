@@ -92,7 +92,7 @@ def compare_report(
     plans_model = _plans_model_step(item, independent=independent)
     if progress is not None:
         name = item_display_name(client, item.target)
-        progress.advance(status_detail("Comparing", "report", name))
+        progress.advance(status_detail("report", "comparing", name))
 
     if item.origin is not None:
         report_result, origin_def, target_def = _compare_origin_to_target(client, item)
@@ -343,7 +343,7 @@ def _joined_file_model_results(
         model_name = item_display_name(
             client, Target(item.target.workspace_id, model_id)
         )
-        progress.advance(status_detail("Comparing", "semantic model", model_name))
+        progress.advance(status_detail("semantic-model", "comparing", model_name))
     # semantic_model.compare.CompareResult is structurally identical.
     model_result = compare_semantic_model(
         client,
@@ -406,7 +406,7 @@ def _joined_origin_model_results(
         model_name = item_display_name(
             client, Target(item.target.workspace_id, target_model_id)
         )
-        progress.advance(status_detail("Comparing", "semantic model", model_name))
+        progress.advance(status_detail("semantic-model", "comparing", model_name))
     model_result = compare_semantic_model(
         client,
         WorkItem(

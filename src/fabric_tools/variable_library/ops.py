@@ -224,7 +224,7 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     results: list[OpResult] = []
     for item in items:
         item_id = item.target.item_id if item.target is not None else None
-        progress.advance(status_detail("Downloading", "Variable Library", item_id))
+        progress.advance(status_detail("variable-library", "downloading", item_id))
         results.append(download_variable_library(client, item))
     return results
 
@@ -245,11 +245,11 @@ def run_deploy_batch(
             else None
         )
         target = item.target
-        action = "Creating" if target is not None and target.is_create else "Deploying"
+        action = "creating" if target is not None and target.is_create else "deploying"
         item_id = (
             target.item_id if target is not None and not target.is_create else None
         )
-        progress.advance(status_detail(action, "Variable Library", item_id))
+        progress.advance(status_detail("variable-library", action, item_id))
         results.append(
             deploy_variable_library(
                 client,
@@ -266,7 +266,7 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     results: list[OpResult] = []
     for item in items:
         item_id = item.target.item_id if item.target is not None else None
-        progress.advance(status_detail("Deleting", "Variable Library", item_id))
+        progress.advance(status_detail("variable-library", "deleting", item_id))
         results.append(delete_variable_library(client, item))
     return results
 

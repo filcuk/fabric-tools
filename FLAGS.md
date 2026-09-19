@@ -87,6 +87,19 @@ list APIs for gen1 / paginated reports); zero matches is an error. Manifests sta
 | `--include-outputs` | `-i` | notebook compare |
 | `--independent` | `-i` | report / semantic-model / pack |
 
+## Semantic-model role (RLS members)
+
+| Long | Short | Scope | Meaning |
+|------|-------|--------|---------|
+| `--target` | `-t` | `semantic-model role …` | `workspaceId:itemId` or `workspaceId:*` |
+| `--filter` | `-f` | with `workspaceId:*` | `displayName` substring |
+| `--role` | `-r` | `role member add\|remove` | Model role name (not deploy `--remap`) |
+| `--member` | (none) | `role member add\|remove` | UPN or Entra group; `-m` stays `--manifest` elsewhere |
+| `--silent` | `-s` | mutating / install offer | Skip confirms; no Install-Module prompt |
+| `--dry-run` | `-d` | all role cmds | Resolve/plan only; no XMLA mutation |
+
+Windows + SqlServer PSGallery module; XMLA read/write capacity required.
+
 ## Removed (do not reintroduce)
 
 | Former | Notes |

@@ -64,6 +64,7 @@ from fabric_tools.parsing import (
 from fabric_tools.readonly import (
     ReadOnlyError,
     ensure_command_allowed,
+    ensure_mutation_allowed,
     ensure_setup_mutation_allowed,
 )
 
@@ -89,13 +90,15 @@ _GUID_REMAP_HELP = (
 
 def _exit_error(message: str, *, code: int = EXIT_USER) -> NoReturn:
     """Print a shared Error panel and exit (never returns)."""
-    print_error_panel(message)
+    text = (message or "").strip() or "Operation failed."
+    print_error_panel(text)
     raise typer.Exit(code=code)
 
 
 def _exit_warn(message: str, *, code: int = EXIT_USER) -> NoReturn:
     """Print a shared Warning panel and exit (never returns)."""
-    print_warn_panel(message)
+    text = (message or "").strip() or "Cancelled."
+    print_warn_panel(text)
     raise typer.Exit(code=code)
 
 
@@ -153,6 +156,14 @@ def _enforce_readonly_setup(action: str) -> None:
     """Exit if ``FABRIC_TOOLS_READONLY`` blocks a mutating setup action."""
     try:
         ensure_setup_mutation_allowed(action)
+    except ReadOnlyError as exc:
+        _exit_error(str(exc))
+
+
+def _enforce_readonly_mutation(action: str, *, dry_run: bool) -> None:
+    """Exit if ``FABRIC_TOOLS_READONLY`` blocks a named mutation (unless dry-run)."""
+    try:
+        ensure_mutation_allowed(action, dry_run=dry_run)
     except ReadOnlyError as exc:
         _exit_error(str(exc))
 
@@ -316,6 +327,22 @@ semantic_model_app = typer.Typer(
 )
 app.add_typer(semantic_model_app, name="semantic-model", rich_help_panel="Fabric")
 
+semantic_model_role_app = typer.Typer(
+    name="role",
+    help="Manage semantic-model RLS role membership (XMLA / SqlServer module).",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+semantic_model_app.add_typer(semantic_model_role_app, name="role")
+
+semantic_model_role_member_app = typer.Typer(
+    name="member",
+    help="Add or remove members on a semantic-model RLS role.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+semantic_model_role_app.add_typer(semantic_model_role_member_app, name="member")
+
 report_app = typer.Typer(
     name="report",
     help="Fabric report items.",
@@ -435,6 +462,213 @@ def debug_color_cmd() -> None:
 
     print_color_swatch()
     raise typer.Exit(code=EXIT_OK)
+
+
+xmla_roles_app = typer.Typer(
+    name="xmla-roles",
+    help=(
+        "Spike: list/add/remove semantic-model role members via PowerShell "
+        "SqlServer (TOM/XMLA)."
+    ),
+    no_args_is_help=True,
+    hidden=True,
+    context_settings=_HELP_CONTEXT,
+)
+debug_app.add_typer(xmla_roles_app, name="xmla-roles")
+
+
+def _debug_resolve_model_names(target: str) -> tuple[str, str, str, str | None]:
+    """Return (workspace_display_name, model_display_name, access_token, workspace_type)."""
+    from fabric_tools.auth import POWER_BI_SCOPE, create_credential, get_access_token
+    from fabric_tools.client import FabricApiError, FabricClient
+    from fabric_tools.inspect_cmd import InspectError, parse_item_get_target
+    from fabric_tools.status import busy, status_detail
+
+    try:
+        parsed = parse_item_get_target(target)
+    except InspectError as exc:
+        _exit_error(str(exc))
+    assert parsed.item_id is not None
+    try:
+        with busy(status_detail("auth", "authenticating")):
+            client = FabricClient()
+            _authenticate_client(client)
+            token = get_access_token(create_credential(), scope=POWER_BI_SCOPE).token
+        with busy(status_detail("semantic-model", "resolving model")):
+            workspace = client.get_workspace(parsed.workspace_id)
+            item = client.get_item(parsed.workspace_id, parsed.item_id)
+    except AuthError as exc:
+        _fail_auth(exc)
+    except FabricApiError as exc:
+        _exit_error(str(exc), code=EXIT_API)
+
+    ws_name = workspace.get("displayName") or workspace.get("name")
+    model_name = item.get("displayName") or item.get("name")
+    if not isinstance(ws_name, str) or not ws_name.strip():
+        _exit_error("Workspace has no displayName for XMLA connection.")
+    if not isinstance(model_name, str) or not model_name.strip():
+        _exit_error("Semantic model has no displayName for XMLA database name.")
+    item_type = item.get("type")
+    if item_type and item_type != "SemanticModel":
+        _exit_error(f"Target type is {item_type!r}; expected SemanticModel.")
+    ws_type = workspace.get("type")
+    ws_type_str = ws_type if isinstance(ws_type, str) else None
+    from fabric_tools.xmla_roles import (
+        XmlaRolesError,
+        ensure_workspace_supports_xmla,
+    )
+
+    try:
+        ensure_workspace_supports_xmla(workspace)
+    except XmlaRolesError as exc:
+        _exit_error(str(exc), code=EXIT_API)
+    return ws_name.strip(), model_name.strip(), token, ws_type_str
+
+
+def _debug_xmla_invoke(
+    *,
+    target: str,
+    action: str,
+    role: str | None = None,
+    member: str | None = None,
+    silent: bool = False,
+) -> None:
+    from fabric_tools.status import busy, status_detail
+    from fabric_tools.status import update as status_update
+    from fabric_tools.xmla_roles import (
+        XmlaRolesError,
+        ensure_sqlserver_module,
+        invoke_xmla_roles,
+        stage_action,
+    )
+
+    try:
+        # Module check first, outside any spinner, so the install prompt is visible.
+        ensure_sqlserver_module(offer_install=not silent, silent=silent)
+        workspace_name, database_name, token, ws_type = _debug_resolve_model_names(
+            target
+        )
+        with busy(status_detail("semantic-model", "running role operation")):
+
+            def _on_progress(stage: str) -> None:
+                status_update(
+                    status_detail(
+                        "semantic-model",
+                        stage_action(stage),
+                        database_name,
+                    )
+                )
+
+            result = invoke_xmla_roles(
+                action=action,  # type: ignore[arg-type]
+                workspace_name=workspace_name,
+                database_name=database_name,
+                access_token=token,
+                role_name=role,
+                member_name=member,
+                workspace_type=ws_type,
+                offer_install=False,
+                silent=silent,
+                on_progress=_on_progress,
+                check_module=False,
+            )
+    except XmlaRolesError as exc:
+        stage = f" (stage={exc.stage})" if exc.stage else ""
+        detail = f"\n{exc.detail}" if exc.detail else ""
+        code = f" [{exc.code}]" if exc.code else ""
+        _exit_error(f"{exc}{stage}{code}{detail}", code=EXIT_API)
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _exit_error(str(exc), code=EXIT_API)
+
+    typer.echo(result.message)
+    if result.roles:
+        import json
+
+        typer.echo(json.dumps({"roles": result.roles}, indent=2))
+    raise typer.Exit(code=EXIT_OK)
+
+
+@xmla_roles_app.command("list", help="List roles and members for one semantic model.")
+def debug_xmla_roles_list(
+    target: str = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="workspaceId:itemId of a SemanticModel.",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="Do not offer SqlServer Install-Module; fail with the install hint.",
+    ),
+) -> None:
+    """Spike: XMLA role list via SqlServer PowerShell module."""
+    _debug_xmla_invoke(target=target, action="list", silent=silent)
+
+
+@xmla_roles_app.command("member-add", help="Add a UPN/group to a model role.")
+def debug_xmla_roles_member_add(
+    target: str = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="workspaceId:itemId of a SemanticModel.",
+    ),
+    role: str = typer.Option(..., "--role", help="Model role name."),
+    member: str = typer.Option(
+        ...,
+        "--member",
+        help="Member UPN or group name (AzureAD).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="Do not offer SqlServer Install-Module; fail with the install hint.",
+    ),
+) -> None:
+    """Spike: XMLA role member add via SqlServer PowerShell module."""
+    _debug_xmla_invoke(
+        target=target,
+        action="member_add",
+        role=role,
+        member=member,
+        silent=silent,
+    )
+
+
+@xmla_roles_app.command("member-remove", help="Remove a UPN/group from a model role.")
+def debug_xmla_roles_member_remove(
+    target: str = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="workspaceId:itemId of a SemanticModel.",
+    ),
+    role: str = typer.Option(..., "--role", help="Model role name."),
+    member: str = typer.Option(
+        ...,
+        "--member",
+        help="Member UPN or group name (AzureAD).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="Do not offer SqlServer Install-Module; fail with the install hint.",
+    ),
+) -> None:
+    """Spike: XMLA role member remove via SqlServer PowerShell module."""
+    _debug_xmla_invoke(
+        target=target,
+        action="member_remove",
+        role=role,
+        member=member,
+        silent=silent,
+    )
 
 
 def _flush_update_notice(ctx: typer.Context) -> None:
@@ -666,7 +900,7 @@ def pack_download(
         ...,
         "--manifest",
         "-m",
-        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+        help="Pack manifest stem or path (.ftdep schema v3).",
     ),
     silent: bool = typer.Option(
         False,
@@ -711,7 +945,7 @@ def pack_deploy(
         ...,
         "--manifest",
         "-m",
-        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+        help="Pack manifest stem or path (.ftdep schema v3).",
     ),
     silent: bool = typer.Option(
         False,
@@ -770,7 +1004,7 @@ def pack_compare(
         ...,
         "--manifest",
         "-m",
-        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+        help="Pack manifest stem or path (.ftdep schema v3).",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -809,7 +1043,7 @@ def pack_delete(
         ...,
         "--manifest",
         "-m",
-        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+        help="Pack manifest stem or path (.ftdep schema v3).",
     ),
     silent: bool = typer.Option(
         False,
@@ -860,10 +1094,10 @@ def inspect_workspace_list(
         list_workspaces,
         print_workspace_table,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
 
     try:
-        with busy("Listing workspaces..."):
+        with busy(status_detail("inspect", "listing workspaces")):
             client = FabricClient()
             _authenticate_client(client)
             rows = list_workspaces(
@@ -903,11 +1137,11 @@ def inspect_workspace_get(
         parse_workspace_get_target,
         print_workspace_detail,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
 
     try:
         parsed = parse_workspace_get_target(target)
-        with busy("Getting workspace..."):
+        with busy(status_detail("inspect", "getting workspace")):
             client = FabricClient()
             _authenticate_client(client)
             row = get_workspace_detail(client, parsed)
@@ -952,11 +1186,11 @@ def inspect_item_list(
         parse_item_list_target,
         print_item_table,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
 
     try:
         parsed = parse_item_list_target(target)
-        with busy("Listing items..."):
+        with busy(status_detail("inspect", "listing items")):
             client = FabricClient()
             _authenticate_client(client)
             rows = list_items(
@@ -997,11 +1231,11 @@ def inspect_item_get(
         parse_item_get_target,
         print_item_detail,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
 
     try:
         parsed = parse_item_get_target(target)
-        with busy("Getting item..."):
+        with busy(status_detail("inspect", "getting item")):
             client = FabricClient()
             _authenticate_client(client)
             row = get_item_detail(client, parsed)
@@ -1422,12 +1656,12 @@ def setup_update(
     ),
 ) -> None:
     """Check for a newer release, or download and install it."""
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.update_check import UpdateCheckError, check_for_update
 
     if check:
         try:
-            with busy("Checking for updates..."):
+            with busy(status_detail("setup", "checking for updates")):
                 result = check_for_update()
         except UpdateCheckError as exc:
             _exit_error(str(exc), code=EXIT_API)
@@ -2729,6 +2963,146 @@ def semantic_model_delete(
     )
 
 
+@semantic_model_role_app.command("list")
+def semantic_model_role_list(
+    target: list[str] = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="workspace:artifact or workspaceId:*. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Do not offer SqlServer Install-Module; fail with the hint.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Resolve targets only; do not call XMLA.",
+    ),
+) -> None:
+    """List RLS roles and members for semantic model(s) via XMLA."""
+    run_semantic_model_role_command(
+        "list",
+        target_values=target,
+        name_filter=name_filter,
+        silent=silent,
+        dry_run=dry_run,
+    )
+
+
+@semantic_model_role_member_app.command("add")
+def semantic_model_role_member_add(
+    target: list[str] = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="workspace:artifact or workspaceId:*. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    role: str = typer.Option(
+        ...,
+        "--role",
+        "-r",
+        help="Model role name.",
+    ),
+    member: str = typer.Option(
+        ...,
+        "--member",
+        help="Member UPN or Entra group display name (AzureAD).",
+    ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation; do not offer SqlServer Install-Module.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Resolve targets and confirm plan only; do not mutate.",
+    ),
+) -> None:
+    """Add a member to an RLS role on semantic model(s) via XMLA."""
+    run_semantic_model_role_command(
+        "member_add",
+        target_values=target,
+        name_filter=name_filter,
+        silent=silent,
+        dry_run=dry_run,
+        role_name=role,
+        member_name=member,
+    )
+
+
+@semantic_model_role_member_app.command("remove")
+def semantic_model_role_member_remove(
+    target: list[str] = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="workspace:artifact or workspaceId:*. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    role: str = typer.Option(
+        ...,
+        "--role",
+        "-r",
+        help="Model role name.",
+    ),
+    member: str = typer.Option(
+        ...,
+        "--member",
+        help="Member UPN or Entra group display name (AzureAD).",
+    ),
+    name_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=_FILTER_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation; do not offer SqlServer Install-Module.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Resolve targets and confirm plan only; do not mutate.",
+    ),
+) -> None:
+    """Remove a member from an RLS role on semantic model(s) via XMLA."""
+    run_semantic_model_role_command(
+        "member_remove",
+        target_values=target,
+        name_filter=name_filter,
+        silent=silent,
+        dry_run=dry_run,
+        role_name=role,
+        member_name=member,
+    )
+
+
 @report_app.command("download")
 def report_download(
     origin: list[str] | None = typer.Option(
@@ -3884,7 +4258,7 @@ def run_notebook_command(
         run_deploy_batch,
         run_download_batch,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run
 
     if remap_values and mode is not CommandMode.DEPLOY:
@@ -3900,11 +4274,11 @@ def run_notebook_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = FabricClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_NOTEBOOK, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("notebook", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_notebook_inputs(
                         mode,
@@ -3966,10 +4340,10 @@ def run_notebook_command(
         client: FabricClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = FabricClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("notebook", "checking")):
                 results = run_dry_run(
                     mode,
                     items,
@@ -4032,14 +4406,14 @@ def run_notebook_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = FabricClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_notebook_download_files(client, items)
             confirm_download_overwrites(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("notebook", "downloading")):
                 op_results = run_download_batch(client, items)
             _print_op_results(op_results)
             _write_manifest_after_success(
@@ -4065,7 +4439,7 @@ def run_notebook_command(
                 cell_indices=cell_indices,
                 guid_map_line=map_line,
             )
-            with busy("Deploying..."):
+            with busy(status_detail("notebook", "deploying")):
                 op_results = run_deploy_batch(
                     client,
                     items,
@@ -4100,7 +4474,7 @@ def run_notebook_command(
             )
             _exit_from_op_results(op_results)
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("notebook", "comparing")):
                 compare_results = run_compare_batch(
                     client,
                     items,
@@ -4123,7 +4497,7 @@ def run_notebook_command(
             _exit_from_compare_results(compare_results)
         elif mode is CommandMode.DELETE:
             confirm_delete_actions(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("notebook", "deleting")):
                 op_results = run_delete_batch(client, items)
             _print_op_results(op_results)
             _notify_success(
@@ -4183,7 +4557,7 @@ def run_dataflow_command(
         run_download_batch as run_df_download,
     )
     from fabric_tools.guid_map import guid_map_confirm_line
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run_dataflow
 
     if remap_values and mode is not CommandMode.DEPLOY:
@@ -4200,11 +4574,11 @@ def run_dataflow_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = FabricClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_DATAFLOW, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("dataflow", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_dataflow_inputs(
                         mode,
@@ -4265,10 +4639,10 @@ def run_dataflow_command(
         client: FabricClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = FabricClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("dataflow", "checking")):
                 results = run_dry_run_dataflow(
                     mode,
                     items,
@@ -4335,14 +4709,14 @@ def run_dataflow_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = FabricClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_dataflow_download_files(client, items)
             confirm_download_overwrites_dataflow(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("dataflow", "downloading")):
                 op_results = run_df_download(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -4368,7 +4742,7 @@ def run_dataflow_command(
                 guid_map_line=map_line,
                 publish=publish,
             )
-            with busy("Deploying..."):
+            with busy(status_detail("dataflow", "deploying")):
                 op_results = run_df_deploy(
                     client,
                     items,
@@ -4403,7 +4777,7 @@ def run_dataflow_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("dataflow", "comparing")):
                 compare_results = run_df_compare(client, items)
             _print_compare_results(compare_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -4422,7 +4796,7 @@ def run_dataflow_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_dataflow(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("dataflow", "deleting")):
                 op_results = run_df_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(
@@ -4472,7 +4846,7 @@ def run_org_app_command(
     from fabric_tools.org_app.ops import run_delete_batch as run_org_delete
     from fabric_tools.org_app.ops import run_deploy_batch as run_org_deploy
     from fabric_tools.org_app.ops import run_download_batch as run_org_download
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run_org_app
 
     expand_client = None
@@ -4484,11 +4858,11 @@ def run_org_app_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = FabricClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_ORG_APP, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("org-app", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_org_app_inputs(
                         mode,
@@ -4521,10 +4895,10 @@ def run_org_app_command(
         client: FabricClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = FabricClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("org-app", "checking")):
                 results = run_dry_run_org_app(
                     mode,
                     items,
@@ -4581,14 +4955,14 @@ def run_org_app_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = FabricClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_org_app_download_files(client, items)
             confirm_download_overwrites_org_app(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("org-app", "downloading")):
                 op_results = run_org_download(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -4612,7 +4986,7 @@ def run_org_app_command(
                 silent=silent,
                 display_names=display_names,
             )
-            with busy("Deploying..."):
+            with busy(status_detail("org-app", "deploying")):
                 op_results = run_org_deploy(
                     client,
                     items,
@@ -4645,7 +5019,7 @@ def run_org_app_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("org-app", "comparing")):
                 compare_results = run_org_compare(client, items)
             _print_compare_results(compare_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -4664,7 +5038,7 @@ def run_org_app_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_org_app(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("org-app", "deleting")):
                 op_results = run_org_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(
@@ -4710,7 +5084,7 @@ def run_variable_library_command(
         confirm_download_overwrites_variable_library,
         resolve_variable_library_download_files,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run_variable_library
     from fabric_tools.variable_library.compare import (
         run_compare_batch as run_variable_library_compare,
@@ -4734,11 +5108,11 @@ def run_variable_library_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = FabricClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_VARIABLE_LIBRARY, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("variable-library", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_variable_library_inputs(
                         mode,
@@ -4771,10 +5145,10 @@ def run_variable_library_command(
         client: FabricClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = FabricClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("variable-library", "checking")):
                 results = run_dry_run_variable_library(
                     mode,
                     items,
@@ -4826,14 +5200,14 @@ def run_variable_library_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = FabricClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_variable_library_download_files(client, items)
             confirm_download_overwrites_variable_library(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("variable-library", "downloading")):
                 op_results = run_variable_library_download(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -4854,7 +5228,7 @@ def run_variable_library_command(
             confirm_deploy_actions_variable_library(
                 client, items, silent=silent, display_names=display_names
             )
-            with busy("Deploying..."):
+            with busy(status_detail("variable-library", "deploying")):
                 op_results = run_variable_library_deploy(
                     client, items, display_names=display_names
                 )
@@ -4884,7 +5258,7 @@ def run_variable_library_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("variable-library", "comparing")):
                 compare_results = run_variable_library_compare(client, items)
             _print_compare_results(compare_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -4903,7 +5277,7 @@ def run_variable_library_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_variable_library(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("variable-library", "deleting")):
                 op_results = run_variable_library_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(
@@ -4957,7 +5331,7 @@ def run_environment_command(
     from fabric_tools.environment.ops import (
         run_download_batch as run_environment_download,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run_environment
 
     expand_client = None
@@ -4969,11 +5343,11 @@ def run_environment_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = FabricClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_ENVIRONMENT, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("environment", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_environment_inputs(
                         mode,
@@ -5006,10 +5380,10 @@ def run_environment_command(
         client: FabricClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = FabricClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("environment", "checking")):
                 results = run_dry_run_environment(
                     mode,
                     items,
@@ -5061,14 +5435,14 @@ def run_environment_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = FabricClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_environment_download_files(client, items)
             confirm_download_overwrites_environment(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("environment", "downloading")):
                 op_results = run_environment_download(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -5089,7 +5463,7 @@ def run_environment_command(
             confirm_deploy_actions_environment(
                 client, items, silent=silent, display_names=display_names
             )
-            with busy("Deploying..."):
+            with busy(status_detail("environment", "deploying")):
                 op_results = run_environment_deploy(
                     client, items, display_names=display_names
                 )
@@ -5119,7 +5493,7 @@ def run_environment_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("environment", "comparing")):
                 compare_results = run_environment_compare(client, items)
             _print_compare_results(compare_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -5138,7 +5512,7 @@ def run_environment_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_environment(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("environment", "deleting")):
                 op_results = run_environment_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(
@@ -5197,7 +5571,7 @@ def run_semantic_model_command(
     from fabric_tools.semantic_model.ops import (
         run_download_batch as run_sm_download,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run_semantic_model
 
     if independent and mode is not CommandMode.DEPLOY:
@@ -5215,11 +5589,11 @@ def run_semantic_model_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = FabricClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_SEMANTIC_MODEL, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("semantic-model", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_semantic_model_inputs(
                         mode,
@@ -5265,10 +5639,10 @@ def run_semantic_model_command(
         client: FabricClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = FabricClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("semantic-model", "checking")):
                 results = run_dry_run_semantic_model(
                     mode,
                     items,
@@ -5325,14 +5699,14 @@ def run_semantic_model_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = FabricClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_semantic_model_download_files(client, items)
             confirm_download_overwrites_semantic_model(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("semantic-model", "downloading")):
                 op_results = run_sm_download(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -5356,7 +5730,7 @@ def run_semantic_model_command(
                 silent=silent,
                 display_names=display_names,
             )
-            with busy("Deploying..."):
+            with busy(status_detail("semantic-model", "deploying")):
                 op_results = run_sm_deploy(
                     client,
                     items,
@@ -5389,7 +5763,7 @@ def run_semantic_model_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("semantic-model", "comparing")):
                 compare_results = run_sm_compare(client, items)
             _print_compare_results(compare_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -5408,7 +5782,7 @@ def run_semantic_model_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_semantic_model(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("semantic-model", "deleting")):
                 op_results = run_sm_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(
@@ -5422,6 +5796,295 @@ def run_semantic_model_command(
             _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
         _exit_warn(str(exc))
+    except typer.Exit:
+        raise
+    except AuthError as exc:
+        _fail_auth(exc)
+    except Exception as exc:  # noqa: BLE001
+        _exit_error(str(exc), code=EXIT_API)
+    finally:
+        client.close()
+
+
+def run_semantic_model_role_command(
+    action: str,
+    *,
+    target_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    name_filter: str | None = None,
+    role_name: str | None = None,
+    member_name: str | None = None,
+) -> None:
+    """List or mutate semantic-model RLS role members via XMLA (SqlServer module)."""
+    import json
+    import sys
+
+    from fabric_tools.auth import POWER_BI_SCOPE, create_credential, get_access_token
+    from fabric_tools.client import FabricApiError, FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_semantic_model_role_member_changes,
+        resolve_workspace_name,
+        semantic_model_display_name,
+    )
+    from fabric_tools.status import busy, status_detail
+    from fabric_tools.status import update as status_update
+    from fabric_tools.xmla_roles import (
+        XmlaRolesError,
+        XmlaRolesResult,
+        ensure_sqlserver_module,
+        invoke_xmla_roles,
+        stage_action,
+    )
+
+    if action in {"member_add", "member_remove"}:
+        _enforce_readonly_mutation(
+            "semantic-model role member change",
+            dry_run=dry_run,
+        )
+        if not role_name or not member_name:
+            _exit_error("--role and --member are required for member add/remove.")
+
+    if sys.platform != "win32":
+        _exit_error("semantic-model role commands require Windows PowerShell.")
+
+    # Check the SqlServer module once, before auth/confirm and outside any spinner,
+    # so the Install-Module prompt is visible (a prompt under a live spinner is
+    # erased and looks like a hang).
+    if not dry_run:
+        try:
+            ensure_sqlserver_module(offer_install=not silent, silent=silent)
+        except XmlaRolesError as exc:
+            _exit_error(str(exc), code=EXIT_API)
+
+    expand_client: FabricClient | None = None
+    try:
+        needs_expand = _cli_needs_wildcard_expand(
+            origin_values=None,
+            target_values=target_values,
+            mode=CommandMode.DELETE,
+            name_filter=name_filter,
+        )
+        if needs_expand:
+            with busy(status_detail("auth", "authenticating")):
+                expand_client = FabricClient()
+                _authenticate_client(expand_client)
+            list_fn = _list_items_fn_for_kind(KIND_SEMANTIC_MODEL, expand_client)
+            with busy(status_detail("semantic-model", "expanding selectors")):
+                items, _, has_targets, _, _ = _resolve_semantic_model_inputs(
+                    CommandMode.DELETE,
+                    target_values=target_values,
+                    origin_values=None,
+                    dry_run=dry_run,
+                    names=None,
+                    manifest=None,
+                    name_filter=name_filter,
+                    list_items_fn=list_fn,
+                    kind_label=_KIND_EXPAND_LABELS[KIND_SEMANTIC_MODEL],
+                )
+        else:
+            items, _, has_targets, _, _ = _resolve_semantic_model_inputs(
+                CommandMode.DELETE,
+                target_values=target_values,
+                origin_values=None,
+                dry_run=dry_run,
+                names=None,
+                manifest=None,
+                name_filter=name_filter,
+            )
+    except (ParseError, ManifestError) as exc:
+        _exit_error(str(exc))
+
+    if not has_targets or not items:
+        _exit_error("Provide --target / -t with workspace:artifact or workspaceId:*.")
+
+    for item in items:
+        if item.target is None or item.target.item_id is None:
+            _exit_error(
+                "semantic-model role requires concrete model targets "
+                "(workspaceId:itemId or workspaceId:*)."
+            )
+
+    client = expand_client
+    if client is None:
+        with busy(status_detail("auth", "authenticating")):
+            client = FabricClient()
+            _authenticate_client(client)
+
+    try:
+        confirm_rows: list[tuple[str, str, str, str, str]] = []
+        # (workspace_name, model_name, model_id, ws_label, workspace_type)
+        resolved: list[tuple[str, str, str, str, str | None]] = []
+        with busy(status_detail("semantic-model", "resolving models")):
+            for item in items:
+                assert item.target is not None and item.target.item_id is not None
+                try:
+                    workspace = client.get_workspace(item.target.workspace_id)
+                    model_item = client.get_item(
+                        item.target.workspace_id, item.target.item_id
+                    )
+                except FabricApiError as exc:
+                    _exit_error(str(exc), code=EXIT_API)
+                ws_name = workspace.get("displayName") or workspace.get("name")
+                model_name = model_item.get("displayName") or model_item.get("name")
+                if not isinstance(ws_name, str) or not ws_name.strip():
+                    _exit_error(
+                        f"Workspace {item.target.workspace_id} has no displayName "
+                        "for XMLA."
+                    )
+                if not isinstance(model_name, str) or not model_name.strip():
+                    _exit_error(
+                        f"Semantic model {item.target.item_id} has no displayName "
+                        "for XMLA."
+                    )
+                item_type = model_item.get("type")
+                if item_type and item_type != "SemanticModel":
+                    _exit_error(
+                        f"Target {item.target.item_id} type is {item_type!r}; "
+                        "expected SemanticModel."
+                    )
+                ws_label = resolve_workspace_name(client, item.target.workspace_id)
+                model_label = semantic_model_display_name(client, item.target)
+                ws_type = workspace.get("type")
+                ws_type_str = ws_type if isinstance(ws_type, str) else None
+                try:
+                    from fabric_tools.xmla_roles import ensure_workspace_supports_xmla
+
+                    ensure_workspace_supports_xmla(workspace)
+                except XmlaRolesError as exc:
+                    _exit_error(str(exc), code=EXIT_API)
+                resolved.append(
+                    (
+                        ws_name.strip(),
+                        model_name.strip(),
+                        item.target.item_id,
+                        ws_label,
+                        ws_type_str,
+                    )
+                )
+                if action in {"member_add", "member_remove"}:
+                    assert role_name is not None and member_name is not None
+                    confirm_rows.append(
+                        (
+                            ws_label,
+                            model_label,
+                            item.target.item_id,
+                            role_name,
+                            member_name,
+                        )
+                    )
+
+        if dry_run:
+            for _ws_name, model_name, model_id, ws_label, _ws_type in resolved:
+                if action == "list":
+                    typer.secho(
+                        f"[dry-run] would list roles on semantic model "
+                        f'"{model_name}" ({model_id}) in {ws_label}',
+                        fg=FG_OK,
+                    )
+                else:
+                    verb = "add" if action == "member_add" else "remove"
+                    prep = "to" if action == "member_add" else "from"
+                    typer.secho(
+                        f'[dry-run] would {verb} member "{member_name}" {prep} '
+                        f'role "{role_name}" on semantic model "{model_name}" '
+                        f"({model_id}) in {ws_label}",
+                        fg=FG_OK,
+                    )
+            raise typer.Exit(code=EXIT_OK)
+
+        if action in {"member_add", "member_remove"}:
+            member_action = "add" if action == "member_add" else "remove"
+            try:
+                confirm_semantic_model_role_member_changes(
+                    confirm_rows,
+                    action=member_action,
+                    silent=silent,
+                )
+            except ConfirmationAborted as exc:
+                _exit_warn(str(exc))
+
+        try:
+            with busy(status_detail("semantic-model", "acquiring token")):
+                token = get_access_token(
+                    create_credential(), scope=POWER_BI_SCOPE
+                ).token
+
+                outcomes: list[
+                    tuple[str, str, str, XmlaRolesResult | XmlaRolesError]
+                ] = []
+                for ws_name, model_name, model_id, ws_label, ws_type in resolved:
+                    status_update(
+                        status_detail(
+                            "semantic-model",
+                            "connecting via XMLA",
+                            model_name,
+                        )
+                    )
+
+                    def _on_progress(stage: str, *, _name: str = model_name) -> None:
+                        status_update(
+                            status_detail(
+                                "semantic-model",
+                                stage_action(stage),
+                                _name,
+                            )
+                        )
+
+                    try:
+                        result = invoke_xmla_roles(
+                            action=action,  # type: ignore[arg-type]
+                            workspace_name=ws_name,
+                            database_name=model_name,
+                            access_token=token,
+                            role_name=role_name,
+                            member_name=member_name,
+                            workspace_type=ws_type,
+                            offer_install=False,
+                            silent=silent,
+                            on_progress=_on_progress,
+                            check_module=False,
+                        )
+                        outcomes.append((model_name, model_id, ws_label, result))
+                    except XmlaRolesError as exc:
+                        outcomes.append((model_name, model_id, ws_label, exc))
+        except AuthError as exc:
+            _fail_auth(exc)
+        except XmlaRolesError as exc:
+            if exc.code == "cancelled":
+                _exit_warn(str(exc) or "Cancelled.")
+            stage = f" (stage={exc.stage})" if exc.stage else ""
+            detail = f"\n{exc.detail}" if exc.detail else ""
+            code = f" [{exc.code}]" if exc.code else ""
+            _exit_error(f"{exc}{stage}{code}{detail}", code=EXIT_API)
+        except KeyboardInterrupt:
+            _exit_warn("Cancelled.")
+
+        failed = False
+        for model_name, model_id, ws_label, outcome in outcomes:
+            if isinstance(outcome, XmlaRolesError):
+                if outcome.code == "cancelled":
+                    _exit_warn(str(outcome) or "Cancelled.")
+                stage = f" (stage={outcome.stage})" if outcome.stage else ""
+                detail = f"\n{outcome.detail}" if outcome.detail else ""
+                code = f" [{outcome.code}]" if outcome.code else ""
+                print_error_panel(
+                    (
+                        f"{model_name} ({model_id}) in {ws_label}: "
+                        f"{outcome}{stage}{code}{detail}"
+                    ).strip()
+                    or "XMLA role operation failed."
+                )
+                failed = True
+                continue
+
+            header = f"{model_name} ({model_id}) in {ws_label}: {outcome.message}"
+            typer.secho(header, fg=FG_OK)
+            if outcome.roles:
+                typer.echo(json.dumps({"roles": outcome.roles}, indent=2))
+
+        raise typer.Exit(code=EXIT_API if failed else EXIT_OK)
     except typer.Exit:
         raise
     except AuthError as exc:
@@ -5474,7 +6137,7 @@ def run_report_command(
     from fabric_tools.report.ops import (
         run_download_batch as run_report_download,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run_report
 
     if independent and mode is CommandMode.DELETE:
@@ -5492,11 +6155,11 @@ def run_report_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = FabricClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_REPORT, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("report", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins, sm_ids = (
                     _resolve_report_inputs(
                         mode,
@@ -5529,10 +6192,10 @@ def run_report_command(
         client: FabricClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = FabricClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("report", "checking")):
                 results = run_dry_run_report(
                     mode,
                     items,
@@ -5590,14 +6253,14 @@ def run_report_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = FabricClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_report_download_files(client, items)
             confirm_download_overwrites_report(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("report", "downloading")):
                 op_results = run_report_download(client, items, independent=independent)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -5632,7 +6295,7 @@ def run_report_command(
                 independent=independent,
                 join_model_paths=join_model_paths,  # type: ignore[arg-type]
             )
-            with busy("Deploying..."):
+            with busy(status_detail("report", "deploying")):
                 op_results = run_report_deploy(
                     client,
                     items,
@@ -5673,7 +6336,7 @@ def run_report_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("report", "comparing")):
                 compare_results = run_report_compare(
                     client, items, independent=independent
                 )
@@ -5694,7 +6357,7 @@ def run_report_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_report(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("report", "deleting")):
                 op_results = run_report_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(
@@ -5753,7 +6416,7 @@ def run_dataflow_gen1_command(
         run_download_batch as run_df_download,
     )
     from fabric_tools.powerbi_client import PowerBiClient
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run_dataflow_gen1
 
     expand_client = None
@@ -5765,11 +6428,11 @@ def run_dataflow_gen1_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = PowerBiClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_DATAFLOW_GEN1, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("dataflow-gen1", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_dataflow_gen1_inputs(
                         mode,
@@ -5802,10 +6465,10 @@ def run_dataflow_gen1_command(
         client: PowerBiClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = PowerBiClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("dataflow-gen1", "checking")):
                 results = run_dry_run_dataflow_gen1(
                     mode,
                     items,
@@ -5862,14 +6525,14 @@ def run_dataflow_gen1_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = PowerBiClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_dataflow_gen1_download_files(client, items)
             confirm_download_overwrites_dataflow_gen1(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("dataflow-gen1", "downloading")):
                 op_results = run_df_download(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -5893,7 +6556,7 @@ def run_dataflow_gen1_command(
                 silent=silent,
                 display_names=display_names,
             )
-            with busy("Deploying..."):
+            with busy(status_detail("dataflow-gen1", "deploying")):
                 op_results = run_df_deploy(
                     client,
                     items,
@@ -5926,7 +6589,7 @@ def run_dataflow_gen1_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("dataflow-gen1", "comparing")):
                 compare_results = run_df_compare(client, items)
             _print_compare_results(compare_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -5945,7 +6608,7 @@ def run_dataflow_gen1_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_dataflow_gen1(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("dataflow-gen1", "deleting")):
                 op_results = run_df_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(
@@ -6006,7 +6669,7 @@ def run_paginated_report_command(
         run_download_batch as run_pr_download,
     )
     from fabric_tools.powerbi_client import PowerBiClient
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run_paginated_report
 
     expand_client = None
@@ -6018,11 +6681,11 @@ def run_paginated_report_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = PowerBiClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_PAGINATED_REPORT, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("paginated-report", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_paginated_report_inputs(
                         mode,
@@ -6055,10 +6718,10 @@ def run_paginated_report_command(
         client: PowerBiClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = PowerBiClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("paginated-report", "checking")):
                 results = run_dry_run_paginated_report(
                     mode,
                     items,
@@ -6115,14 +6778,14 @@ def run_paginated_report_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = PowerBiClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_paginated_report_download_files(client, items)
             confirm_download_overwrites_paginated_report(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("paginated-report", "downloading")):
                 op_results = run_pr_download(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -6146,7 +6809,7 @@ def run_paginated_report_command(
                 silent=silent,
                 display_names=display_names,
             )
-            with busy("Deploying..."):
+            with busy(status_detail("paginated-report", "deploying")):
                 op_results = run_pr_deploy(
                     client,
                     items,
@@ -6179,7 +6842,7 @@ def run_paginated_report_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("paginated-report", "comparing")):
                 compare_results = run_pr_compare(client, items)
             _print_compare_results(compare_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -6198,7 +6861,7 @@ def run_paginated_report_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_paginated_report(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("paginated-report", "deleting")):
                 op_results = run_pr_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(
@@ -6258,7 +6921,7 @@ def run_pipeline_command(
     from fabric_tools.pipeline.ops import (
         run_download_batch as run_pl_download,
     )
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.validate import run_dry_run_pipeline
 
     if remap_values and mode is not CommandMode.DEPLOY:
@@ -6273,11 +6936,11 @@ def run_pipeline_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = FabricClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_PIPELINE, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("pipeline", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_pipeline_inputs(
                         mode,
@@ -6338,10 +7001,10 @@ def run_pipeline_command(
         client: FabricClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = FabricClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("pipeline", "checking")):
                 results = run_dry_run_pipeline(
                     mode,
                     items,
@@ -6403,14 +7066,14 @@ def run_pipeline_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = FabricClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_pipeline_download_files(client, items)
             confirm_download_overwrites_pipeline(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("pipeline", "downloading")):
                 op_results = run_pl_download(
                     client, items, include_schedules=include_schedules
                 )
@@ -6438,7 +7101,7 @@ def run_pipeline_command(
                 include_schedules=include_schedules,
                 guid_map_line=map_line,
             )
-            with busy("Deploying..."):
+            with busy(status_detail("pipeline", "deploying")):
                 op_results = run_pl_deploy(
                     client,
                     items,
@@ -6473,7 +7136,7 @@ def run_pipeline_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("pipeline", "comparing")):
                 compare_results = run_pl_compare(
                     client, items, include_schedules=include_schedules
                 )
@@ -6494,7 +7157,7 @@ def run_pipeline_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_pipeline(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("pipeline", "deleting")):
                 op_results = run_pl_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(
@@ -6543,7 +7206,7 @@ def run_udf_command(
         resolve_udf_download_files,
     )
     from fabric_tools.guid_map import guid_map_confirm_line
-    from fabric_tools.status import busy
+    from fabric_tools.status import busy, status_detail
     from fabric_tools.udf.compare import run_compare_batch as run_udf_compare
     from fabric_tools.udf.ops import (
         UdfAuthError,
@@ -6577,11 +7240,11 @@ def run_udf_command(
             name_filter=name_filter,
         )
         if needs_expand:
-            with busy("Authenticating..."):
+            with busy(status_detail("auth", "authenticating")):
                 expand_client = FabricClient()
                 _authenticate_client(expand_client)
             list_fn = _list_items_fn_for_kind(KIND_UDF, expand_client)
-            with busy("Expanding selectors..."):
+            with busy(status_detail("udf", "expanding selectors")):
                 items, resolved_names, has_targets, has_files, has_origins = (
                     _resolve_udf_inputs(
                         mode,
@@ -6642,10 +7305,10 @@ def run_udf_command(
         client: FabricClient | None = expand_client
         try:
             if (has_targets or has_origins) and client is None:
-                with busy("Authenticating..."):
+                with busy(status_detail("auth", "authenticating")):
                     client = FabricClient()
                     _authenticate_client(client)
-            with busy("Checking..."):
+            with busy(status_detail("udf", "checking")):
                 results = run_dry_run_udf(
                     mode,
                     items,
@@ -6707,14 +7370,14 @@ def run_udf_command(
 
     client = expand_client
     if client is None:
-        with busy("Authenticating..."):
+        with busy(status_detail("auth", "authenticating")):
             client = FabricClient()
             _authenticate_client(client)
     try:
         if mode is CommandMode.DOWNLOAD:
             items = resolve_udf_download_files(client, items)
             confirm_download_overwrites_udf(client, items, silent=silent)
-            with busy("Downloading..."):
+            with busy(status_detail("udf", "downloading")):
                 op_results = run_udf_download(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -6739,7 +7402,7 @@ def run_udf_command(
                 display_names=display_names,
                 guid_map_line=map_line,
             )
-            with busy("Deploying..."):
+            with busy(status_detail("udf", "deploying")):
                 op_results = run_udf_deploy(
                     client,
                     items,
@@ -6773,7 +7436,7 @@ def run_udf_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         elif mode is CommandMode.COMPARE:
-            with busy("Comparing..."):
+            with busy(status_detail("udf", "comparing")):
                 compare_results = run_udf_compare(client, items)
             _print_compare_results(compare_results)  # type: ignore[arg-type]
             _write_manifest_after_success(
@@ -6792,7 +7455,7 @@ def run_udf_command(
             _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
         elif mode is CommandMode.DELETE:
             confirm_delete_udf(client, items, silent=silent)
-            with busy("Deleting..."):
+            with busy(status_detail("udf", "deleting")):
                 op_results = run_udf_delete(client, items)
             _print_op_results(op_results)  # type: ignore[arg-type]
             _notify_success(

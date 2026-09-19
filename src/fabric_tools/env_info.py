@@ -53,6 +53,21 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         "flag",
     ),
     EnvVarSpec(
+        "FABRIC_TOOLS_XMLA_SCRIPT",
+        "Override path to xmla_role_members.ps1 (RLS role membership).",
+        "value",
+    ),
+    EnvVarSpec(
+        "FABRIC_TOOLS_XMLA_TIMEOUT",
+        "XMLA role-operation timeout in seconds (default 25).",
+        "value",
+    ),
+    EnvVarSpec(
+        "FABRIC_TOOLS_XMLA_CONNECT_TIMEOUT",
+        "XMLA connect timeout in seconds (default 15; capped by overall timeout).",
+        "value",
+    ),
+    EnvVarSpec(
         "AZURE_TENANT_ID",
         "Service principal tenant (with CLIENT_ID and CLIENT_SECRET).",
         "value",

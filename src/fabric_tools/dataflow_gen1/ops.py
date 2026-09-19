@@ -180,7 +180,7 @@ def run_deploy_batch(
         name = None
         if display_names and index < len(display_names):
             name = display_names[index]
-        progress.advance(status_detail("Creating", "dataflow-gen1"))
+        progress.advance(status_detail("dataflow-gen1", "creating"))
         results.append(
             deploy_dataflow(
                 client,
@@ -198,7 +198,7 @@ def run_delete_batch(client: PowerBiClient, items: list[WorkItem]) -> list[OpRes
     for item in items:
         target = item.target
         item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("Deleting", "dataflow-gen1", item_id))
+        progress.advance(status_detail("dataflow-gen1", "deleting", item_id))
         results.append(delete_dataflow(client, item))
     return results
 

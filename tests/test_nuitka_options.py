@@ -59,6 +59,12 @@ def test_shared_nuitka_args_include_core_flags(project_root: Path) -> None:
     assert "--include-package=azure.identity" in args
     assert "--include-package-data=certifi" in args
     assert "--nofollow-import-to=*.tests" in args
+    xmla_script = project_root / "src" / "fabric_tools" / "xmla_role_members.ps1"
+    if xmla_script.is_file():
+        assert (
+            f"--include-data-files={xmla_script}=fabric_tools/xmla_role_members.ps1"
+            in args
+        )
     icon = project_root / "res" / "app.ico"
     if icon.is_file():
         assert f"--windows-icon-from-ico={icon}" in args

@@ -192,9 +192,42 @@ def test_deploy_kinds_help_lists_remap() -> None:
 def test_semantic_model_help_lists_commands() -> None:
     result = CliRunner().invoke(app, ["semantic-model", "--help"])
     assert result.exit_code == 0
-    for name in ("download", "deploy", "compare", "delete"):
+    for name in ("download", "deploy", "compare", "delete", "role"):
         assert name in result.stdout
     assert "semantic model" in result.stdout.lower()
+
+
+def test_semantic_model_role_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["semantic-model", "role", "--help"])
+    assert result.exit_code == 0
+    assert "list" in result.stdout
+    assert "member" in result.stdout
+    member = CliRunner().invoke(app, ["semantic-model", "role", "member", "--help"])
+    assert member.exit_code == 0
+    assert "add" in member.stdout
+    assert "remove" in member.stdout
+    add = CliRunner().invoke(app, ["semantic-model", "role", "member", "add", "--help"])
+    assert add.exit_code == 0
+    assert "--role" in add.stdout
+    assert "-r" in add.stdout
+    assert "--member" in add.stdout
+    assert "--target" in add.stdout
+    assert "-t" in add.stdout
+    # Always-required flags use Typer ``*`` / ``[required]`` (see DESIGN.md).
+    assert "[required]" in add.stdout
+    assert "(required)" not in add.stdout
+    list_help = CliRunner().invoke(app, ["semantic-model", "role", "list", "--help"])
+    assert list_help.exit_code == 0
+    assert "[required]" in list_help.stdout
+    assert "(required)" not in list_help.stdout
+
+
+def test_pack_download_help_uses_required_marker() -> None:
+    result = CliRunner().invoke(app, ["pack", "download", "--help"])
+    assert result.exit_code == 0
+    assert "--manifest" in result.stdout
+    assert "[required]" in result.stdout
+    assert "(required)" not in result.stdout
 
 
 def test_semantic_model_deploy_help_lists_independent() -> None:

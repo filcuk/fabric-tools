@@ -322,10 +322,10 @@ def test_run_compare_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> No
         ],
     )
     assert messages == [
-        "1 of 4 · Comparing report (Sales)…",
-        "2 of 4 · Comparing semantic model (Sales)…",
-        "3 of 4 · Comparing report (Sales)…",
-        "4 of 4 · Comparing semantic model (Sales)…",
+        "1 of 4 · report: comparing (Sales)…",
+        "2 of 4 · semantic-model: comparing (Sales)…",
+        "3 of 4 · report: comparing (Sales)…",
+        "4 of 4 · semantic-model: comparing (Sales)…",
     ]
 
 
@@ -342,7 +342,7 @@ def test_run_compare_batch_status_independent(tmp_path: Path, monkeypatch: Any) 
         [WorkItem(Target(WS, REPORT), report)],  # type: ignore[arg-type]
         independent=True,
     )
-    assert messages == ["1 of 1 · Comparing report (Sales)…"]
+    assert messages == ["1 of 1 · report: comparing (Sales)…"]
 
 
 def test_run_compare_batch_status_skipped_join(
@@ -411,7 +411,7 @@ def test_run_compare_batch_status_skipped_join(
         powerbi_client=FakePowerBi(dataset_id=None),
     )
     assert messages == [
-        "1 of 4 · Comparing report (Sales)…",
-        "2 of 3 · Comparing report (Sales)…",
-        "3 of 3 · Comparing semantic model (Sales)…",
+        "1 of 4 · report: comparing (Sales)…",
+        "2 of 3 · report: comparing (Sales)…",
+        "3 of 3 · semantic-model: comparing (Sales)…",
     ]

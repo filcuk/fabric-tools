@@ -38,6 +38,9 @@ fabric-tools = "fabric_tools.cli:run"
 [tool.hatch.build.targets.wheel]
 packages = ["src/fabric_tools"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/fabric_tools/xmla_role_members.ps1" = "fabric_tools/xmla_role_members.ps1"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
