@@ -94,7 +94,7 @@ Product commands: `fabric-tools semantic-model role list|member add|member remov
 
 **Backend:** Windows `pwsh` (preferred) or Windows PowerShell 5.1 + **SqlServer** module from PSGallery (Analysis Services / TOM). Not a bundled native helper. REST dataset permissions are not RLS role members.
 
-**Script:** shipped as `fabric_tools/xmla_role_members.ps1` (also [`scripts/xmla_role_members.ps1`](scripts/xmla_role_members.ps1) in the repo). Override with `FABRIC_TOOLS_XMLA_SCRIPT`. Token on stdin JSON only.
+**Script:** shipped as `fabric_tools/xmla_role_members.ps1` (also [`scripts/xmla_role_members.ps1`](scripts/xmla_role_members.ps1) in the repo). Override with `FABRIC_TOOLS_XMLA_SCRIPT`. Token on stdin JSON only. Default operation timeout is 120s (`FABRIC_TOOLS_XMLA_TIMEOUT`).
 
 ```powershell
 py -3 -m fabric_tools semantic-model role --help

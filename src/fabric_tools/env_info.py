@@ -58,6 +58,11 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         "value",
     ),
     EnvVarSpec(
+        "FABRIC_TOOLS_XMLA_TIMEOUT",
+        "XMLA role-operation timeout in seconds (default 120).",
+        "value",
+    ),
+    EnvVarSpec(
         "AZURE_TENANT_ID",
         "Service principal tenant (with CLIENT_ID and CLIENT_SECRET).",
         "value",

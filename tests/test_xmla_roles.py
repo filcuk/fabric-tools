@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -137,9 +138,11 @@ def test_invoke_passes_token_on_stdin_not_argv(
 
     captured: dict[str, object] = {}
 
-    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
-        captured["cmd"] = cmd
-        captured["input"] = kwargs.get("input")
+    def fake_run(*, exe, script, payload_json, timeout):  # type: ignore[no-untyped-def]
+        captured["exe"] = exe
+        captured["script"] = script
+        captured["payload_json"] = payload_json
+        captured["timeout"] = timeout
         return MagicMock(
             returncode=0,
             stdout=json.dumps(
@@ -148,7 +151,7 @@ def test_invoke_passes_token_on_stdin_not_argv(
             stderr="",
         )
 
-    monkeypatch.setattr("fabric_tools.xmla_roles.subprocess.run", fake_run)
+    monkeypatch.setattr("fabric_tools.xmla_roles._run_xmla_script", fake_run)
 
     secret = "tokensecret-do-not-leak"
     invoke_xmla_roles(
@@ -161,10 +164,81 @@ def test_invoke_passes_token_on_stdin_not_argv(
         silent=True,
     )
 
-    cmd = captured["cmd"]
-    assert isinstance(cmd, list)
-    assert secret not in cmd
-    assert secret not in " ".join(str(c) for c in cmd)
-    payload = json.loads(str(captured["input"]))
+    assert secret not in str(captured["exe"])
+    assert secret not in str(captured["script"])
+    payload = json.loads(str(captured["payload_json"]))
     assert payload["accessToken"] == secret
     assert payload["action"] == "list"
+    assert captured["timeout"] == 120.0
+
+
+def test_run_xmla_script_timeout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from fabric_tools.xmla_roles import _run_xmla_script
+
+    script = tmp_path / "xmla_role_members.ps1"
+    script.write_text("# stub", encoding="utf-8")
+
+    class FakeProc:
+        args = ["powershell.exe"]
+        returncode = None
+
+        def communicate(self, input=None, timeout=None):  # type: ignore[no-untyped-def]
+            if timeout is not None:
+                raise subprocess.TimeoutExpired(cmd=self.args, timeout=timeout)
+            return ("", "")
+
+        def kill(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "fabric_tools.xmla_roles.subprocess.Popen",
+        lambda *a, **k: FakeProc(),
+    )
+    with pytest.raises(XmlaRolesError, match="timed out") as exc_info:
+        _run_xmla_script(
+            exe="powershell.exe",
+            script=script,
+            payload_json="{}",
+            timeout=0.01,
+        )
+    assert exc_info.value.code == "timeout"
+
+
+def test_run_xmla_script_cancelled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from fabric_tools.xmla_roles import _run_xmla_script
+
+    script = tmp_path / "xmla_role_members.ps1"
+    script.write_text("# stub", encoding="utf-8")
+    killed: list[str] = []
+    calls = {"n": 0}
+
+    class FakeProc:
+        args = ["powershell.exe"]
+        returncode = None
+
+        def communicate(self, input=None, timeout=None):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise KeyboardInterrupt
+            return ("", "")
+
+        def kill(self) -> None:
+            killed.append("kill")
+
+    monkeypatch.setattr(
+        "fabric_tools.xmla_roles.subprocess.Popen",
+        lambda *a, **k: FakeProc(),
+    )
+    with pytest.raises(XmlaRolesError, match="Cancelled") as exc_info:
+        _run_xmla_script(
+            exe="powershell.exe",
+            script=script,
+            payload_json="{}",
+            timeout=30,
+        )
+    assert exc_info.value.code == "cancelled"
+    assert killed == ["kill"]

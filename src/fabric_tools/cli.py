@@ -90,13 +90,15 @@ _GUID_REMAP_HELP = (
 
 def _exit_error(message: str, *, code: int = EXIT_USER) -> NoReturn:
     """Print a shared Error panel and exit (never returns)."""
-    print_error_panel(message)
+    text = (message or "").strip() or "Operation failed."
+    print_error_panel(text)
     raise typer.Exit(code=code)
 
 
 def _exit_warn(message: str, *, code: int = EXIT_USER) -> NoReturn:
     """Print a shared Warning panel and exit (never returns)."""
-    print_warn_panel(message)
+    text = (message or "").strip() or "Cancelled."
+    print_warn_panel(text)
     raise typer.Exit(code=code)
 
 
@@ -5991,14 +5993,28 @@ def run_semantic_model_role_command(
                         outcomes.append((model_name, model_id, ws_label, exc))
         except AuthError as exc:
             _fail_auth(exc)
+        except XmlaRolesError as exc:
+            if exc.code == "cancelled":
+                _exit_warn(str(exc) or "Cancelled.")
+            detail = f"\n{exc.detail}" if exc.detail else ""
+            code = f" [{exc.code}]" if exc.code else ""
+            _exit_error(f"{exc}{code}{detail}", code=EXIT_API)
+        except KeyboardInterrupt:
+            _exit_warn("Cancelled.")
 
         failed = False
         for model_name, model_id, ws_label, outcome in outcomes:
             if isinstance(outcome, XmlaRolesError):
+                if outcome.code == "cancelled":
+                    _exit_warn(str(outcome) or "Cancelled.")
                 detail = f"\n{outcome.detail}" if outcome.detail else ""
                 code = f" [{outcome.code}]" if outcome.code else ""
                 print_error_panel(
-                    f"{model_name} ({model_id}) in {ws_label}: {outcome}{code}{detail}"
+                    (
+                        f"{model_name} ({model_id}) in {ws_label}: "
+                        f"{outcome}{code}{detail}"
+                    ).strip()
+                    or "XMLA role operation failed."
                 )
                 failed = True
                 continue

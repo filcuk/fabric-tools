@@ -7,6 +7,7 @@ token is passed on stdin JSON only (never argv).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -18,8 +19,11 @@ from typing import Any, Literal
 from urllib.parse import quote
 
 SCRIPT_ENV = "FABRIC_TOOLS_XMLA_SCRIPT"
+TIMEOUT_ENV = "FABRIC_TOOLS_XMLA_TIMEOUT"
 SQLSERVER_MODULE = "SqlServer"
 INSTALL_HINT = "Install-Module SqlServer -Scope CurrentUser"
+DEFAULT_TIMEOUT_SECONDS = 120.0
+
 
 XmlaAction = Literal["list", "member_add", "member_remove"]
 
@@ -95,6 +99,84 @@ def find_powershell() -> str:
     raise XmlaRolesError(
         "Neither pwsh nor powershell found on PATH (Windows required).",
         code="powershell_missing",
+    )
+
+
+def resolve_timeout_seconds() -> float:
+    """Return XMLA subprocess timeout (seconds); ``FABRIC_TOOLS_XMLA_TIMEOUT`` overrides."""
+    raw = os.environ.get(TIMEOUT_ENV)
+    if raw is None or raw.strip() == "":
+        return DEFAULT_TIMEOUT_SECONDS
+    try:
+        value = float(raw.strip())
+    except ValueError as exc:
+        raise XmlaRolesError(
+            f"{TIMEOUT_ENV} must be a positive number of seconds (got {raw!r}).",
+            code="invalid_timeout",
+        ) from exc
+    if value <= 0:
+        raise XmlaRolesError(
+            f"{TIMEOUT_ENV} must be > 0 (got {value}).",
+            code="invalid_timeout",
+        )
+    return value
+
+
+def _run_xmla_script(
+    *,
+    exe: str,
+    script: Path,
+    payload_json: str,
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    """Run the XMLA script; kill the child on timeout or Ctrl+C.
+
+    Avoid ``CREATE_NO_WINDOW`` on a TTY so console Ctrl+C can interrupt PowerShell.
+    """
+    creationflags = 0
+    # Detached console children ignore Ctrl+C from the parent terminal.
+    if not sys.stderr.isatty() and hasattr(subprocess, "CREATE_NO_WINDOW"):
+        creationflags |= subprocess.CREATE_NO_WINDOW
+
+    proc = subprocess.Popen(  # noqa: S603
+        [
+            exe,
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creationflags,
+    )
+    try:
+        stdout, stderr = proc.communicate(input=payload_json, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        proc.communicate()
+        raise XmlaRolesError(
+            f"XMLA role operation timed out after {timeout:g}s "
+            f"(set {TIMEOUT_ENV} to raise the limit).",
+            code="timeout",
+        ) from exc
+    except KeyboardInterrupt:
+        proc.kill()
+        with contextlib.suppress(Exception):
+            proc.communicate(timeout=5)
+        raise XmlaRolesError("Cancelled.", code="cancelled") from None
+
+    return subprocess.CompletedProcess(
+        args=proc.args,
+        returncode=proc.returncode if proc.returncode is not None else -1,
+        stdout=stdout or "",
+        stderr=stderr or "",
     )
 
 
@@ -290,26 +372,10 @@ def invoke_xmla_roles(
             "memberType": member_type,
         }
 
-    creationflags = 0
-    if hasattr(subprocess, "CREATE_NO_WINDOW"):
-        creationflags |= subprocess.CREATE_NO_WINDOW
-
-    proc = subprocess.run(  # noqa: S603
-        [
-            exe,
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(script),
-        ],
-        input=json.dumps(payload),
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        creationflags=creationflags,
+    proc = _run_xmla_script(
+        exe=exe,
+        script=script,
+        payload_json=json.dumps(payload),
+        timeout=resolve_timeout_seconds(),
     )
     return _parse_response(proc.stdout, proc.stderr, proc.returncode)

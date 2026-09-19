@@ -210,9 +210,10 @@ def print_error_panel(message: str) -> None:
     from fabric_tools.status import clear
 
     clear()
+    text = (message or "").strip() or "Operation failed."
     Console(stderr=True).print(
         Panel(
-            str(message),
+            text,
             border_style=STYLE_ERROR,
             title="Error",
             title_align="left",
@@ -228,9 +229,10 @@ def print_warn_panel(message: str) -> None:
     from fabric_tools.status import clear
 
     clear()
+    text = (message or "").strip() or "Cancelled."
     Console(stderr=True).print(
         Panel(
-            str(message),
+            text,
             border_style=STYLE_WARN,
             title="Warning",
             title_align="left",
