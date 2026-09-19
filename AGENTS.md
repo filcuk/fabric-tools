@@ -11,21 +11,32 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli/` — Typer surface only (`app.py`, `options.py`, `lifecycle.py`, `commands/<kind>.py`); entrypoint `fabric_tools.cli:run`
-  - `sync/` — orchestration API shared by CLI, interactive, and pack (`common.py`, `orchestrator.py` with `KindSpec` / `run_sync_command`, `kinds/<kind>.py` facades exposing `run_*_command`)
+  - `cli/` — **Typer surface only** (parse options → call sync). Entrypoint stays `fabric_tools.cli:run`.
+    - `__init__.py` — exports `app`, `run`
+    - `app.py` — root Typer app, banner callback, `add_typer` for every command group
+    - `options.py` — shared help strings + Option factories (`origin_opt`, `target_opt`, `manifest_opt`, `silent_opt`, `dry_run_opt`, `name_opt`, `remap_opt`, `filter_opt`, …)
+    - `lifecycle.py` — process lifecycle helpers used by the Typer app
+    - `commands/` — one module per group: kind sync (`notebook`, `dataflow`, `dataflow_gen1`, `pipeline`, `udf`, `environment`, `variable_library`, `org_app`, `semantic_model`, `report`, `paginated_report`) plus `inspect`, `pack`, `manifest`, `env`, `setup`, hidden `debug`
+  - `sync/` — **orchestration API** shared by CLI, interactive, and pack (do not re-export runners from `cli`)
+    - `__init__.py` — re-exports all `run_*_command`
+    - `common.py` — auth/readonly exits, `_resolve_*_inputs`, manifest write, print helpers, remap pairing, `workspaceId:*` expand labels
+    - `orchestrator.py` — `KindSpec`, `SyncRequest`, `run_sync_command` (shared download/deploy/compare/delete skeleton)
+    - `kinds/<kind>.py` — thin `run_*_command` facades that build a `KindSpec` and call `run_sync_command` (exception: `semantic_model_role.py` stays a custom XMLA runner)
   - `xmla_roles.py` — Windows PowerShell + SqlServer (PSGallery) client for semantic-model RLS role members (`xmla_role_members.ps1`)
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save); calls `fabric_tools.sync`
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (schema v3 packs: top-level `kind: "pack"`; per-entry `kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `environment` \| `variable-library` \| `org-app` \| `semantic-model` \| `report` \| `paginated-report`; optional pack/entry `remap` path refs)
-  - `pack_run.py` — multi-kind pack orchestration (`fabric-tools pack …`); calls `fabric_tools.sync`
+  - `pack_run.py` — multi-kind pack orchestration (`fabric-tools pack …`); kind → `run_*_command` map; calls `fabric_tools.sync`
   - `colours.py` — CLI colour roles, help theme, `debug color` swatch (see [DESIGN.md](DESIGN.md))
   - `inspect_cmd.py` — Fabric workspace/item list/get helpers (filters, formatters, `--target` shapes)
   - `path_setup.py` — Windows user install/update/uninstall (`fabric-tools setup …`; Nuitka onefile extracts under `%LOCALAPPDATA%\fabric-tools\cache`, install copies to `app\`; `setup update` downloads release exe and deferred-installs)
+  - `setup_status.py` — `setup status` presentation (key/value layout + async GitHub update check); Typer wrapper stays in `cli/commands/setup.py`
   - `update_check.py` — GitHub Releases check (`setup update --check`); once-per-day background notice; release asset download
   - `auth.py` — Azure token acquisition (Fabric + Power BI scopes; SP env, timed WAM broker, browser/device code; persistent cache)
   - `client.py` — Fabric REST client + LRO polling (`get_workspace`, `get_item`, `list_workspaces`, `list_items`)
   - `powerbi_client.py` — Power BI REST client (Gen1 dataflow get/delete/import + poll; report list/export/import; paginated report RDL export/import/delete)
   - `definition_parts.py` — recursive folder ↔ InlineBase64 definition parts
   - `guid_map.py` — deploy `--remap` / `-r` JSON (source GUID → target GUID) load/pair/apply to definition text parts
+  - `remote_expand.py` — `workspaceId:*` / `--filter` expansion helpers
   - `parsing.py` — polymorphic `--origin` / `--target` parsing and mode validation (`download` \| `deploy` \| `compare` \| `delete`; `deploy_create_only` for Gen1)
   - `validate.py` — `--dry-run` remote/local checks (Fabric notebooks + Dataflow Gen2 + Power BI Gen1 + DataPipeline + UDF + Environment + Variable Library + Org App + semantic model + report + paginated-report)
   - `confirm.py` — overwrite / create / delete prompts
@@ -54,11 +65,26 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Python 3.11+, `src/` layout, Hatchling build
 - CLI framework: Typer; HTTP: httpx; auth: azure-identity (+ azure-identity-broker on Windows WAM)
 - Prefer small, focused modules over large catch-all files
+- **Typer never owns business flow** — `cli/commands/*` only parse options and call `fabric_tools.sync.run_*_command`
+- **Three frontends, one orchestration API** — CLI, interactive, and pack all call the same `run_*` functions
 - CLI colours / aligned tables: use `fabric_tools.colours` roles; do not invent new colours without updating [DESIGN.md](DESIGN.md)
 - Lint/format with Ruff (`ruff check` / `ruff format`; config in `pyproject.toml`)
 - Do not commit secrets, `.env`, or built `dist/` / `build/` artifacts
 - Plan execution: complete one plan step, stop for user review/commit, wait for `continue`
 - **Short-alias matching:** a short option letter must match its long option; never reuse a short letter for a different long name; no hidden rename aliases. Before adding/changing flags, update and check [FLAGS.md](FLAGS.md). Breaking migrations go in [BREAKING.md](BREAKING.md).
+
+## Add a kind checklist
+
+When adding a new syncable Fabric / Power BI artifact kind, wire it end-to-end in this order:
+
+1. **Domain package** — `src/fabric_tools/<kind>/` with `definition.py` (pack/unpack + local validate), `ops.py` (download/create/overwrite/delete batches), `compare.py` (unified diff). Prefer Fabric Git-style folders unless the service only exposes another format (e.g. Gen1 `model.json`, paginated `.rdl`).
+2. **Confirm + validate** — add overwrite/create/delete prompts in `confirm.py` (name every known affected object unless `-s`); add `run_dry_run_<kind>` in `validate.py`. Cascade / shared-consumer wording must follow the Fabric delete-cascade rule.
+3. **Sync KindSpec** — `sync/kinds/<kind>.py` with a stable `run_<kind>_command(**kwargs)` that builds a `KindSpec` and calls `run_sync_command`. Put kind-specific flags (publish, schedules, cells, independent, …) on `SyncRequest` / `validate_flags` / hooks — do not fork the orchestrator control flow. Register the runner in `sync/__init__.py`.
+4. **Resolve / expand** — add `_resolve_<kind>_inputs` (and deploy-name helper if needed) in `sync/common.py`; extend `_list_items_fn_for_kind` / `_KIND_EXPAND_LABELS` when `workspaceId:*` applies.
+5. **Pack** — add `KIND_*` in `manifest.py`; map it in `pack_run.py`’s kind → runner dict (and any kind-specific kwargs such as publish / schedules / independent). Update deploy/delete kind ordering in `group_pack_entries_by_kind` when order matters.
+6. **CLI** — thin `cli/commands/<kind>.py` using `cli/options.py` factories for shared flags; kind-local extras stay in the command module. Register with `app.add_typer` in `cli/app.py`.
+7. **Interactive** — tool choice + mode branches in `interactive.py` (and any post-execute save extras).
+8. **Docs + tests** — update [FLAGS.md](FLAGS.md) for any new short/long options; document the kind in [README.md](README.md) and this file’s Layout / CLI contract; add unit tests under `tests/` (CliRunner help, dry-run paths, and kind-specific ops/compare as needed).
 
 ## CLI contract
 
