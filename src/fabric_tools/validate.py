@@ -614,7 +614,7 @@ def run_dry_run_report(
                         CheckResult(
                             False,
                             f"local fail: {item.file} — compare does not support .pbix "
-                            "(use a *.Report folder or --origin)",
+                            "(use a *.Report folder or remote --origin)",
                         )
                     )
                 elif item.file.is_file():

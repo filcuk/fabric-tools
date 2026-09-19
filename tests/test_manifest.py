@@ -407,7 +407,6 @@ def test_resolve_notebook_inputs_from_manifest(tmp_path: Path) -> None:
     items, names, has_t, has_f, has_o = _resolve_notebook_inputs(
         CommandMode.COMPARE,
         target_values=None,
-        file_values=None,
         origin_values=None,
         dry_run=False,
         names=None,
@@ -524,7 +523,7 @@ def test_dry_run_writes_manifest_on_success(
             "-d",
             "-t",
             f"{WS}:{ITEM}",
-            "-f",
+            "-o",
             str(nb),
             "-m",
             "setup",
@@ -571,7 +570,7 @@ def test_dry_run_skips_manifest_on_failure(
             "-d",
             "-t",
             f"{WS}:{ITEM}",
-            "-f",
+            "-o",
             str(nb),
             "-m",
             "setup",
@@ -859,9 +858,7 @@ def test_legacy_v1_manifest_rejected(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    with pytest.raises(
-        ManifestError, match="Unsupported schema version. Requires v3 or higher."
-    ):
+    with pytest.raises(ManifestError, match="schema version is no longer supported"):
         load_manifest(path)
 
 

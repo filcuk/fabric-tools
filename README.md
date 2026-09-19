@@ -16,6 +16,10 @@ Have you ever wanted to:
 
 [fabric-tools](https://github.com/filcuk/fabric-tools/) is made for ~~lazy~~ _efficient_ developers, intended to _streamline daily tasks_ across Fabric, avoiding clunky online editors and slow deployment pipelines.  
 
+> [!CAUTION]
+> This is in early development. Functionality may change, flags may change.  
+> Review [BREAKING.md](BREAKING.md) or release notes carefuly on every update.  
+
 ## Quick start
 
 1. Download the [latest release](https://github.com/filcuk/fabric-tools/releases/download/latest/fabric-tools.exe)
@@ -43,10 +47,10 @@ Have you ever wanted to:
 ```powershell
 # Find notebooks in project workspaces
 fabric-tools inspect workspace list -f 'projects'
-fabric-tools inspect item list -t <workspaceId> -t Notebook
+fabric-tools inspect item list -t <workspaceId> -a Notebook
 
 # Download a notebook from Fabric and save a deployment manifest
-fabric-tools notebook download -s -t <workspaceId>:<notebookId> -f .\etl.ipynb -m etl
+fabric-tools notebook download -s -o <workspaceId>:<notebookId> -t .\etl.ipynb -m etl
 
 # Compare and deploy a local notebook vs the remote Fabric version using the manifest
 fabric-tools notebook compare -m etl
@@ -55,29 +59,29 @@ fabric-tools notebook deploy -m etl
 
 ## Support
 
-| Item|One-way|Two-way|Notes|
+|Item|One-way|Two-way|Notes|
 |---|---|---|---|
-| Notebook|✅|✅|Can update individual cells.|
-| Dataflow Gen2|✅|✅||
-| Dataflow Gen1|✅|🚫|No API support for overwrite.|
-| Data Pipeline|✅|✅||
-| User Data Function|✅|✅||
-| Semantic Model|✅|✅||
-| Report|✅|✅|Standalone or model-joined operations.|
-| Paginated Report|✅|✅|No API support for sources & credentials.|
-| Org App|✅|✅||
-| Environment|✅|✅||
-| Variable Library|✅|✅||
-| Lakehouse|🚫|🚫|No API support.|
-| Warehouse|❔|❔||
-| Eventhouse|❔|❔||
-| Eventstream|❔|❔||
-| KQL Database|❔|❔||
-| KQL Queryset|❔|❔||
-| KQL Dashboard|❔|❔||
-| Reflex (Activator)|❔|❔||
-| Mirrored Database|❔|❔||
-| Ontology|❔|❔||
+|Notebook|✅|✅|Can update individual cells.|
+|Dataflow Gen2|✅|✅||
+|Dataflow Gen1|✅|🚫|No API support for overwrite.|
+|Data Pipeline|✅|✅||
+|User Data Function|✅|✅||
+|Semantic Model|✅|✅|RLS management planned.|
+|Report|✅|✅|Standalone or model-joined operations.|
+|Paginated Report|✅|✅|No API support for sources & credentials.|
+|Org App|✅|✅||
+|Environment|✅|✅||
+|Variable Library|✅|✅||
+|Lakehouse|🚫|🚫|No API support.|
+|Warehouse|❔|❔||
+|Eventhouse|❔|❔||
+|Eventstream|❔|❔||
+|KQL Database|❔|❔||
+|KQL Queryset|❔|❔||
+|KQL Dashboard|❔|❔||
+|Reflex (Activator)|❔|❔||
+|Mirrored Database|❔|❔||
+|Ontology|❔|❔||
 
 **Legend:**  
 ✅ = Supported  
@@ -132,6 +136,7 @@ Remove-Item "$env:LOCALAPPDATA\fabric-tools\msal-auth-record.json" -ErrorAction 
 | `1` | Validation error, user abort, compare found differences, or newer release available |
 | `2` | API or operation failure, update check failure |
 
-## License
+## Reference
 
-See [LICENSE](LICENSE).
+- Flags: [FLAGS.md](FLAGS.md)
+- License: [LICENSE](LICENSE)

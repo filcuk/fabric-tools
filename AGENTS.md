@@ -24,7 +24,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `powerbi_client.py` — Power BI REST client (Gen1 dataflow get/delete/import + poll; report list/export/import; paginated report RDL export/import/delete)
   - `definition_parts.py` — recursive folder ↔ InlineBase64 definition parts
   - `guid_map.py` — deploy `--remap` / `-r` JSON (source GUID → target GUID) load/pair/apply to definition text parts
-  - `parsing.py` — `--target` / `--file` / `--origin` parsing and mode validation (`download` \| `deploy` \| `compare` \| `delete`; `deploy_create_only` for Gen1)
+  - `parsing.py` — polymorphic `--origin` / `--target` parsing and mode validation (`download` \| `deploy` \| `compare` \| `delete`; `deploy_create_only` for Gen1)
   - `validate.py` — `--dry-run` remote/local checks (Fabric notebooks + Dataflow Gen2 + Power BI Gen1 + DataPipeline + UDF + Environment + Variable Library + Org App + semantic model + report + paginated-report)
   - `confirm.py` — overwrite / create / delete prompts
   - `status.py` — Rich spinner / status line for auth and long-running work
@@ -56,17 +56,18 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 - Lint/format with Ruff (`ruff check` / `ruff format`; config in `pyproject.toml`)
 - Do not commit secrets, `.env`, or built `dist/` / `build/` artifacts
 - Plan execution: complete one plan step, stop for user review/commit, wait for `continue`
+- **Short-alias matching:** a short option letter must match its long option; never reuse a short letter for a different long name; no hidden rename aliases. Before adding/changing flags, update and check [FLAGS.md](FLAGS.md). Breaking migrations go in [BREAKING.md](BREAKING.md).
 
 ## CLI contract
 
 ### Shared
 
-- Targets: `--target <workspaceId>:<artifactId>` (create: `--target <workspaceId>` only). Repeatable or comma-separated. Overwrite CSV is one workspace per flag value (bare artifact GUIDs inherit that workspace; use separate `-t` for other workspaces). Create CSV may list multiple workspaces.
-- Files: `--file` paired 1:1 with targets, or one file broadcast to N targets (deploy/download). Download may omit `--file` (defaults to remote display name + the kind's local extension, including `.VariableLibrary`, in the current folder).
-- Origins: `--origin` / `-o` `<workspaceId>:<artifactId>` for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as targets; deploy may broadcast one origin to N targets; compare is 1:1)
-- Delete: `--target` workspace:artifact only (no `--file`/`--origin`); optional `-m` load when entries have `itemId` (manifest not rewritten after delete)
+- **From → to:** `--origin` / `-o` is where content comes from (local path **or** remote selector). `--target` / `-t` is where it goes / the destination (local path **or** remote selector, by mode). Repeatable or comma-separated (spaces after commas OK). Overwrite CSV is one workspace per flag value (bare artifact GUIDs inherit that workspace; use separate flags for other workspaces). Create CSV may list multiple workspaces.
+- **Download:** `-o <workspaceId:artifactId>` required; optional `-t <local path>` (defaults to remote display name + kind extension).
+- **Deploy / compare:** `-o` local path or remote source; `-t` remote destination. Deploy may broadcast one origin to N targets; compare is 1:1.
+- **Delete:** `-t` workspace:artifact only (no `--origin`); optional `-m` load when entries have `itemId` (manifest not rewritten after delete).
 - Manifests: `--manifest` / `-m` stem → `.ftdep`; alone loads pairs; on success or successful dry-run rewrites when content changed (create execute backfills `itemId`; identical content is left alone with no “Wrote manifest” line). **Schema v3 only** (`kind: "pack"`; each entry has its own `kind`; schemaVersion 1/2 unsupported). Optional pack-level and per-entry `remap` path refs to GUID map JSON (relative to the `.ftdep`); CLI `--remap` / `-r` overrides for that run. Homogeneous packs work with kind-specific commands; mixed packs use `pack download|deploy|compare|delete`. Deploy order starts semantic-model → report → variable-library → environment, then consumers and other kinds; delete reverses kind groups. `manifest inspect` one-line summaries in cwd; `manifest inspect -m` dumps one file, or one-line summaries when `-m` is a folder; `manifest list` filenames only; `manifest delete` / `move` local `.ftdep` files (confirm unless `-s`). Interactive may offer save after execute or dry-run (optional pack-level remap path).
-- Flags: `--silent`, `--dry-run`
+- Flags: `--silent` / `-s`, `--dry-run` / `-d` (see [FLAGS.md](FLAGS.md))
 - Auth: interactive default; Windows WAM silent reuse, then interactive WAM (skipped in IDE/non-TTY, otherwise 45s timeout) then browser then device code; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` (not supported for `udf`)
 - Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute and `setup install` / `setup update` (install) / `setup uninstall` / `setup clean`. Allows download, compare, `inspect`, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, `setup update --check`. `--silent` does not override.
 - Env report: `fabric-tools env list` lists supported env vars (`FABRIC_TOOLS_*`, `AZURE_*`) and current process values (`AZURE_CLIENT_SECRET` redacted). `env set` / `env unset` persist catalogued names in the Windows user environment (new terminal needed for other shells; secret values never echoed). Allowed under read-only.
@@ -76,10 +77,10 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 
 - Read-only Fabric Core browse: `inspect workspace list|get`, `inspect item list|get` (not local `manifest inspect`)
 - `--target` / `-t`: workspace GUID for workspace get / item list; `workspaceId:itemId` for item get
-- `--filter` / `-f`: case-insensitive `displayName` substring (inspect-scoped; not `--file`)
-- `--item` / `-i`: Fabric type filter — workspace types (`Personal`, `Workspace`, `AdminWorkspace`) or item types (`Notebook`, `Dataflow`, …); inspect-scoped (not root `--interactive`)
+- `--filter` / `-f`: case-insensitive `displayName` substring
+- `--artifact` / `-a`: Fabric type filter — workspace types (`Personal`, `Workspace`, `AdminWorkspace`) or item types (`Notebook`, `Dataflow`, …); inspect-scoped (not root `--interactive`)
 - List: aligned columns with header row (Rich: name default, other columns dim; headers blue). Workspace: `NAME ID TYPE CAPACITY DOMAIN`. Item: `NAME TARGET TYPE` (`TARGET` = `workspaceId:itemId`). Get: aligned key/value columns (dim **right-aligned** keys, left-aligned default values; no colons)
-- Item list passes `--item` to the Fabric `type` query param; name filter is client-side
+- Item list passes `--artifact` through to the Fabric `type` query param; name filter is client-side
 - Scope is what the signed-in principal can access (Personal / My workspace included for user auth; typically not for service principal)
 
 ### Notebooks

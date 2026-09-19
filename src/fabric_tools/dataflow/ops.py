@@ -34,7 +34,7 @@ def download_dataflow(client: FabricClient, item: WorkItem) -> OpResult:
     if item.target is None or item.target.item_id is None:
         return OpResult(False, "download requires workspace:artifact target")
     if item.file is None:
-        return OpResult(False, "download requires a local --file path")
+        return OpResult(False, "download requires a local --target path")
 
     target = item.target
     dest = item.file
@@ -80,9 +80,9 @@ def deploy_dataflow(
     if item.target is None:
         return OpResult(False, "deploy requires a --target")
     if item.file is None and item.origin is None:
-        return OpResult(False, "deploy requires a local --file or --origin")
+        return OpResult(False, "deploy requires a local path or remote --origin")
     if item.file is not None and item.origin is not None:
-        return OpResult(False, "deploy cannot use both --file and --origin")
+        return OpResult(False, "deploy cannot mix a local path and a remote --origin")
 
     target = item.target
 

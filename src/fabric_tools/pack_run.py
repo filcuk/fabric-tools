@@ -131,9 +131,7 @@ def run_pack_command(
             _exit_error(f"unsupported pack entry kind '{kind}'")
 
         try:
-            target_values, file_values, origin_values, names = _entry_cli_args(
-                entries, mode=mode
-            )
+            target_values, origin_values, names = _entry_cli_args(entries, mode=mode)
         except ManifestError as exc:
             _exit_error(str(exc))
 
@@ -153,7 +151,6 @@ def run_pack_command(
 
         kwargs: dict[str, Any] = {
             "target_values": target_values,
-            "file_values": file_values,
             "origin_values": origin_values,
             "silent": silent,
             "dry_run": dry_run,
@@ -222,16 +219,22 @@ def _entry_cli_args(
     entries: list[ManifestEntry],
     *,
     mode: CommandMode,
-) -> tuple[list[str], list[str] | None, list[str] | None, list[str | None] | None]:
-    targets: list[str] = []
+) -> tuple[list[str], list[str] | None, list[str | None] | None]:
+    """Build polymorphic ``--target`` / ``--origin`` CLI lists from pack entries.
+
+    Download: ``--origin`` = remotes, ``--target`` = local paths.
+    Deploy/compare: ``--target`` = remotes; ``--origin`` = local paths or remotes.
+    Delete: ``--target`` = remotes only.
+    """
+    remotes: list[str] = []
     files: list[str] = []
     origins: list[str] = []
     names: list[str | None] = []
     for entry in entries:
         if entry.item_id:
-            targets.append(f"{entry.workspace_id}:{entry.item_id}")
+            remotes.append(f"{entry.workspace_id}:{entry.item_id}")
         else:
-            targets.append(entry.workspace_id)
+            remotes.append(entry.workspace_id)
         if mode is CommandMode.DELETE:
             continue
         if entry.has_file:
@@ -242,14 +245,14 @@ def _entry_cli_args(
         names.append(entry.display_name)
 
     if mode is CommandMode.DELETE:
-        return targets, None, None, None
+        return remotes, None, None
     if files and origins:
         raise ManifestError("pack group mixes file and origin entries")
     if not files and not origins:
         raise ManifestError("pack group entries need file or origin")
-    return (
-        targets,
-        files or None,
-        origins or None,
-        names if any(names) else None,
-    )
+    name_arg = names if any(names) else None
+    if files:
+        if mode is CommandMode.DOWNLOAD:
+            return files, remotes, name_arg
+        return remotes, files, name_arg
+    return remotes, origins, name_arg

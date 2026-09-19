@@ -66,7 +66,8 @@ def test_interactive_dispatches_compare(monkeypatch: pytest.MonkeyPatch) -> None
         run_interactive_wizard()
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.COMPARE
-    assert captured["kwargs"]["file_values"] == ["./a.ipynb"]
+    assert captured["kwargs"]["origin_values"] == ["./a.ipynb"]
+    assert captured["kwargs"].get("file_values") is None
     assert captured["kwargs"]["ignore_outputs"] is True
     assert captured["kwargs"]["on_success"] is not None
 
@@ -105,7 +106,11 @@ def test_interactive_dry_run_offers_manifest_callback(
         run_interactive_wizard()
     assert captured["kwargs"]["dry_run"] is True
     assert captured["kwargs"]["on_success"] is not None
-    assert captured["kwargs"]["file_values"] == ["./a.ipynb"]
+    assert captured["kwargs"]["origin_values"] == [
+        "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222"
+    ]
+    assert captured["kwargs"]["target_values"] == ["./a.ipynb"]
+    assert captured["kwargs"].get("file_values") is None
 
 
 def test_prompt_save_manifest_writes_file(
@@ -247,7 +252,7 @@ def test_interactive_dataflow_gen1_download(monkeypatch: pytest.MonkeyPatch) -> 
         run_interactive_wizard()
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DOWNLOAD
-    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"].get("file_values") is None
     assert captured["kwargs"]["on_success"] is not None
 
 
@@ -292,7 +297,7 @@ def test_interactive_paginated_report_download(
         run_interactive_wizard()
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DOWNLOAD
-    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"].get("file_values") is None
     assert captured["kwargs"]["on_success"] is not None
 
 
@@ -335,7 +340,7 @@ def test_interactive_dataflow_download(monkeypatch: pytest.MonkeyPatch) -> None:
         run_interactive_wizard()
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DOWNLOAD
-    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"].get("file_values") is None
     assert captured["kwargs"]["on_success"] is not None
 
 
@@ -372,7 +377,7 @@ def test_interactive_variable_library_download(
         run_interactive_wizard()
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DOWNLOAD
-    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"].get("file_values") is None
     assert captured["kwargs"]["on_success"] is not None
 
 
@@ -417,7 +422,7 @@ def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
         run_interactive_wizard()
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DOWNLOAD
-    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"].get("file_values") is None
     assert captured["kwargs"]["include_schedules"] is False
     assert captured["kwargs"]["on_success"] is not None
 
@@ -469,7 +474,8 @@ def test_interactive_pipeline_deploy_include_schedules(
     assert captured["mode"] is CommandMode.DEPLOY
     assert captured["kwargs"]["include_schedules"] is True
     assert captured["kwargs"]["remap_values"] is None
-    assert captured["kwargs"]["file_values"] == [r".\ETL.DataPipeline"]
+    assert captured["kwargs"]["origin_values"] == [r".\ETL.DataPipeline"]
+    assert captured["kwargs"].get("file_values") is None
     assert captured["kwargs"]["target_values"] == [
         "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222"
     ]
@@ -520,7 +526,8 @@ def test_interactive_notebook_deploy_remap(monkeypatch: pytest.MonkeyPatch) -> N
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DEPLOY
     assert captured["kwargs"]["remap_values"] == [r".\prod.remap.json"]
-    assert captured["kwargs"]["file_values"] == [r".\etl.ipynb"]
+    assert captured["kwargs"]["origin_values"] == [r".\etl.ipynb"]
+    assert captured["kwargs"].get("file_values") is None
 
 
 def test_interactive_dataflow_deploy_publish(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -568,7 +575,8 @@ def test_interactive_dataflow_deploy_publish(monkeypatch: pytest.MonkeyPatch) ->
     assert captured["mode"] is CommandMode.DEPLOY
     assert captured["kwargs"]["publish"] is True
     assert captured["kwargs"]["remap_values"] is None
-    assert captured["kwargs"]["file_values"] == [r".\Sales.Dataflow"]
+    assert captured["kwargs"]["origin_values"] == [r".\Sales.Dataflow"]
+    assert captured["kwargs"].get("file_values") is None
 
 
 def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -602,7 +610,7 @@ def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:
         run_interactive_wizard()
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DOWNLOAD
-    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"].get("file_values") is None
     assert captured["kwargs"]["on_success"] is not None
 
 
@@ -736,4 +744,4 @@ def test_interactive_back_reprompts_previous_step(
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DOWNLOAD
     assert captured["kwargs"]["dry_run"] is False
-    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"].get("file_values") is None

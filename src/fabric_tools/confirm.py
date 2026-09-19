@@ -179,7 +179,9 @@ def resolve_notebook_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
 
     with busy("Resolving download paths..."):
         names = [
@@ -203,7 +205,9 @@ def resolve_dataflow_gen1_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
 
     with busy("Resolving download paths..."):
         names = [
@@ -227,7 +231,9 @@ def resolve_paginated_report_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
 
     with busy("Resolving download paths..."):
         names = [
@@ -251,7 +257,9 @@ def resolve_dataflow_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
 
     with busy("Resolving download paths..."):
         names = [
@@ -275,7 +283,9 @@ def resolve_org_app_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
 
     with busy("Resolving download paths..."):
         names = [
@@ -299,7 +309,9 @@ def resolve_variable_library_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
     with busy("Resolving download paths..."):
         names = [
             variable_library_display_name(client, item.target)
@@ -322,7 +334,9 @@ def resolve_environment_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
     with busy("Resolving download paths..."):
         names = [
             environment_display_name(client, item.target)
@@ -1058,7 +1072,9 @@ def resolve_semantic_model_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
 
     with busy("Resolving download paths..."):
         names = [
@@ -1259,7 +1275,9 @@ def resolve_report_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
 
     with busy("Resolving download paths..."):
         names = [
@@ -1490,7 +1508,9 @@ def resolve_pipeline_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
 
     with busy("Resolving download paths..."):
         names = [
@@ -1661,7 +1681,9 @@ def resolve_udf_download_files(
     if not items or all(item.file is not None for item in items):
         return items
     if any(item.file is not None for item in items):
-        raise ValueError("download work items must all omit --file or all provide it")
+        raise ValueError(
+            "download work items must all omit --target path or all provide it"
+        )
 
     with busy("Resolving download paths..."):
         names = [
