@@ -11,7 +11,8 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 ## Layout
 
 - `src/fabric_tools/` — package root
-  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `environment` + `variable-library` + `org-app` + `semantic-model` + `report` + `paginated-report` + `inspect` groups, `env` (list/set/unset), `manifest` (inspect/list/delete/move), `pack` (download/deploy/compare/delete), `setup`, hidden `debug` (`debug color` palette swatch)
+  - `cli.py` — Typer entrypoint (`fabric-tools`), notebook + `dataflow` + `dataflow-gen1` + `pipeline` + `udf` + `environment` + `variable-library` + `org-app` + `semantic-model` + `report` + `paginated-report` + `inspect` groups, `env` (list/set/unset), `manifest` (inspect/list/delete/move), `pack` (download/deploy/compare/delete), `setup`, hidden `debug` (`debug color` palette swatch; `debug xmla-roles` XMLA/TOM spike)
+  - `xmla_roles.py` — Windows PowerShell + SqlServer (PSGallery) client for semantic-model RLS role members (Phase 3 spike; not product commands yet)
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save)
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (schema v3 packs: top-level `kind: "pack"`; per-entry `kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `environment` \| `variable-library` \| `org-app` \| `semantic-model` \| `report` \| `paginated-report`; optional pack/entry `remap` path refs)
   - `pack_run.py` — multi-kind pack orchestration (`fabric-tools pack …`)
@@ -212,6 +213,7 @@ py -3 -m fabric_tools pipeline --help
 py -3 -m fabric_tools udf --help
 py -3 -m fabric_tools setup --help
 py -3 -m fabric_tools debug color
+py -3 -m fabric_tools debug xmla-roles --help
 py -3 -m ruff check .
 py -3 -m ruff format --check .
 py -3 -m pytest

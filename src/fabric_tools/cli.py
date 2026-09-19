@@ -437,6 +437,181 @@ def debug_color_cmd() -> None:
     raise typer.Exit(code=EXIT_OK)
 
 
+xmla_roles_app = typer.Typer(
+    name="xmla-roles",
+    help=(
+        "Spike: list/add/remove semantic-model role members via PowerShell "
+        "SqlServer (TOM/XMLA)."
+    ),
+    no_args_is_help=True,
+    hidden=True,
+    context_settings=_HELP_CONTEXT,
+)
+debug_app.add_typer(xmla_roles_app, name="xmla-roles")
+
+
+def _debug_resolve_model_names(target: str) -> tuple[str, str, str]:
+    """Return (workspace_display_name, model_display_name, access_token)."""
+    from fabric_tools.auth import POWER_BI_SCOPE, create_credential, get_access_token
+    from fabric_tools.client import FabricApiError, FabricClient
+    from fabric_tools.inspect_cmd import InspectError, parse_item_get_target
+    from fabric_tools.status import busy
+
+    try:
+        parsed = parse_item_get_target(target)
+    except InspectError as exc:
+        _exit_error(str(exc))
+    assert parsed.item_id is not None
+    try:
+        with busy("Authenticating..."):
+            client = FabricClient()
+            _authenticate_client(client)
+            token = get_access_token(create_credential(), scope=POWER_BI_SCOPE).token
+        with busy("Resolving workspace and model..."):
+            workspace = client.get_workspace(parsed.workspace_id)
+            item = client.get_item(parsed.workspace_id, parsed.item_id)
+    except AuthError as exc:
+        _fail_auth(exc)
+    except FabricApiError as exc:
+        _exit_error(str(exc), code=EXIT_API)
+
+    ws_name = workspace.get("displayName") or workspace.get("name")
+    model_name = item.get("displayName") or item.get("name")
+    if not isinstance(ws_name, str) or not ws_name.strip():
+        _exit_error("Workspace has no displayName for XMLA connection.")
+    if not isinstance(model_name, str) or not model_name.strip():
+        _exit_error("Semantic model has no displayName for XMLA database name.")
+    item_type = item.get("type")
+    if item_type and item_type != "SemanticModel":
+        _exit_error(
+            f"Target type is {item_type!r}; expected SemanticModel.",
+            code=EXIT_USER,
+        )
+    return ws_name.strip(), model_name.strip(), token
+
+
+def _debug_xmla_invoke(
+    *,
+    target: str,
+    action: str,
+    role: str | None = None,
+    member: str | None = None,
+    silent: bool = False,
+) -> None:
+    from fabric_tools.status import busy
+    from fabric_tools.xmla_roles import XmlaRolesError, invoke_xmla_roles
+
+    try:
+        workspace_name, database_name, token = _debug_resolve_model_names(target)
+        with busy("XMLA role operation..."):
+            result = invoke_xmla_roles(
+                action=action,  # type: ignore[arg-type]
+                workspace_name=workspace_name,
+                database_name=database_name,
+                access_token=token,
+                role_name=role,
+                member_name=member,
+                offer_install=not silent,
+                silent=silent,
+            )
+    except XmlaRolesError as exc:
+        detail = f"\n{exc.detail}" if exc.detail else ""
+        code = f" [{exc.code}]" if exc.code else ""
+        _exit_error(f"{exc}{code}{detail}", code=EXIT_API)
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _exit_error(str(exc), code=EXIT_API)
+
+    typer.echo(result.message)
+    if result.roles:
+        import json
+
+        typer.echo(json.dumps({"roles": result.roles}, indent=2))
+    raise typer.Exit(code=EXIT_OK)
+
+
+@xmla_roles_app.command("list", help="List roles and members for one semantic model.")
+def debug_xmla_roles_list(
+    target: str = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="workspaceId:itemId of a SemanticModel.",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="Do not offer SqlServer Install-Module; fail with the install hint.",
+    ),
+) -> None:
+    """Spike: XMLA role list via SqlServer PowerShell module."""
+    _debug_xmla_invoke(target=target, action="list", silent=silent)
+
+
+@xmla_roles_app.command("member-add", help="Add a UPN/group to a model role.")
+def debug_xmla_roles_member_add(
+    target: str = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="workspaceId:itemId of a SemanticModel.",
+    ),
+    role: str = typer.Option(..., "--role", help="Model role name."),
+    member: str = typer.Option(
+        ...,
+        "--member",
+        help="Member UPN or group name (AzureAD).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="Do not offer SqlServer Install-Module; fail with the install hint.",
+    ),
+) -> None:
+    """Spike: XMLA role member add via SqlServer PowerShell module."""
+    _debug_xmla_invoke(
+        target=target,
+        action="member_add",
+        role=role,
+        member=member,
+        silent=silent,
+    )
+
+
+@xmla_roles_app.command("member-remove", help="Remove a UPN/group from a model role.")
+def debug_xmla_roles_member_remove(
+    target: str = typer.Option(
+        ...,
+        "--target",
+        "-t",
+        help="workspaceId:itemId of a SemanticModel.",
+    ),
+    role: str = typer.Option(..., "--role", help="Model role name."),
+    member: str = typer.Option(
+        ...,
+        "--member",
+        help="Member UPN or group name (AzureAD).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="Do not offer SqlServer Install-Module; fail with the install hint.",
+    ),
+) -> None:
+    """Spike: XMLA role member remove via SqlServer PowerShell module."""
+    _debug_xmla_invoke(
+        target=target,
+        action="member_remove",
+        role=role,
+        member=member,
+        silent=silent,
+    )
+
+
 def _flush_update_notice(ctx: typer.Context) -> None:
     """Print a background update notice on stderr, if one is ready."""
     if ctx.meta.get("skip_bg_update"):

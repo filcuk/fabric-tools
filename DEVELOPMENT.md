@@ -87,3 +87,26 @@ Notes:
 - Do not commit `dist/` or `build/`
 - Unsigned binaries may trigger SmartScreen warnings
 - Auth from the exe uses Windows WAM (when available), browser/device-code, or `AZURE_*` service principal env vars; tokens persist under `%LOCALAPPDATA%\fabric-tools`
+
+## XMLA role-membership spike (PowerShell Gallery)
+
+Phase 3 discovery only (hidden `debug xmla-roles`). Product `semantic-model role …` comes later.
+
+**Backend:** Windows `pwsh` (preferred) or Windows PowerShell 5.1 + **SqlServer** module from PSGallery (loads Analysis Services / TOM). Not a bundled `.exe`. MicrosoftPowerBIMgmt alone is not enough (REST dataset permissions ≠ RLS role members).
+
+**Script:** [`scripts/xmla_role_members.ps1`](scripts/xmla_role_members.ps1) — stdin JSON (`list` / `member_add` / `member_remove`); access token on stdin only (never argv). Override path with `FABRIC_TOOLS_XMLA_SCRIPT`.
+
+```powershell
+py -3 -m fabric_tools debug xmla-roles --help
+py -3 -m fabric_tools debug xmla-roles list -t <workspaceId>:<semanticModelId>
+```
+
+If SqlServer is missing, the CLI offers `Install-Module SqlServer -Scope CurrentUser` (confirm required). `-s` / `--silent` skips the offer and prints the install hint.
+
+**Notes for live trials:**
+
+- Capacity / workspace must allow **XMLA read/write**
+- Use Power BI API scope token (CLI already does for this spike)
+- Members are UPNs or Entra groups (`ExternalModelRoleMember`); service principals are not valid RLS role members
+- Add/remove are idempotent (already present / already absent → `changed: false`)
+- Prefer PowerShell 7 (`pwsh`) when available; 5.1 also works with a current SqlServer module

@@ -12,7 +12,7 @@ Have you ever wanted to:
 - Quickly update specific notebook cells
 - Deploy items across multiple workspaces simultaneously
 - Efficiently back up or remove large numbers of items
-- Use alternative agents besides Copilot
+- And a lot more...
 
 [fabric-tools](https://github.com/filcuk/fabric-tools/) is made for ~~lazy~~ _efficient_ developers, intended to _streamline daily tasks_ across Fabric, avoiding clunky online editors and slow deployment pipelines.  
 
@@ -24,7 +24,7 @@ Have you ever wanted to:
 
 1. Download the [latest release](https://github.com/filcuk/fabric-tools/releases/download/latest/fabric-tools.exe)
 1. Unblock the file (File → Properties)
-1. Install for improved speed and ease of access _(optional but recommended)_:
+1. Install in PowerShell for improved speed and ease of access _(optional but recommended)_:
 
   ```powershell
   .\fabric-tools.exe setup install
