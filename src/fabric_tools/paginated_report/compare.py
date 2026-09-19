@@ -141,8 +141,7 @@ def _compare_origin_to_target(client: PowerBiClient, item: WorkItem) -> CompareR
     origin_ws = _resolve_group_name(client, origin.workspace_id)
     target_ws = _resolve_group_name(client, target.workspace_id)
     header = (
-        f"origin {local_name} in {origin_ws}  vs  "
-        f"target {remote_name} in {target_ws}"
+        f"origin {local_name} in {origin_ws}  vs  target {remote_name} in {target_ws}"
     )
 
     try:
