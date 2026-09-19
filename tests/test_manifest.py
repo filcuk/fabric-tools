@@ -8,11 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from fabric_tools.cli import (
-    _resolve_notebook_inputs,
-    _write_manifest_after_success,
-    app,
-)
+from fabric_tools.cli import app
 from fabric_tools.client import FabricApiError
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
@@ -49,6 +45,10 @@ from fabric_tools.manifest import (
 )
 from fabric_tools.notebook.ops import OpResult
 from fabric_tools.parsing import CommandMode, Target, WorkItem
+from fabric_tools.sync.common import (
+    _resolve_notebook_inputs,
+    _write_manifest_after_success,
+)
 
 WS = "11111111-1111-1111-1111-111111111111"
 ITEM = "22222222-2222-2222-2222-222222222222"
