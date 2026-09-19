@@ -5,14 +5,29 @@ from __future__ import annotations
 import typer
 
 from fabric_tools.cli.options import (
-    FILTER_HELP,
+    DRY_RUN_COMPARE_HELP,
+    DRY_RUN_DELETE_HELP,
+    DRY_RUN_DEPLOY_HELP,
+    DRY_RUN_DOWNLOAD_HELP,
     HELP_CONTEXT,
-    MANIFEST_HELP,
+    MANIFEST_DELETE_HELP,
+    ORIGIN_COMPARE_HELP,
+    ORIGIN_DEPLOY_HELP,
+    ORIGIN_DOWNLOAD_HELP,
+    TARGET_COMPARE_HELP,
+    TARGET_DELETE_HELP,
+    TARGET_DEPLOY_HELP,
+    TARGET_DOWNLOAD_HELP,
+    dry_run_opt,
+    filter_opt,
+    manifest_opt,
+    name_opt,
+    origin_opt,
+    silent_opt,
+    target_opt,
 )
 from fabric_tools.parsing import CommandMode
-from fabric_tools.sync import (
-    run_environment_command,
-)
+from fabric_tools.sync import run_environment_command
 
 environment_app = typer.Typer(
     name="environment",
@@ -24,38 +39,12 @@ environment_app = typer.Typer(
 
 @environment_app.command("download")
 def environment_download(
-    origin: list[str] | None = typer.Option(
-        None,
-        "--origin",
-        "-o",
-        help="(required without -m or -d) Remote workspace:artifact to download. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(optional) Local destination path. "
-        "Defaults to remote display name with the kind extension in the current folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One path may broadcast to all origins.",
-    ),
-    manifest: str | None = typer.Option(None, "--manifest", "-m", help=MANIFEST_HELP),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    silent: bool = typer.Option(
-        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets and/or files only; do not download.",
-    ),
+    origin: list[str] | None = origin_opt(help=ORIGIN_DOWNLOAD_HELP),
+    target: list[str] | None = target_opt(help=TARGET_DOWNLOAD_HELP),
+    manifest: str | None = manifest_opt(),
+    name_filter: str | None = filter_opt(),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_DOWNLOAD_HELP),
 ) -> None:
     """Download Environment definition(s) from Fabric to local folders."""
     run_environment_command(
@@ -71,45 +60,15 @@ def environment_download(
 
 @environment_app.command("deploy")
 def environment_deploy(
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(required without -m or -d) workspace GUID (create) or "
-        "workspace:artifact (overwrite). Repeatable or comma-separated.",
-    ),
-    origin: list[str] | None = typer.Option(
-        None,
-        "--origin",
-        "-o",
-        help="(required without -m or -d) Fabric workspace:artifact source. "
-        "Repeatable or comma-separated; one origin may broadcast to all targets.",
-    ),
-    name: list[str] | None = typer.Option(
-        None,
-        "--name",
-        "-n",
-        help="(optional, create only) Display name. Defaults to folder stem "
-        "or origin display name.",
-    ),
-    manifest: str | None = typer.Option(None, "--manifest", "-m", help=MANIFEST_HELP),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    silent: bool = typer.Option(
-        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets and/or sources only; do not deploy.",
-    ),
+    target: list[str] | None = target_opt(help=TARGET_DEPLOY_HELP),
+    origin: list[str] | None = origin_opt(help=ORIGIN_DEPLOY_HELP),
+    name: list[str] | None = name_opt(),
+    manifest: str | None = manifest_opt(),
+    name_filter: str | None = filter_opt(),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_DEPLOY_HELP),
 ) -> None:
-    """Deploy Environment item(s) from local folders or a Fabric origin."""
+    """Deploy Environment definition(s) (create or overwrite)."""
     run_environment_command(
         CommandMode.DEPLOY,
         target_values=target,
@@ -124,35 +83,13 @@ def environment_deploy(
 
 @environment_app.command("compare")
 def environment_compare(
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Must 1:1 match --origin.",
-    ),
-    origin: list[str] | None = typer.Option(
-        None,
-        "--origin",
-        "-o",
-        help="(required without -m or -d) Fabric workspace:artifact to compare "
-        "against --target. Must 1:1 match --target.",
-    ),
-    manifest: str | None = typer.Option(None, "--manifest", "-m", help=MANIFEST_HELP),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets and/or sources only; do not compare.",
-    ),
+    target: list[str] | None = target_opt(help=TARGET_COMPARE_HELP),
+    origin: list[str] | None = origin_opt(help=ORIGIN_COMPARE_HELP),
+    manifest: str | None = manifest_opt(),
+    name_filter: str | None = filter_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_COMPARE_HELP),
 ) -> None:
-    """Compare target Environment to a local folder or Fabric origin."""
+    """Compare local/remote Environment definitions to remote targets."""
     run_environment_command(
         CommandMode.COMPARE,
         target_values=target,
@@ -166,35 +103,11 @@ def environment_compare(
 
 @environment_app.command("delete")
 def environment_delete(
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated.",
-    ),
-    manifest: str | None = typer.Option(
-        None,
-        "--manifest",
-        "-m",
-        help="(optional) Load workspace:artifact targets from a .ftdep "
-        "(entries must have itemId). Not rewritten after delete.",
-    ),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    silent: bool = typer.Option(
-        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets only; do not delete.",
-    ),
+    target: list[str] | None = target_opt(help=TARGET_DELETE_HELP),
+    manifest: str | None = manifest_opt(help=MANIFEST_DELETE_HELP),
+    name_filter: str | None = filter_opt(),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_DELETE_HELP),
 ) -> None:
     """Soft-delete Environment item(s) in Fabric."""
     run_environment_command(

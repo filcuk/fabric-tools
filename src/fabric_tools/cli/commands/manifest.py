@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from fabric_tools.cli.options import FILTER_HELP, HELP_CONTEXT
+from fabric_tools.cli.options import FILTER_HELP, HELP_CONTEXT, silent_opt
 from fabric_tools.colours import FG_OK, print_warn_panel
 from fabric_tools.exit_codes import EXIT_OK
 from fabric_tools.manifest import (
@@ -124,12 +124,7 @@ def manifest_delete(
         "-f",
         help=FILTER_HELP,
     ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
+    silent: bool = silent_opt(),
 ) -> None:
     """Delete a local deployment manifest file (not a Fabric item)."""
     from fabric_tools.confirm import ConfirmationAborted, confirm_or_abort
@@ -166,12 +161,7 @@ def manifest_move(
         "-m",
         help="Deployment manifest stem or path (.ftdep) to move.",
     ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
+    silent: bool = silent_opt(),
 ) -> None:
     """Move or rename a local deployment manifest file."""
     from fabric_tools.confirm import ConfirmationAborted, confirm_or_abort

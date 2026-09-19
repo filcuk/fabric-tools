@@ -7,6 +7,10 @@ import typer
 from fabric_tools.cli.options import (
     GUID_REMAP_HELP,
     HELP_CONTEXT,
+    dry_run_opt,
+    manifest_opt,
+    remap_opt,
+    silent_opt,
 )
 from fabric_tools.parsing import CommandMode
 
@@ -17,27 +21,14 @@ pack_app = typer.Typer(
     context_settings=HELP_CONTEXT,
 )
 
+_PACK_MANIFEST = "Pack manifest stem or path (.ftdep schema v3)."
+
 
 @pack_app.command("download")
 def pack_download(
-    manifest: str = typer.Option(
-        ...,
-        "--manifest",
-        "-m",
-        help="Pack manifest stem or path (.ftdep schema v3).",
-    ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate only; do not download.",
-    ),
+    manifest: str = manifest_opt(help=_PACK_MANIFEST, required=True),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help="(optional) Validate only; do not download."),
     include_schedules: bool = typer.Option(
         False,
         "--include-schedules",
@@ -65,29 +56,11 @@ def pack_download(
 
 @pack_app.command("deploy")
 def pack_deploy(
-    manifest: str = typer.Option(
-        ...,
-        "--manifest",
-        "-m",
-        help="Pack manifest stem or path (.ftdep schema v3).",
-    ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate only; do not deploy.",
-    ),
-    remap: list[str] | None = typer.Option(
-        None,
-        "--remap",
-        "-r",
-        help=GUID_REMAP_HELP + " Overrides pack/entry remap path refs for this run.",
+    manifest: str = manifest_opt(help=_PACK_MANIFEST, required=True),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help="(optional) Validate only; do not deploy."),
+    remap: list[str] | None = remap_opt(
+        help=GUID_REMAP_HELP + " Overrides pack/entry remap path refs for this run."
     ),
     publish: bool = typer.Option(
         False,
@@ -107,7 +80,7 @@ def pack_deploy(
         help="(optional) Report-only (do not join semantic model).",
     ),
 ) -> None:
-    """Deploy all items in a multi-kind pack (models before reports)."""
+    """Deploy all items in a multi-kind pack (ordered by kind)."""
     from fabric_tools.pack_run import run_pack_command
 
     run_pack_command(
@@ -124,18 +97,8 @@ def pack_deploy(
 
 @pack_app.command("compare")
 def pack_compare(
-    manifest: str = typer.Option(
-        ...,
-        "--manifest",
-        "-m",
-        help="Pack manifest stem or path (.ftdep schema v3).",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate only; do not compare.",
-    ),
+    manifest: str = manifest_opt(help=_PACK_MANIFEST, required=True),
+    dry_run: bool = dry_run_opt(help="(optional) Validate only; do not compare."),
     include_schedules: bool = typer.Option(
         False,
         "--include-schedules",
@@ -148,7 +111,7 @@ def pack_compare(
         help="(optional) Report-only (do not join semantic model).",
     ),
 ) -> None:
-    """Compare all items in a multi-kind pack."""
+    """Compare all items in a multi-kind pack (ordered by kind)."""
     from fabric_tools.pack_run import run_pack_command
 
     run_pack_command(
@@ -163,26 +126,11 @@ def pack_compare(
 
 @pack_app.command("delete")
 def pack_delete(
-    manifest: str = typer.Option(
-        ...,
-        "--manifest",
-        "-m",
-        help="Pack manifest stem or path (.ftdep schema v3).",
-    ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate only; do not delete.",
-    ),
+    manifest: str = manifest_opt(help=_PACK_MANIFEST, required=True),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help="(optional) Validate only; do not delete."),
 ) -> None:
-    """Delete all items in a multi-kind pack (reports before models)."""
+    """Delete all items in a multi-kind pack (reverse kind order)."""
     from fabric_tools.pack_run import run_pack_command
 
     run_pack_command(

@@ -5,15 +5,30 @@ from __future__ import annotations
 import typer
 
 from fabric_tools.cli.options import (
-    FILTER_HELP,
-    GUID_REMAP_HELP,
+    DRY_RUN_COMPARE_HELP,
+    DRY_RUN_DELETE_HELP,
+    DRY_RUN_DEPLOY_HELP,
+    DRY_RUN_DOWNLOAD_HELP,
     HELP_CONTEXT,
-    MANIFEST_HELP,
+    MANIFEST_DELETE_HELP,
+    ORIGIN_COMPARE_HELP,
+    ORIGIN_DEPLOY_HELP,
+    ORIGIN_DOWNLOAD_HELP,
+    TARGET_COMPARE_HELP,
+    TARGET_DELETE_HELP,
+    TARGET_DEPLOY_HELP,
+    TARGET_DOWNLOAD_HELP,
+    dry_run_opt,
+    filter_opt,
+    manifest_opt,
+    name_opt,
+    origin_opt,
+    remap_opt,
+    silent_opt,
+    target_opt,
 )
 from fabric_tools.parsing import CommandMode
-from fabric_tools.sync import (
-    run_udf_command,
-)
+from fabric_tools.sync import run_udf_command
 
 udf_app = typer.Typer(
     name="udf",
@@ -25,46 +40,12 @@ udf_app = typer.Typer(
 
 @udf_app.command("download")
 def udf_download(
-    origin: list[str] | None = typer.Option(
-        None,
-        "--origin",
-        "-o",
-        help="(required without -m or -d) Remote workspace:artifact to download. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(optional) Local destination path. "
-        "Defaults to remote display name with the kind extension in the current folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One path may broadcast to all origins.",
-    ),
-    manifest: str | None = typer.Option(
-        None,
-        "--manifest",
-        "-m",
-        help=MANIFEST_HELP,
-    ),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets and/or files only; do not download.",
-    ),
+    origin: list[str] | None = origin_opt(help=ORIGIN_DOWNLOAD_HELP),
+    target: list[str] | None = target_opt(help=TARGET_DOWNLOAD_HELP),
+    manifest: str | None = manifest_opt(),
+    name_filter: str | None = filter_opt(),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_DOWNLOAD_HELP),
 ) -> None:
     """Download User Data Function definition(s) from Fabric to local folders."""
     run_udf_command(
@@ -80,61 +61,16 @@ def udf_download(
 
 @udf_app.command("deploy")
 def udf_deploy(
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(required without -m or -d) workspace GUID (create) or "
-        "workspace:artifact (overwrite). Repeatable or comma-separated "
-        "(spaces after commas OK).",
-    ),
-    origin: list[str] | None = typer.Option(
-        None,
-        "--origin",
-        "-o",
-        help="(required without -m or -d) Local path or remote workspace:artifact source. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One origin may broadcast to all targets.",
-    ),
-    name: list[str] | None = typer.Option(
-        None,
-        "--name",
-        "-n",
-        help="(optional, create only) Display name. Defaults to folder stem "
-        "or origin display name.",
-    ),
-    manifest: str | None = typer.Option(
-        None,
-        "--manifest",
-        "-m",
-        help=MANIFEST_HELP,
-    ),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets and/or sources only; do not deploy.",
-    ),
-    remap: list[str] | None = typer.Option(
-        None,
-        "--remap",
-        "-r",
-        help=GUID_REMAP_HELP,
-    ),
+    target: list[str] | None = target_opt(help=TARGET_DEPLOY_HELP),
+    origin: list[str] | None = origin_opt(help=ORIGIN_DEPLOY_HELP),
+    name: list[str] | None = name_opt(),
+    manifest: str | None = manifest_opt(),
+    name_filter: str | None = filter_opt(),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_DEPLOY_HELP),
+    remap: list[str] | None = remap_opt(),
 ) -> None:
-    """Deploy User Data Function item(s) from local folders or a Fabric origin."""
+    """Deploy User Data Function definition(s) (create or overwrite)."""
     run_udf_command(
         CommandMode.DEPLOY,
         target_values=target,
@@ -150,40 +86,13 @@ def udf_deploy(
 
 @udf_app.command("compare")
 def udf_compare(
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "With a local --origin path: one workspace only. Must 1:1 match --origin.",
-    ),
-    origin: list[str] | None = typer.Option(
-        None,
-        "--origin",
-        "-o",
-        help="(required without -m or -d) Local path or remote workspace:artifact to compare against --target. Must 1:1 match --target (no broadcast).",
-    ),
-    manifest: str | None = typer.Option(
-        None,
-        "--manifest",
-        "-m",
-        help=MANIFEST_HELP,
-    ),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets and/or sources only; do not compare.",
-    ),
+    target: list[str] | None = target_opt(help=TARGET_COMPARE_HELP),
+    origin: list[str] | None = origin_opt(help=ORIGIN_COMPARE_HELP),
+    manifest: str | None = manifest_opt(),
+    name_filter: str | None = filter_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_COMPARE_HELP),
 ) -> None:
-    """Compare target User Data Function to a local folder or Fabric origin."""
+    """Compare local/remote User Data Function definitions to remote targets."""
     run_udf_command(
         CommandMode.COMPARE,
         target_values=target,
@@ -197,38 +106,11 @@ def udf_compare(
 
 @udf_app.command("delete")
 def udf_delete(
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK).",
-    ),
-    manifest: str | None = typer.Option(
-        None,
-        "--manifest",
-        "-m",
-        help="(optional) Load workspace:artifact targets from a .ftdep "
-        "(entries must have itemId). Not rewritten after delete.",
-    ),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets only; do not delete.",
-    ),
+    target: list[str] | None = target_opt(help=TARGET_DELETE_HELP),
+    manifest: str | None = manifest_opt(help=MANIFEST_DELETE_HELP),
+    name_filter: str | None = filter_opt(),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_DELETE_HELP),
 ) -> None:
     """Soft-delete User Data Function item(s) in Fabric."""
     run_udf_command(

@@ -5,14 +5,29 @@ from __future__ import annotations
 import typer
 
 from fabric_tools.cli.options import (
-    FILTER_HELP,
+    DRY_RUN_COMPARE_HELP,
+    DRY_RUN_DELETE_HELP,
+    DRY_RUN_DEPLOY_HELP,
+    DRY_RUN_DOWNLOAD_HELP,
     HELP_CONTEXT,
-    MANIFEST_HELP,
+    MANIFEST_DELETE_HELP,
+    ORIGIN_COMPARE_HELP,
+    ORIGIN_DEPLOY_HELP,
+    ORIGIN_DOWNLOAD_HELP,
+    TARGET_COMPARE_HELP,
+    TARGET_DELETE_HELP,
+    TARGET_DEPLOY_HELP,
+    TARGET_DOWNLOAD_HELP,
+    dry_run_opt,
+    filter_opt,
+    manifest_opt,
+    name_opt,
+    origin_opt,
+    silent_opt,
+    target_opt,
 )
 from fabric_tools.parsing import CommandMode
-from fabric_tools.sync import (
-    run_report_command,
-)
+from fabric_tools.sync import run_report_command
 
 report_app = typer.Typer(
     name="report",
@@ -21,58 +36,27 @@ report_app = typer.Typer(
     context_settings=HELP_CONTEXT,
 )
 
+_INDEPENDENT_HELP = (
+    "(optional) Report-only: do not join/download/deploy a packable semantic model."
+)
+
 
 @report_app.command("download")
 def report_download(
-    origin: list[str] | None = typer.Option(
-        None,
-        "--origin",
-        "-o",
-        help="(required without -m or -d) Remote workspace:artifact to download. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(optional) Local destination path. "
-        "Defaults to remote display name with the kind extension in the current folder. "
-        "Repeatable or comma-separated (spaces after commas OK). "
-        "One path may broadcast to all origins.",
-    ),
-    manifest: str | None = typer.Option(
-        None,
-        "--manifest",
-        "-m",
-        help=MANIFEST_HELP,
-    ),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets and/or local paths only; do not download.",
-    ),
+    origin: list[str] | None = origin_opt(help=ORIGIN_DOWNLOAD_HELP),
+    target: list[str] | None = target_opt(help=TARGET_DOWNLOAD_HELP),
+    manifest: str | None = manifest_opt(),
+    name_filter: str | None = filter_opt(),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_DOWNLOAD_HELP),
     independent: bool = typer.Option(
         False,
         "--independent",
         "-i",
-        help="(optional) Download the report only (no joined semantic model / "
-        "LiveConnect for .pbix).",
+        help=_INDEPENDENT_HELP,
     ),
 ) -> None:
-    """Download report definition(s) to local *.Report folders or .pbix files."""
+    """Download report(s) from Fabric (joined model by default when packable)."""
     run_report_command(
         CommandMode.DOWNLOAD,
         target_values=target,
@@ -87,67 +71,29 @@ def report_download(
 
 @report_app.command("deploy")
 def report_deploy(
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(required without -m or -d) workspace GUID (create) or "
-        "workspace:artifact (overwrite). Repeatable or comma-separated.",
-    ),
-    origin: list[str] | None = typer.Option(
-        None,
-        "--origin",
-        "-o",
-        help="(required without -m or -d) Local path or remote workspace:artifact source.",
-    ),
-    name: list[str] | None = typer.Option(
-        None,
-        "--name",
-        "-n",
-        help="(optional) Display name for create. Defaults from folder/.pbix stem. "
-        "One name may broadcast.",
-    ),
-    manifest: str | None = typer.Option(
-        None,
-        "--manifest",
-        "-m",
-        help=MANIFEST_HELP,
-    ),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets and/or sources only; do not deploy.",
-    ),
+    target: list[str] | None = target_opt(help=TARGET_DEPLOY_HELP),
+    origin: list[str] | None = origin_opt(help=ORIGIN_DEPLOY_HELP),
+    name: list[str] | None = name_opt(),
+    manifest: str | None = manifest_opt(),
+    name_filter: str | None = filter_opt(),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_DEPLOY_HELP),
     independent: bool = typer.Option(
         False,
         "--independent",
         "-i",
-        help="(optional) Deploy the report only (no joined model). "
-        "Errors on thick .pbix or packable sibling *.SemanticModel.",
+        help=_INDEPENDENT_HELP,
     ),
 ) -> None:
-    """Create or overwrite report(s); joins a packable semantic model by default."""
+    """Deploy report(s) (create or overwrite; joined model by default)."""
     run_report_command(
         CommandMode.DEPLOY,
         target_values=target,
         origin_values=origin,
-        names=name,
         silent=silent,
         dry_run=dry_run,
         name_filter=name_filter,
+        names=name,
         manifest=manifest,
         independent=independent,
     )
@@ -155,45 +101,19 @@ def report_deploy(
 
 @report_app.command("compare")
 def report_compare(
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    origin: list[str] | None = typer.Option(
-        None,
-        "--origin",
-        "-o",
-        help="(required without -m or -d) Local path or remote workspace:artifact source.",
-    ),
-    manifest: str | None = typer.Option(
-        None,
-        "--manifest",
-        "-m",
-        help=MANIFEST_HELP,
-    ),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets and/or sources only; do not compare.",
-    ),
+    target: list[str] | None = target_opt(help=TARGET_COMPARE_HELP),
+    origin: list[str] | None = origin_opt(help=ORIGIN_COMPARE_HELP),
+    manifest: str | None = manifest_opt(),
+    name_filter: str | None = filter_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_COMPARE_HELP),
     independent: bool = typer.Option(
         False,
         "--independent",
         "-i",
-        help="(optional) Compare the report definition only (skip joined semantic model).",
+        help=_INDEPENDENT_HELP,
     ),
 ) -> None:
-    """Compare target report to a local *.Report folder or Fabric origin."""
+    """Compare local/remote report folders to remote targets (not .pbix)."""
     run_report_command(
         CommandMode.COMPARE,
         target_values=target,
@@ -208,39 +128,13 @@ def report_compare(
 
 @report_app.command("delete")
 def report_delete(
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="(required without -m or -d) workspace:artifact GUID. "
-        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
-    ),
-    manifest: str | None = typer.Option(
-        None,
-        "--manifest",
-        "-m",
-        help=MANIFEST_HELP,
-    ),
-    name_filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help=FILTER_HELP,
-    ),
-    silent: bool = typer.Option(
-        False,
-        "--silent",
-        "-s",
-        help="(optional) Skip confirmation prompts.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-d",
-        help="(optional) Validate targets only; do not delete.",
-    ),
+    target: list[str] | None = target_opt(help=TARGET_DELETE_HELP),
+    manifest: str | None = manifest_opt(help=MANIFEST_DELETE_HELP),
+    name_filter: str | None = filter_opt(),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_DELETE_HELP),
 ) -> None:
-    """Soft-delete report(s); the bound semantic model is left intact."""
+    """Delete report(s) only (upstream model left intact when known)."""
     run_report_command(
         CommandMode.DELETE,
         target_values=target,
