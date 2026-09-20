@@ -18,7 +18,6 @@ from fabric_tools.report.ops import (
     run_deploy_batch,
     run_download_batch,
 )
-from fabric_tools.status import short_guid
 
 WS = "11111111-1111-1111-1111-111111111111"
 REPORT = "22222222-2222-2222-2222-222222222222"
@@ -377,10 +376,10 @@ def test_run_download_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> N
         powerbi_client=FakePowerBi(),
     )
     assert messages == [
-        f"1 of 4 · report: downloading ({short_guid(REPORT)})…",
-        f"2 of 4 · semantic-model: downloading ({short_guid(MODEL)})…",
-        f"3 of 4 · report: downloading ({short_guid(report_b)})…",
-        f"4 of 4 · semantic-model: downloading ({short_guid(model_b)})…",
+        "1 of 4 · report: downloading (FromOrigin)…",
+        "2 of 4 · semantic-model: downloading (FromOrigin)…",
+        "3 of 4 · report: downloading (FromOrigin)…",
+        "4 of 4 · semantic-model: downloading (FromOrigin)…",
     ]
 
 
@@ -397,7 +396,7 @@ def test_run_download_batch_status_independent(
         [WorkItem(Target(WS, REPORT), tmp_path / "Sales.Report")],  # type: ignore[arg-type]
         independent=True,
     )
-    assert messages == [f"1 of 1 · report: downloading ({short_guid(REPORT)})…"]
+    assert messages == ["1 of 1 · report: downloading (FromOrigin)…"]
 
 
 def test_run_deploy_batch_status_joined_create(
@@ -419,8 +418,8 @@ def test_run_deploy_batch_status_joined_create(
         display_names=["Sales"],
     )
     assert messages == [
-        "1 of 2 · semantic-model: creating…",
-        "2 of 2 · report: creating…",
+        "1 of 2 · semantic-model: creating (Sales)…",
+        "2 of 2 · report: creating (Sales)…",
     ]
 
 
@@ -443,8 +442,8 @@ def test_run_deploy_batch_status_joined_overwrite(
         semantic_model_ids=[MODEL],
     )
     assert messages == [
-        f"1 of 2 · semantic-model: deploying ({short_guid(MODEL)})…",
-        f"2 of 2 · report: deploying ({short_guid(REPORT)})…",
+        "1 of 2 · semantic-model: deploying (FromOrigin)…",
+        "2 of 2 · report: deploying (FromOrigin)…",
     ]
 
 
@@ -463,6 +462,6 @@ def test_run_delete_batch_status(monkeypatch: Any) -> None:
         ],
     )
     assert messages == [
-        f"1 of 2 · report: deleting ({short_guid(REPORT)})…",
-        f"2 of 2 · report: deleting ({short_guid(report_b)})…",
+        "1 of 2 · report: deleting (FromOrigin)…",
+        "2 of 2 · report: deleting (FromOrigin)…",
     ]

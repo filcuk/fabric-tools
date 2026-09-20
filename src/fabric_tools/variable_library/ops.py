@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.confirm import status_item_label
 from fabric_tools.parsing import WorkItem
 from fabric_tools.status import BatchProgress, status_detail
 from fabric_tools.variable_library.definition import (
@@ -223,8 +224,13 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        item_id = item.target.item_id if item.target is not None else None
-        progress.advance(status_detail("variable-library", "downloading", item_id))
+        progress.advance(
+            status_detail(
+                "variable-library",
+                "downloading",
+                status_item_label(client, item.target),
+            )
+        )
         results.append(download_variable_library(client, item))
     return results
 
@@ -246,10 +252,13 @@ def run_deploy_batch(
         )
         target = item.target
         action = "creating" if target is not None and target.is_create else "deploying"
-        item_id = (
-            target.item_id if target is not None and not target.is_create else None
+        progress.advance(
+            status_detail(
+                "variable-library",
+                action,
+                status_item_label(client, target, fallback=name),
+            )
         )
-        progress.advance(status_detail("variable-library", action, item_id))
         results.append(
             deploy_variable_library(
                 client,
@@ -265,8 +274,13 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        item_id = item.target.item_id if item.target is not None else None
-        progress.advance(status_detail("variable-library", "deleting", item_id))
+        progress.advance(
+            status_detail(
+                "variable-library",
+                "deleting",
+                status_item_label(client, item.target),
+            )
+        )
         results.append(delete_variable_library(client, item))
     return results
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from fabric_tools.confirm import status_paginated_label
 from fabric_tools.paginated_report.definition import (
     DefinitionError,
     display_name_from_path,
@@ -20,7 +21,6 @@ from fabric_tools.powerbi_client import (
     report_id_from_import,
 )
 from fabric_tools.status import BatchProgress, status_detail
-from fabric_tools.status import update as update_status
 
 
 @dataclass
@@ -134,14 +134,16 @@ def delete_paginated_report(client: PowerBiClient, item: WorkItem) -> OpResult:
 
 
 def run_download_batch(client: PowerBiClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
-        dest = item.file
-        if target is not None and dest is not None:
-            update_status(f"Downloading {target.label()} -> {dest}...")
-        else:
-            update_status("Downloading paginated-report...")
+        progress.advance(
+            status_detail(
+                "paginated-report",
+                "downloading",
+                status_paginated_label(client, item.target),
+            )
+        )
         results.append(download_paginated_report(client, item))
     return results
 
@@ -160,14 +162,13 @@ def run_deploy_batch(
         if display_names and index < len(display_names):
             name = display_names[index]
         target = item.target
+        label = status_paginated_label(client, target, fallback=name)
         if target is not None and target.is_create:
-            progress.advance(status_detail("paginated-report", "creating"))
+            progress.advance(status_detail("paginated-report", "creating", label))
         elif target is not None:
-            progress.advance(
-                status_detail("paginated-report", "overwriting", target.item_id)
-            )
+            progress.advance(status_detail("paginated-report", "overwriting", label))
         else:
-            progress.advance(status_detail("paginated-report", "deploying"))
+            progress.advance(status_detail("paginated-report", "deploying", label))
         results.append(
             deploy_paginated_report(
                 client,
@@ -183,9 +184,13 @@ def run_delete_batch(client: PowerBiClient, items: list[WorkItem]) -> list[OpRes
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
-        item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("paginated-report", "deleting", item_id))
+        progress.advance(
+            status_detail(
+                "paginated-report",
+                "deleting",
+                status_paginated_label(client, item.target),
+            )
+        )
         results.append(delete_paginated_report(client, item))
     return results
 

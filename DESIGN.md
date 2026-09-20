@@ -118,7 +118,7 @@ Long-running work uses a Rich dots spinner on stderr (`fabric_tools.status.busy`
 
 - **module** — CLI command group (`notebook`, `semantic-model`, `inspect`, `setup`, `auth`, …)
 - **action** — lowercase verb phrase (`downloading`, `adding role member`, `authenticating`)
-- **name** — optional display name or short GUID in parentheses; omit the ` (…)` segment when there is no name
+- **name** — optional **display name** in parentheses; omit the ` (…)` segment when there is no name. Resolve via `item_display_name` / `status_item_label` (or kind-specific helpers) before calling `status_detail` — do not pass a raw item GUID. Short GUID truncation is only a fallback when lookup fails.
 
 Examples:
 
