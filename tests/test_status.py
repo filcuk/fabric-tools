@@ -46,9 +46,8 @@ def test_busy_nested_restores_parent_message() -> None:
         )
     )
 
-    with patch.object(status, "_console", console):
-        with status.busy("Outer..."):
-            with status.busy("Inner..."):
-                pass
+    with patch.object(status, "_console", console), status.busy("Outer..."):
+        with status.busy("Inner..."):
+            pass
 
     assert updates == ["Inner...", "Outer..."]

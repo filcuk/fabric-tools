@@ -9,7 +9,9 @@ import pytest
 from fabric_tools import console_ux
 
 
-def test_owns_console_alone_false_on_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_owns_console_alone_false_on_non_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(console_ux.sys, "platform", "linux")
     assert console_ux.owns_console_alone() is False
 
@@ -46,7 +48,9 @@ def test_owns_console_alone_true_with_terminal_host_only(
         "_console_process_names",
         lambda: ["openconsole.exe", "fabric-tools.exe"],
     )
-    monkeypatch.setattr(console_ux, "_process_image_name", lambda _pid: "fabric-tools.exe")
+    monkeypatch.setattr(
+        console_ux, "_process_image_name", lambda _pid: "fabric-tools.exe"
+    )
     assert console_ux.owns_console_alone() is True
 
 

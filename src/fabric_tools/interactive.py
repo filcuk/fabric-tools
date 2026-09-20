@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
-import typer
 import questionary
+import typer
 from questionary import Choice
 
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.manifest import (
+    KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_PIPELINE,
+    KIND_UDF,
     ManifestError,
     item_id_overrides_from_results,
     manifest_from_work_items,
@@ -21,17 +24,31 @@ from fabric_tools.notebook.compare import CompareResult
 from fabric_tools.notebook.ops import OpResult
 from fabric_tools.parsing import CommandMode, WorkItem
 
+_TOOL_KIND = {
+    "notebook": KIND_NOTEBOOK,
+    "dataflow": KIND_DATAFLOW,
+    "dataflow-gen1": KIND_DATAFLOW_GEN1,
+    "pipeline": KIND_PIPELINE,
+    "udf": KIND_UDF,
+}
+
 
 def run_interactive_wizard() -> None:
     """Prompt for tool/activity/parameters, then dispatch to the matching runner."""
-    from fabric_tools.cli import run_dataflow_gen1_command, run_notebook_command
+    from fabric_tools.cli import (
+        run_dataflow_command,
+        run_dataflow_gen1_command,
+        run_notebook_command,
+        run_pipeline_command,
+        run_udf_command,
+    )
 
     typer.echo("fabric-tools interactive mode")
     typer.echo("Use arrow keys + Enter to select. Ctrl+C cancels.\n")
 
     tool = _select(
         "Select tool",
-        choices=["notebook", "dataflow-gen1"],
+        choices=["notebook", "dataflow", "dataflow-gen1", "pipeline", "udf"],
         default="notebook",
     )
 
@@ -67,16 +84,21 @@ def run_interactive_wizard() -> None:
     origins: list[str] = []
     names: list[str] = []
 
-    file_prompt = (
-        "Enter file (model.json)"
-        if tool == "dataflow-gen1"
-        else "Enter file (.ipynb or *.Notebook folder)"
-    )
-    origin_label = (
-        "Power BI origin (workspace:artifact)"
-        if tool == "dataflow-gen1"
-        else "Fabric origin (workspace:artifact)"
-    )
+    if tool == "dataflow-gen1":
+        file_prompt = "Enter file (model.json)"
+        origin_label = "Power BI origin (workspace:artifact)"
+    elif tool == "dataflow":
+        file_prompt = "Enter folder (*.Dataflow)"
+        origin_label = "Fabric origin (workspace:artifact)"
+    elif tool == "pipeline":
+        file_prompt = "Enter folder (*.DataPipeline)"
+        origin_label = "Fabric origin (workspace:artifact)"
+    elif tool == "udf":
+        file_prompt = "Enter folder (*.UserDataFunction)"
+        origin_label = "Fabric origin (workspace:artifact)"
+    else:
+        file_prompt = "Enter file (.ipynb or *.Notebook folder)"
+        origin_label = "Fabric origin (workspace:artifact)"
 
     source_kind = "file"
     if mode is CommandMode.DELETE:
@@ -102,6 +124,18 @@ def run_interactive_wizard() -> None:
             targets.append(target)
             if not _confirm("Add another target?", default=False):
                 break
+    elif mode is CommandMode.DOWNLOAD and run_mode != "dry_files":
+        typer.echo("\nEnter target(s). Local path defaults to remote name + extension.")
+        while True:
+            target = _text(_target_prompt(mode, tool=tool), allow_empty=bool(targets))
+            if not target:
+                break
+            targets.append(target)
+            if not _confirm("Add another target?", default=False):
+                break
+        if _confirm("Specify local destination path(s)?", default=False):
+            for target in targets:
+                files.append(_text(f"{file_prompt} for {target}", allow_empty=False))
     elif run_mode == "dry_files":
         while True:
             path = _text(file_prompt, allow_empty=bool(files))
@@ -201,9 +235,14 @@ def run_interactive_wizard() -> None:
     offer_manifest = (
         mode is not CommandMode.DELETE
         and bool(targets)
-        and (bool(files) or bool(origins))
+        and (
+            bool(files)
+            or bool(origins)
+            # Download may omit --file; paths are filled from remote names before save.
+            or (mode is CommandMode.DOWNLOAD and not dry_run)
+        )
     )
-    kind = KIND_DATAFLOW_GEN1 if tool == "dataflow-gen1" else KIND_NOTEBOOK
+    kind = _TOOL_KIND[tool]
     on_success = (
         (lambda *a, **k: prompt_save_manifest(*a, kind=kind, **k))
         if offer_manifest
@@ -212,6 +251,39 @@ def run_interactive_wizard() -> None:
 
     if tool == "dataflow-gen1":
         run_dataflow_gen1_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    elif tool == "dataflow":
+        run_dataflow_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    elif tool == "pipeline":
+        run_pipeline_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    elif tool == "udf":
+        run_udf_command(
             mode,
             target_values=targets or None,
             file_values=files or None,

@@ -129,7 +129,9 @@ class PowerBiClient:
             error_code="DataflowNotFound",
         )
 
-    def get_dataflow_definition(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
+    def get_dataflow_definition(
+        self, group_id: str, dataflow_id: str
+    ) -> dict[str, Any]:
         """GET /groups/{groupId}/dataflows/{dataflowId} — export model.json."""
         response = self._client.get(
             f"{self.base_url}/groups/{group_id}/dataflows/{dataflow_id}",
@@ -238,7 +240,10 @@ class PowerBiClient:
                     error_code=error_code,
                     details=error or payload,
                 )
-            if state not in (None, "Publishing") and state not in IMPORT_TERMINAL_STATES:
+            if (
+                state not in (None, "Publishing")
+                and state not in IMPORT_TERMINAL_STATES
+            ):
                 # Unknown non-terminal state — keep polling briefly.
                 pass
 
@@ -303,8 +308,8 @@ def dataflow_id_from_import(import_payload: dict[str, Any]) -> str | None:
         for item in dataflows:
             if not isinstance(item, dict):
                 continue
-            object_id = item.get("objectId") or item.get("id") or item.get(
-                "targetDataflowId"
+            object_id = (
+                item.get("objectId") or item.get("id") or item.get("targetDataflowId")
             )
             if object_id:
                 return str(object_id)

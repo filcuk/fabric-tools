@@ -66,11 +66,11 @@ def test_interactive_dry_run_offers_manifest_callback(
     selects = iter(["notebook", "download", "dry_both"])
     texts = iter(
         [
-            "./a.ipynb",
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+            "./a.ipynb",
         ]
     )
-    confirms = iter([False, True])  # add another?, proceed?
+    confirms = iter([False, True, True])  # add another?, specify paths?, proceed?
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -96,13 +96,13 @@ def test_interactive_dry_run_offers_manifest_callback(
         run_interactive_wizard()
     assert captured["kwargs"]["dry_run"] is True
     assert captured["kwargs"]["on_success"] is not None
+    assert captured["kwargs"]["file_values"] == ["./a.ipynb"]
 
 
 def test_prompt_save_manifest_writes_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Any,
 ) -> None:
-    from pathlib import Path
 
     from fabric_tools.interactive import prompt_save_manifest
     from fabric_tools.parsing import Target, WorkItem
@@ -138,11 +138,12 @@ def test_interactive_abort_on_proceed(monkeypatch: pytest.MonkeyPatch) -> None:
     selects = iter(["notebook", "download", "execute"])
     texts = iter(
         [
-            "./a.ipynb",
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter([False, False, False])  # add another?, silent?, proceed?
+    confirms = iter(
+        [False, False, False, False]
+    )  # add another?, specify paths?, silent?, proceed?
 
     monkeypatch.setattr(
         "questionary.select",
@@ -203,11 +204,12 @@ def test_interactive_dataflow_gen1_download(monkeypatch: pytest.MonkeyPatch) -> 
     selects = iter(["dataflow-gen1", "download", "execute"])
     texts = iter(
         [
-            "./model.json",
             "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
         ]
     )
-    confirms = iter([False, True, True])  # add another?, silent?, proceed?
+    confirms = iter(
+        [False, False, True, True]
+    )  # add another?, specify paths?, silent?, proceed?
     captured: dict[str, Any] = {}
 
     monkeypatch.setattr(
@@ -234,5 +236,119 @@ def test_interactive_dataflow_gen1_download(monkeypatch: pytest.MonkeyPatch) -> 
         run_interactive_wizard()
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DOWNLOAD
-    assert captured["kwargs"]["file_values"] == ["./model.json"]
+    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"]["on_success"] is not None
+
+
+def test_interactive_dataflow_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    selects = iter(["dataflow", "download", "execute"])
+    texts = iter(
+        [
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    confirms = iter([False, False, True, True])
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+    monkeypatch.setattr(
+        "questionary.confirm",
+        lambda *a, **k: _Ask(next(confirms)),
+    )
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_dataflow_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DOWNLOAD
+    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"]["on_success"] is not None
+
+
+def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    selects = iter(["pipeline", "download", "execute"])
+    texts = iter(
+        [
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    confirms = iter([False, False, True, True])
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+    monkeypatch.setattr(
+        "questionary.confirm",
+        lambda *a, **k: _Ask(next(confirms)),
+    )
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_pipeline_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DOWNLOAD
+    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"]["on_success"] is not None
+
+
+def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    selects = iter(["udf", "download", "execute"])
+    texts = iter(
+        [
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    confirms = iter([False, False, True, True])
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+    monkeypatch.setattr(
+        "questionary.confirm",
+        lambda *a, **k: _Ask(next(confirms)),
+    )
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_udf_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DOWNLOAD
+    assert captured["kwargs"]["file_values"] is None
     assert captured["kwargs"]["on_success"] is not None

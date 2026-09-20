@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Iterator
 
 from rich.console import Console
 from rich.status import Status
 
 _console = Console(stderr=True)
 _active: ContextVar[Status | None] = ContextVar("fabric_tools_status", default=None)
-_message: ContextVar[str | None] = ContextVar("fabric_tools_status_message", default=None)
+_message: ContextVar[str | None] = ContextVar(
+    "fabric_tools_status_message", default=None
+)
 
 
 @contextmanager

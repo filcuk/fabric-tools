@@ -8,7 +8,11 @@ from pathlib import Path
 
 from nbformat.validator import MissingIDFieldWarning
 
-from fabric_tools.notebook.compare import _diff_fabric_git, _diff_ipynb, _load_notebook_for_diff
+from fabric_tools.notebook.compare import (
+    _diff_fabric_git,
+    _diff_ipynb,
+    _load_notebook_for_diff,
+)
 
 
 def test_ipynb_diff_detects_change(tmp_path: Path) -> None:

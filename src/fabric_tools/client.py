@@ -181,10 +181,14 @@ class FabricClient:
                 return payload
 
             if status == "Succeeded":
-                return self._fetch_operation_result(operation_id, state_response, payload)
+                return self._fetch_operation_result(
+                    operation_id, state_response, payload
+                )
 
             if status in {"Failed", "Canceled"}:
-                error = (payload or {}).get("error") if isinstance(payload, dict) else None
+                error = (
+                    (payload or {}).get("error") if isinstance(payload, dict) else None
+                )
                 message = "Fabric long-running operation failed"
                 error_code = None
                 if isinstance(error, dict):

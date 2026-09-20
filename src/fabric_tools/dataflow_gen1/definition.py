@@ -103,9 +103,12 @@ def normalize_model_for_compare(model: dict[str, Any]) -> dict[str, Any]:
 
 def model_to_diff_text(model: dict[str, Any]) -> str:
     """Pretty JSON text used for unified diffs."""
-    return json.dumps(
-        normalize_model_for_compare(model),
-        indent=2,
-        ensure_ascii=False,
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            normalize_model_for_compare(model),
+            indent=2,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        + "\n"
+    )

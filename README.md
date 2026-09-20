@@ -14,18 +14,20 @@ Open a new terminal (restart your IDE if the command is not found) and get start
 
 ```powershell
 fabric-tools --help
-fabric-tools notebook --help
-fabric-tools dataflow-gen1 --help
 fabric-tools --interactive
-fabric-tools update --check
+fabric-tools setup update --check
 ```
 
-Check or remove registration:
+Install, update, check status, or remove registration:
 
 ```powershell
+fabric-tools setup install
+fabric-tools setup update
 fabric-tools setup status
 fabric-tools setup uninstall
 ```
+
+Commands may print a one-line update notice on stderr at most once per local day when a newer GitHub release exists. Disable with `$env:FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`.
 
 ## Support
 
@@ -33,17 +35,30 @@ fabric-tools setup uninstall
   - `.ipynb` — Jupyter notebook
   - `*.Notebook\` — Fabric Git folder with `notebook-content.*` and `.platform`
   - download, deploy (create/overwrite), compare, delete (soft delete)
+- Dataflow Gen2 (Fabric)
+  - `*.Dataflow\` — Git-style folder with `queryMetadata.json`, `mashup.pq` (optional `.platform`, `*.mdf`)
+  - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Connection IDs in the definition are environment-specific; Publish may still be needed in the service after sync
 - Dataflow Gen1 (Power BI)
   - `model.json` — CDM dataflow definition
   - download, deploy (**create only**), compare, delete
   - Connections/credentials are not in the JSON; configure them in the service after create
+- DataPipeline (`pipeline`)
+  - `*.DataPipeline\` — Fabric Git folder with `pipeline-content.json` (optional `.platform`, `.schedules`)
+  - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Activity references (notebooks, lakehouses, connections) are passed through as-is and must be valid in the target workspace
+- User Data Functions (`udf`)
+  - `*.UserDataFunction\` — Fabric Git-style folder (`definition.json`, `function_app.py`, `resources/functions.json`; optional `.platform`, `privateLibraries/*.whl`)
+  - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Overwrite preserves the target item’s `connectedDataSources`
+  - Fabric APIs require interactive user auth (service principal is not supported)
 
 ## Flags
 
 | Flag | Alias | Purpose |
 |------|---------|---------|
 | `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated). Overwrite CSV: one workspace per `-t` (bare artifact ids inherit that workspace). Create CSV may list multiple workspaces. |
-| `--file` | `-f` | Local notebook path/folder or Gen1 `model.json` (repeatable or comma-separated) |
+| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, Gen1 `model.json`, DataPipeline `*.DataPipeline` folder, or UDF `*.UserDataFunction` folder (repeatable or comma-separated). Optional on download: defaults to remote name + `.ipynb` / `.Dataflow` / `.json` / `.DataPipeline` / `.UserDataFunction` in the current folder. |
 | `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as `--target`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
@@ -61,8 +76,9 @@ fabric-tools notebook deploy -d -f .\etl.ipynb
 # Dry-run: remote target only
 fabric-tools notebook download -d -t <workspaceId>:<notebookId>
 
-# Download (format inferred from destination path)
+# Download (format inferred from destination path; -f optional → remote name.ipynb)
 fabric-tools notebook download -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
+fabric-tools notebook download -s -t <workspaceId>:<notebookId>
 
 # Deploy overwrite from local file
 fabric-tools notebook deploy -s -t <workspaceId>:<notebookId> -f .\etl.ipynb
@@ -91,11 +107,36 @@ fabric-tools notebook compare -o <devWs>:<notebookId> -t <testWs>:<notebookId>
 # Soft-delete notebooks
 fabric-tools notebook delete -s -t <workspaceId>:<notebookId>
 
+# Dataflow Gen2: download / create / overwrite / compare / delete
+fabric-tools dataflow download -s -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
+fabric-tools dataflow download -s -t <workspaceId>:<dataflowId>
+fabric-tools dataflow deploy -s -t <workspaceId> -f .\Sales.Dataflow -n "Sales"
+fabric-tools dataflow deploy -s -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
+fabric-tools dataflow compare -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
+fabric-tools dataflow delete -s -t <workspaceId>:<dataflowId>
+
 # Dataflow Gen1: download / create / compare / delete
 fabric-tools dataflow-gen1 download -s -t <workspaceId>:<dataflowId> -f .\model.json
+fabric-tools dataflow-gen1 download -s -t <workspaceId>:<dataflowId>
 fabric-tools dataflow-gen1 deploy -s -t <workspaceId> -f .\model.json -n "Sales"
 fabric-tools dataflow-gen1 compare -t <workspaceId>:<dataflowId> -f .\model.json
 fabric-tools dataflow-gen1 delete -s -t <workspaceId>:<dataflowId>
+
+# DataPipeline: download / create / overwrite / compare / delete
+fabric-tools pipeline download -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
+fabric-tools pipeline download -s -t <workspaceId>:<pipelineId>
+fabric-tools pipeline deploy -s -t <workspaceId> -f .\ETL.DataPipeline -n "ETL"
+fabric-tools pipeline deploy -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
+fabric-tools pipeline compare -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
+fabric-tools pipeline delete -s -t <workspaceId>:<pipelineId>
+
+# User Data Function: download / create / overwrite / compare / delete
+fabric-tools udf download -s -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
+fabric-tools udf download -s -t <workspaceId>:<udfId>
+fabric-tools udf deploy -s -t <workspaceId> -f .\Demo.UserDataFunction -n "Demo"
+fabric-tools udf deploy -s -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
+fabric-tools udf compare -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
+fabric-tools udf delete -s -t <workspaceId>:<udfId>
 
 # Dry-run validate and write test.ftdep (no remote changes)
 fabric-tools notebook deploy -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
@@ -113,8 +154,12 @@ fabric-tools inspect -m test
 fabric-tools inspect
 
 # Check GitHub Releases for a newer fabric-tools version
-fabric-tools update --check
-fabric-tools update -c
+fabric-tools setup update --check
+fabric-tools setup update -c
+
+# Download and install the newer Windows .exe release (frozen builds only)
+fabric-tools setup update
+fabric-tools setup update -s
 ```
 
 ## Authentication
@@ -122,8 +167,10 @@ fabric-tools update -c
 Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
 broker, then falls back to browser or device-code auth.
 
-Notebooks use the Fabric API token. Dataflow Gen1 uses a Power BI API token
+Notebooks, Dataflow Gen2, DataPipeline, and User Data Functions use the Fabric API token. Dataflow Gen1 uses a Power BI API token
 (same sign-in / service principal; different audience).
+
+User Data Function APIs do **not** support service principals — use interactive user sign-in for `udf` commands.
 
 For automation, set a service principal:
 
@@ -137,7 +184,7 @@ $env:AZURE_CLIENT_SECRET="..."
 
 | Code | Meaning |
 |------|---------|
-| `0` | Success (compare: all pairs identical; `update --check`: up to date) |
+| `0` | Success (compare: all pairs identical; `setup update --check`: up to date) |
 | `1` | Validation error, user abort, compare found differences, or newer release available |
 | `2` | Fabric / Power BI API or operation failure (also: update check network/API failure) |
 

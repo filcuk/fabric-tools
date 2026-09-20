@@ -8,11 +8,18 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from fabric_tools.cli import app, _resolve_notebook_inputs, _write_manifest_after_success
+from fabric_tools.cli import (
+    _resolve_notebook_inputs,
+    _write_manifest_after_success,
+    app,
+)
 from fabric_tools.client import FabricApiError
 from fabric_tools.manifest import (
+    KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
     KIND_NOTEBOOK,
+    KIND_PIPELINE,
+    KIND_UDF,
     ManifestError,
     delete_targets_from_manifest,
     format_inspect,
@@ -110,6 +117,57 @@ def test_dataflow_gen1_kind_round_trip(tmp_path: Path) -> None:
     )
     assert names == ["Sales"]
     assert work_items[0].file == model.resolve()
+
+
+def test_dataflow_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Sales.Dataflow"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_DATAFLOW,
+        display_names=["Sales"],
+    )
+    path = save_manifest(tmp_path / "df2", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_DATAFLOW
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_DATAFLOW)
+    assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_udf_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Demo.UserDataFunction"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_UDF,
+        display_names=["Demo"],
+    )
+    path = save_manifest(tmp_path / "udf", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_UDF
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_UDF)
+    assert names == ["Demo"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_pipeline_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "ETL.DataPipeline"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_PIPELINE,
+        display_names=["ETL"],
+    )
+    path = save_manifest(tmp_path / "pipe", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_PIPELINE
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_PIPELINE)
+    assert names == ["ETL"]
+    assert work_items[0].file == folder.resolve()
 
 
 def test_delete_targets_from_manifest(tmp_path: Path) -> None:
@@ -238,9 +296,7 @@ def test_dry_run_writes_manifest_on_success(
     monkeypatch.chdir(tmp_path)
     nb = tmp_path / "etl.ipynb"
     nb.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
 
@@ -293,9 +349,7 @@ def test_dry_run_skips_manifest_on_failure(
     monkeypatch.chdir(tmp_path)
     nb = tmp_path / "etl.ipynb"
     nb.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
 
@@ -304,7 +358,9 @@ def test_dry_run_skips_manifest_on_failure(
             return None
 
         def get_workspace(self, workspace_id: str) -> dict:
-            raise FabricApiError("missing", status_code=404, error_code="WorkspaceNotFound")
+            raise FabricApiError(
+                "missing", status_code=404, error_code="WorkspaceNotFound"
+            )
 
         def close(self) -> None:
             return None
@@ -370,7 +426,9 @@ def test_inspect_list_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert "broken.ftdep  error:" in result.stderr
 
 
-def test_inspect_list_cwd_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_inspect_list_cwd_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     result = runner.invoke(app, ["inspect"])

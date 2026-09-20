@@ -1,4 +1,3 @@
-# -*- mode: python ; coding: utf-8 -*-
 """Shared PyInstaller Analysis inputs for fabric-tools onedir / onefile builds."""
 
 from __future__ import annotations

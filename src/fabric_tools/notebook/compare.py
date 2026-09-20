@@ -69,9 +69,7 @@ def compare_notebook(
         )
 
     if item.origin is not None:
-        return _compare_origin_to_target(
-            client, item, ignore_outputs=ignore_outputs
-        )
+        return _compare_origin_to_target(client, item, ignore_outputs=ignore_outputs)
     return _compare_file_to_target(client, item, ignore_outputs=ignore_outputs)
 
 
@@ -231,9 +229,7 @@ def run_compare_batch(
             )
         else:
             update_status("Comparing notebooks...")
-        results.append(
-            compare_notebook(client, item, ignore_outputs=ignore_outputs)
-        )
+        results.append(compare_notebook(client, item, ignore_outputs=ignore_outputs))
     return results
 
 
@@ -326,8 +322,12 @@ def _diff_fabric_git(
             chunks.append(f"--- remote/{name}\n+++ local/{name} (missing)\n")
             any_diff = True
             continue
-        remote_lines = remote_file.read_text(encoding="utf-8-sig").splitlines(keepends=True)
-        local_lines = local_file.read_text(encoding="utf-8-sig").splitlines(keepends=True)
+        remote_lines = remote_file.read_text(encoding="utf-8-sig").splitlines(
+            keepends=True
+        )
+        local_lines = local_file.read_text(encoding="utf-8-sig").splitlines(
+            keepends=True
+        )
         diff = list(
             difflib.unified_diff(
                 remote_lines,

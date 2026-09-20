@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-
 # Options that accept comma-separated lists (spaces after commas are common).
 _CSV_OPTION_FLAGS = frozenset(
     {
@@ -58,7 +57,9 @@ def rejoin_spaced_csv_argv(argv: list[str]) -> list[str]:
         if token in _CSV_OPTION_FLAGS and i + 1 < len(argv):
             i += 1
             chunks = [argv[i]]
-            while i + 1 < len(argv) and _is_csv_value_continuation(argv[i], argv[i + 1]):
+            while i + 1 < len(argv) and _is_csv_value_continuation(
+                argv[i], argv[i + 1]
+            ):
                 i += 1
                 chunks.append(argv[i])
             result.append(" ".join(chunks))
@@ -105,7 +106,9 @@ def parse_target_values(values: list[str] | None) -> list[Target]:
         return []
     targets: list[Target] = []
     for raw in values:
-        targets.extend(_expand_scoped_targets(raw, allow_create=True, option="--target"))
+        targets.extend(
+            _expand_scoped_targets(raw, allow_create=True, option="--target")
+        )
     return targets
 
 
@@ -170,13 +173,19 @@ def build_work_items(
         _require_items(targets, mode)
         return [WorkItem(t, None) for t in targets]
 
-    _require_exclusive_source(files, origin_list, allow_neither=False)
+    allow_neither = mode is CommandMode.DOWNLOAD
+    _require_exclusive_source(files, origin_list, allow_neither=allow_neither)
 
     if mode is CommandMode.DOWNLOAD:
         if origin_list:
-            raise ParseError("download does not support --origin (use --file destination)")
+            raise ParseError(
+                "download does not support --origin (use --file destination)"
+            )
         _require_items(targets, mode)
         _require_single_workspace(targets, mode)
+        if not files:
+            # Destination defaults to remote display name + extension at download time.
+            return [WorkItem(t, None) for t in targets]
         paired_files = _pair_sources(targets, files, allow_broadcast=True, kind="file")
         return [WorkItem(t, f) for t, f in zip(targets, paired_files, strict=True)]
 
@@ -236,7 +245,9 @@ def _build_dry_run_items(
         return [WorkItem(t, None) for t in targets]
 
     if not targets and not files and not origins:
-        raise ParseError("--dry-run requires at least one --target, --file, or --origin")
+        raise ParseError(
+            "--dry-run requires at least one --target, --file, or --origin"
+        )
 
     _require_exclusive_source(files, origins, allow_neither=True)
 
@@ -251,10 +262,7 @@ def _build_dry_run_items(
         )
 
     if targets:
-        if mode is CommandMode.DOWNLOAD:
-            _require_items(targets, mode)
-            _require_single_workspace(targets, mode)
-        elif mode is CommandMode.COMPARE:
+        if mode is CommandMode.DOWNLOAD or mode is CommandMode.COMPARE:
             _require_items(targets, mode)
             _require_single_workspace(targets, mode)
         elif mode is CommandMode.DEPLOY:
@@ -370,7 +378,9 @@ def _expand_scoped_targets(
             current_ws = workspace_id
             continue
 
-        bare_id = _parse_guid(piece, what="workspace id" if current_ws is None else "artifact id")
+        bare_id = _parse_guid(
+            piece, what="workspace id" if current_ws is None else "artifact id"
+        )
         if current_ws is not None:
             targets.append(Target(workspace_id=current_ws, item_id=bare_id))
             continue
@@ -402,3 +412,42 @@ def _parse_guid(value: str, *, what: str) -> str:
 
 def _split_csv(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+_INVALID_FILENAME_CHARS = frozenset('<>:"/\\|?*')
+
+
+def sanitize_download_filename(name: str) -> str:
+    """Make a remote display name safe as a single path segment."""
+    cleaned = "".join(
+        "_" if (ch in _INVALID_FILENAME_CHARS or ord(ch) < 32) else ch
+        for ch in name.strip()
+    )
+    cleaned = cleaned.rstrip(" .")
+    return cleaned or "download"
+
+
+def default_download_paths(
+    display_names: list[str],
+    *,
+    extension: str,
+) -> list[Path]:
+    """Build unique cwd-relative paths from display names and an extension.
+
+    ``extension`` should include the dot (e.g. ``.ipynb``, ``.json``). Duplicate
+    names in the same batch get `` (2)``, `` (3)``, … suffixes before the extension.
+    """
+    if not extension.startswith("."):
+        extension = f".{extension}"
+    used: set[str] = set()
+    paths: list[Path] = []
+    for raw_name in display_names:
+        stem = sanitize_download_filename(raw_name)
+        candidate = f"{stem}{extension}"
+        n = 2
+        while candidate.casefold() in used:
+            candidate = f"{stem} ({n}){extension}"
+            n += 1
+        used.add(candidate.casefold())
+        paths.append(Path(candidate))
+    return paths

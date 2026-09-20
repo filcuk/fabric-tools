@@ -31,9 +31,7 @@ class FakePowerBiClient:
         self.models_by_id = models_by_id or {
             DF: {
                 "name": "Sales",
-                "entities": [
-                    {"name": "Query1", "partitions": [{"name": "p"}]}
-                ],
+                "entities": [{"name": "Query1", "partitions": [{"name": "p"}]}],
             },
             ORIGIN: {
                 "name": "OriginFlow",
@@ -50,7 +48,9 @@ class FakePowerBiClient:
         self.last_import_bytes: bytes | None = None
         self.last_name_conflict: str | None = None
 
-    def get_dataflow_definition(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
+    def get_dataflow_definition(
+        self, group_id: str, dataflow_id: str
+    ) -> dict[str, Any]:
         if dataflow_id not in self.models_by_id:
             raise PowerBiApiError("missing", status_code=404)
         return json.loads(json.dumps(self.models_by_id[dataflow_id]))
@@ -97,9 +97,7 @@ def test_deploy_create_from_file(tmp_path: Path) -> None:
         json.dumps(
             {
                 "name": "Sales",
-                "entities": [
-                    {"name": "Query1", "partitions": [{"name": "p"}]}
-                ],
+                "entities": [{"name": "Query1", "partitions": [{"name": "p"}]}],
             }
         ),
         encoding="utf-8",
@@ -134,7 +132,9 @@ def test_deploy_rejects_overwrite_target(tmp_path: Path) -> None:
 def test_deploy_resolves_id_via_list_when_import_omits_dataflows(
     tmp_path: Path,
 ) -> None:
-    client = FakePowerBiClient(import_dataflows=[], listed=[{"objectId": CREATED, "name": "Sales"}])
+    client = FakePowerBiClient(
+        import_dataflows=[], listed=[{"objectId": CREATED, "name": "Sales"}]
+    )
     src = tmp_path / "model.json"
     src.write_text(json.dumps({"name": "Sales", "entities": []}), encoding="utf-8")
     item = WorkItem(Target(WS), src)

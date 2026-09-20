@@ -30,9 +30,7 @@ class FakeClient:
 def test_dry_run_local_ok(tmp_path: Path) -> None:
     nb = tmp_path / "demo.ipynb"
     nb.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
     results = run_dry_run(
@@ -48,9 +46,7 @@ def test_dry_run_local_ok(tmp_path: Path) -> None:
 def test_dry_run_broadcast_file_validated_once(tmp_path: Path) -> None:
     nb = tmp_path / "demo.ipynb"
     nb.write_text(
-        json.dumps(
-            {"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}
-        ),
+        json.dumps({"nbformat": 4, "nbformat_minor": 5, "cells": [], "metadata": {}}),
         encoding="utf-8",
     )
     ws1 = "11111111-1111-1111-1111-111111111111"
@@ -77,7 +73,10 @@ def test_dry_run_broadcast_file_validated_once(tmp_path: Path) -> None:
 def test_dry_run_remote_wrong_type() -> None:
     client = FakeClient(item_type="Lakehouse")
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         None,
     )
     results = run_dry_run(
@@ -96,7 +95,10 @@ def test_dry_run_remote_missing_item() -> None:
             raise FabricApiError("missing", status_code=404, error_code="ItemNotFound")
 
     item = WorkItem(
-        Target("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
         None,
     )
     results = run_dry_run(
@@ -193,7 +195,9 @@ def test_dry_run_dataflow_gen1_missing_remote() -> None:
             return {"id": group_id, "name": "Dev"}
 
         def get_dataflow(self, group_id: str, dataflow_id: str) -> dict[str, Any]:
-            raise PowerBiApiError("missing", status_code=404, error_code="DataflowNotFound")
+            raise PowerBiApiError(
+                "missing", status_code=404, error_code="DataflowNotFound"
+            )
 
     item = WorkItem(
         Target(
@@ -210,3 +214,129 @@ def test_dry_run_dataflow_gen1_missing_remote() -> None:
         has_files=False,
     )
     assert any(not r.ok and "DataflowNotFound" in r.message for r in results)
+
+
+def test_dry_run_dataflow_local_and_remote(tmp_path: Path) -> None:
+    from fabric_tools.validate import run_dry_run_dataflow
+
+    folder = tmp_path / "Sales.Dataflow"
+    folder.mkdir()
+    (folder / "queryMetadata.json").write_text(
+        json.dumps(
+            {
+                "formatVersion": "202502",
+                "name": "Sales",
+                "queryGroups": [],
+                "queriesMetadata": {},
+                "connections": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (folder / "mashup.pq").write_text("section Section1;\n", encoding="utf-8")
+    ws = "11111111-1111-1111-1111-111111111111"
+    df = "22222222-2222-2222-2222-222222222222"
+    client = FakeClient(item_type="Dataflow")
+    results = run_dry_run_dataflow(
+        CommandMode.DOWNLOAD,
+        [WorkItem(Target(ws, df), folder)],
+        client=client,  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=True,
+    )
+    assert all(r.ok for r in results)
+    assert any("Dataflow folder" in r.message for r in results)
+    assert any("dataflow" in r.message for r in results)
+
+
+def test_dry_run_dataflow_wrong_type() -> None:
+    from fabric_tools.validate import run_dry_run_dataflow
+
+    item = WorkItem(
+        Target(
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ),
+        None,
+    )
+    results = run_dry_run_dataflow(
+        CommandMode.DOWNLOAD,
+        [item],
+        client=FakeClient(item_type="Notebook"),  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=False,
+    )
+    assert any(not r.ok and "Notebook" in r.message for r in results)
+
+
+def test_dry_run_pipeline_local_and_remote(tmp_path: Path) -> None:
+    from fabric_tools.validate import run_dry_run_pipeline
+
+    folder = tmp_path / "ETL.DataPipeline"
+    folder.mkdir()
+    (folder / "pipeline-content.json").write_text(
+        json.dumps(
+            {
+                "properties": {
+                    "activities": [
+                        {
+                            "name": "Wait_1",
+                            "type": "Wait",
+                            "dependsOn": [],
+                            "typeProperties": {"waitTimeInSeconds": 10},
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    ws = "11111111-1111-1111-1111-111111111111"
+    pl = "22222222-2222-2222-2222-222222222222"
+    client = FakeClient(item_type="DataPipeline")
+    results = run_dry_run_pipeline(
+        CommandMode.DOWNLOAD,
+        [WorkItem(Target(ws, pl), folder)],
+        client=client,  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=True,
+    )
+    assert all(r.ok for r in results)
+    assert any("DataPipeline folder" in r.message for r in results)
+    assert any("pipeline" in r.message for r in results)
+
+
+def test_dry_run_udf_local_and_remote(tmp_path: Path) -> None:
+    from fabric_tools.validate import run_dry_run_udf
+
+    folder = tmp_path / "Demo.UserDataFunction"
+    folder.mkdir()
+    (folder / "definition.json").write_text(
+        json.dumps(
+            {
+                "runtime": "PYTHON",
+                "connectedDataSources": [],
+                "functions": [],
+                "libraries": {"public": [], "private": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (folder / "function_app.py").write_text("print(1)\n", encoding="utf-8")
+    resources = folder / "resources"
+    resources.mkdir()
+    (resources / "functions.json").write_text("{}", encoding="utf-8")
+
+    ws = "11111111-1111-1111-1111-111111111111"
+    udf_id = "22222222-2222-2222-2222-222222222222"
+    client = FakeClient(item_type="UserDataFunction")
+    results = run_dry_run_udf(
+        CommandMode.DOWNLOAD,
+        [WorkItem(Target(ws, udf_id), folder)],
+        client=client,  # type: ignore[arg-type]
+        has_targets=True,
+        has_files=True,
+    )
+    assert all(r.ok for r in results)
+    assert any("UserDataFunction folder" in r.message for r in results)
+    assert any("udf" in r.message for r in results)

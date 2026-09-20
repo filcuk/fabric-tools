@@ -10,16 +10,73 @@ from fabric_tools.cli import app
 def test_root_help_lists_dataflow_gen1() -> None:
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
+    assert "dataflow" in result.stdout
     assert "dataflow-gen1" in result.stdout
     assert "notebook" in result.stdout
+    assert "pipeline" in result.stdout
+    assert "udf" in result.stdout
+    assert "setup" in result.stdout
+    assert "Local" in result.stdout
+    assert "Fabric" in result.stdout
+
+
+def test_root_help_orders_help_and_setup_first() -> None:
+    result = CliRunner().invoke(app, ["--help"])
+    assert result.exit_code == 0
+    help_idx = result.stdout.index("--help")
+    version_idx = result.stdout.index("--version")
+    interactive_idx = result.stdout.index("--interactive")
+    assert help_idx < version_idx < interactive_idx
+
+    # Panel titles use a leading box edge; avoid matching "Fabric" in the subtitle.
+    local_idx = result.stdout.index("─ Local")
+    fabric_idx = result.stdout.index("─ Fabric")
+    setup_idx = result.stdout.index("setup")
+    inspect_idx = result.stdout.index("inspect")
+    dataflow_idx = result.stdout.index("dataflow")
+    dataflow_gen1_idx = result.stdout.index("dataflow-gen1")
+    notebook_idx = result.stdout.index("notebook")
+    assert (
+        local_idx
+        < setup_idx
+        < inspect_idx
+        < fabric_idx
+        < dataflow_idx
+        < dataflow_gen1_idx
+        < notebook_idx
+    )
+
+
+def test_setup_help_lists_update() -> None:
+    result = CliRunner().invoke(app, ["setup", "--help"])
+    assert result.exit_code == 0
     assert "update" in result.stdout
+    assert "install" in result.stdout
 
 
-def test_update_help_lists_check() -> None:
-    result = CliRunner().invoke(app, ["update", "--help"])
+def test_help_puts_description_before_usage() -> None:
+    result = CliRunner().invoke(app, ["setup", "update", "--help"])
+    assert result.exit_code == 0
+    description = "Check for a newer release"
+    usage = "Usage:"
+    assert description in result.stdout
+    assert usage in result.stdout
+    assert result.stdout.index(description) < result.stdout.index(usage)
+
+
+def test_setup_update_help_lists_check() -> None:
+    result = CliRunner().invoke(app, ["setup", "update", "--help"])
     assert result.exit_code == 0
     assert "--check" in result.stdout
     assert "-c" in result.stdout
+
+
+def test_dataflow_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["dataflow", "--help"])
+    assert result.exit_code == 0
+    for name in ("download", "deploy", "compare", "delete"):
+        assert name in result.stdout
+    assert "Gen2" in result.stdout or "Dataflow" in result.stdout
 
 
 def test_dataflow_gen1_help_lists_commands() -> None:
@@ -27,6 +84,40 @@ def test_dataflow_gen1_help_lists_commands() -> None:
     assert result.exit_code == 0
     for name in ("download", "deploy", "compare", "delete"):
         assert name in result.stdout
+
+
+def test_udf_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["udf", "--help"])
+    assert result.exit_code == 0
+    for name in ("download", "deploy", "compare", "delete"):
+        assert name in result.stdout
+    assert "User Data Function" in result.stdout
+
+
+def test_pipeline_help_lists_commands() -> None:
+    result = CliRunner().invoke(app, ["pipeline", "--help"])
+    assert result.exit_code == 0
+    for name in ("download", "deploy", "compare", "delete"):
+        assert name in result.stdout
+    assert "DataPipeline" in result.stdout
+
+
+def test_udf_rejects_service_principal(monkeypatch) -> None:
+    monkeypatch.setenv("AZURE_TENANT_ID", "t")
+    monkeypatch.setenv("AZURE_CLIENT_ID", "c")
+    monkeypatch.setenv("AZURE_CLIENT_SECRET", "s")
+    result = CliRunner().invoke(
+        app,
+        [
+            "udf",
+            "download",
+            "-d",
+            "-t",
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "service principal" in (result.stderr or result.stdout).lower()
 
 
 def test_notebook_delete_help() -> None:

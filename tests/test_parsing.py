@@ -271,3 +271,36 @@ def test_deploy_create_only_allows_workspace_targets() -> None:
     )
     assert len(items) == 2
     assert all(item.target is not None and item.target.is_create for item in items)
+
+
+def test_download_allows_omitted_files() -> None:
+    targets = parse_target_values([f"{WS}:{A},{B}"])
+    items = build_work_items(CommandMode.DOWNLOAD, targets, [], dry_run=False)
+    assert len(items) == 2
+    assert all(item.file is None for item in items)
+    assert items[0].target is not None and items[0].target.item_id == A
+    assert items[1].target is not None and items[1].target.item_id == B
+
+
+def test_sanitize_download_filename() -> None:
+    from fabric_tools.parsing import sanitize_download_filename
+
+    assert sanitize_download_filename("My Dataflow") == "My Dataflow"
+    assert sanitize_download_filename('a<>:"/\\|?*b') == "a_________b"
+    assert sanitize_download_filename("  ..  ") == "download"
+
+
+def test_default_download_paths_unique() -> None:
+    from fabric_tools.parsing import default_download_paths
+
+    paths = default_download_paths(
+        ["Notebook1", "Notebook1", "My Dataflow"],
+        extension=".ipynb",
+    )
+    assert paths == [
+        Path("Notebook1.ipynb"),
+        Path("Notebook1 (2).ipynb"),
+        Path("My Dataflow.ipynb"),
+    ]
+    json_paths = default_download_paths(["My Dataflow"], extension=".json")
+    assert json_paths == [Path("My Dataflow.json")]
