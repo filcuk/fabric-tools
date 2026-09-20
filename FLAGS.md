@@ -41,6 +41,10 @@ is **`--artifact` / `-a`**, not `-i`.
 | `--target` | `-t` | Where content goes **to** / destination | Local path **or** remote selector (by mode) |
 | `--filter` | `-f` | `displayName` substring | Text; inspect always; sync only with `workspaceId:*` |
 
+Local artifact paths are stems: a bare name gets the kind extension automatically
+(like `-m etl` → `etl.ftdep`), e.g. `-t .\myApp` → `myApp.OrgApp`, `-t .\ETL` → `ETL.ipynb`.
+`-t` / `-o` name the artifact, not a parent dump folder. Explicit kind suffixes are unchanged.
+
 Remote selector shapes: `workspaceId`, `workspaceId:itemId`, `workspaceId:*` (and bare-GUID shorthand
 inside a CSV after a qualified `workspace:…` piece). Multiplicity: repeat flags and/or
 comma-separated lists. Expand `*` after auth (Fabric `list_items` type filter, or Power BI

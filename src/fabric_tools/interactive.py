@@ -530,26 +530,26 @@ def _run_step(step: str, answers: dict[str, Any]) -> None:
 
 def _file_prompt(tool: str) -> str:
     if tool == "dataflow-gen1":
-        return "Enter file (model.json)"
+        return "Enter file (stem or model.json)"
     if tool == "paginated-report":
-        return "Enter file (.rdl)"
+        return "Enter file (stem or .rdl)"
     if tool == "dataflow":
-        return "Enter folder (*.Dataflow)"
+        return "Enter folder (stem or *.Dataflow)"
     if tool == "org-app":
-        return "Enter folder (*.OrgApp)"
+        return "Enter folder (stem or *.OrgApp)"
     if tool == "variable-library":
-        return "Enter folder (*.VariableLibrary)"
+        return "Enter folder (stem or *.VariableLibrary)"
     if tool == "environment":
-        return "Enter folder (*.Environment)"
+        return "Enter folder (stem or *.Environment)"
     if tool == "pipeline":
-        return "Enter folder (*.DataPipeline)"
+        return "Enter folder (stem or *.DataPipeline)"
     if tool == "udf":
-        return "Enter folder (*.UserDataFunction)"
+        return "Enter folder (stem or *.UserDataFunction)"
     if tool == "semantic-model":
-        return "Enter folder (*.SemanticModel)"
+        return "Enter folder (stem or *.SemanticModel)"
     if tool == "report":
-        return "Enter folder (*.Report) or .pbix path"
-    return "Enter file (.ipynb or *.Notebook folder)"
+        return "Enter folder (stem or *.Report) or .pbix path"
+    return "Enter file (stem, .ipynb, or *.Notebook folder)"
 
 
 def _origin_label(tool: str) -> str:

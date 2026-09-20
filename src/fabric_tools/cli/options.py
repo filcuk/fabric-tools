@@ -19,6 +19,7 @@ HELP_CONTEXT = {"help_option_names": ["--help", "-h"]}
 
 MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
+    "A bare stem gets .ftdep (e.g. etl → etl.ftdep). "
     "Alone: load targets/origins (and local paths). With a successful run or dry-run: "
     "write/update the manifest."
 )
@@ -43,9 +44,10 @@ ORIGIN_DOWNLOAD_HELP = (
     "Repeatable or comma-separated (spaces after commas OK). One workspace only."
 )
 TARGET_DOWNLOAD_HELP = (
-    "(optional) Local destination path. "
-    "Defaults to remote display name with the kind extension in the current folder. "
-    "Repeatable or comma-separated (spaces after commas OK). "
+    "(optional) Local destination path (artifact name, not a parent folder). "
+    "Bare stems get the kind extension (e.g. myApp → myApp.OrgApp; "
+    "ETL → ETL.ipynb). Defaults to remote display name with the kind extension "
+    "in the current folder. Repeatable or comma-separated (spaces after commas OK). "
     "One path may broadcast to all origins."
 )
 
@@ -56,6 +58,7 @@ TARGET_DEPLOY_HELP = (
 )
 ORIGIN_DEPLOY_HELP = (
     "(required without -m or -d) Local path or remote workspace:artifact source. "
+    "Local bare stems get the kind extension (same as download -t). "
     "Repeatable or comma-separated (spaces after commas OK). "
     "One origin may broadcast to all targets."
 )
@@ -70,7 +73,8 @@ TARGET_COMPARE_HELP = (
 )
 ORIGIN_COMPARE_HELP = (
     "(required without -m or -d) Local path or remote workspace:artifact to compare "
-    "against --target. Must 1:1 match --target (no broadcast)."
+    "against --target. Local bare stems get the kind extension (same as download -t). "
+    "Must 1:1 match --target (no broadcast)."
 )
 
 TARGET_DELETE_HELP = (
