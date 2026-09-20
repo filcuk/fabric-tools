@@ -7,13 +7,24 @@ import json
 from pathlib import Path
 from typing import Any
 
+from fabric_tools.parsing import ensure_kind_path_suffix
+
 
 class DefinitionError(ValueError):
     """Invalid local or remote Dataflow Gen1 model.json."""
 
 
+def ensure_model_path(path: Path | str) -> Path:
+    """Append ``.json`` when *path* is not already a ``.json`` file path."""
+    p = Path(path)
+    if p.suffix.lower() == ".json":
+        return p
+    return ensure_kind_path_suffix(p, canonical_suffix=".json")
+
+
 def load_model(path: Path) -> dict[str, Any]:
     """Read and validate a local model.json file."""
+    path = ensure_model_path(path)
     if not path.is_file():
         raise DefinitionError(f"model file not found: {path}")
     try:
@@ -29,6 +40,7 @@ def load_model(path: Path) -> dict[str, Any]:
 
 def validate_local_model(path: Path) -> Path:
     """Ensure ``path`` is a readable Gen1 model.json; return the path."""
+    path = ensure_model_path(path)
     load_model(path)
     return path
 
@@ -56,6 +68,7 @@ def display_name_from_model(model: dict[str, Any]) -> str:
 
 def write_model(model: dict[str, Any], path: Path) -> Path:
     """Write model.json with stable UTF-8 formatting."""
+    path = ensure_model_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(model, indent=2, ensure_ascii=False) + "\n",

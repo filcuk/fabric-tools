@@ -17,6 +17,7 @@ from fabric_tools.notebook.definition import (
     NotebookFormat,
     definition_has_platform,
     detect_format,
+    ensure_notebook_path,
     format_for_api,
     ipynb_from_definition,
     merge_remote_dependencies,
@@ -51,6 +52,7 @@ def download_notebook(
     target = item.target
     dest = item.file
     try:
+        dest = ensure_notebook_path(dest)
         fmt = detect_format(dest)
     except DefinitionError as exc:
         return OpResult(False, str(exc), target.workspace_id, target.item_id)

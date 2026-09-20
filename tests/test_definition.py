@@ -73,8 +73,14 @@ def test_fabric_git_missing_platform(tmp_path: Path) -> None:
 def test_rejects_unsupported_path(tmp_path: Path) -> None:
     path = tmp_path / "notes.txt"
     path.write_text("nope", encoding="utf-8")
-    with pytest.raises(DefinitionError, match="Unsupported"):
+    with pytest.raises(DefinitionError, match="Notebook file not found"):
         validate_local_notebook(path)
+
+
+def test_ensure_notebook_path_appends_ipynb_for_stem(tmp_path: Path) -> None:
+    from fabric_tools.notebook.definition import ensure_notebook_path
+
+    assert ensure_notebook_path(tmp_path / "ETL") == tmp_path / "ETL.ipynb"
 
 
 def test_merge_remote_dependencies_fills_omitted_keys() -> None:

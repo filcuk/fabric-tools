@@ -75,6 +75,19 @@ def test_resolve_notebook_download_files_keeps_explicit() -> None:
     assert resolved[0].file == dest
 
 
+def test_resolve_notebook_download_files_appends_stem() -> None:
+    items = [WorkItem(Target(WS, A), Path("ETL"))]
+    resolved = resolve_notebook_download_files(FakeFabricClient(), items)  # type: ignore[arg-type]
+    assert resolved[0].file == Path("ETL.ipynb")
+
+
+def test_resolve_notebook_download_files_keeps_notebook_folder() -> None:
+    dest = Path("ETL.Notebook")
+    items = [WorkItem(Target(WS, A), dest)]
+    resolved = resolve_notebook_download_files(FakeFabricClient(), items)  # type: ignore[arg-type]
+    assert resolved[0].file == dest
+
+
 def test_resolve_dataflow_gen1_download_files_defaults() -> None:
     items = [WorkItem(Target(WS, A), None)]
     resolved = resolve_dataflow_gen1_download_files(
@@ -91,6 +104,24 @@ def test_resolve_paginated_report_download_files_defaults() -> None:
         items,
     )
     assert resolved[0].file == Path("My Paginated.rdl")
+
+
+def test_resolve_dataflow_gen1_download_files_appends_stem() -> None:
+    items = [WorkItem(Target(WS, A), Path("Orders"))]
+    resolved = resolve_dataflow_gen1_download_files(
+        FakePowerBiClient(),  # type: ignore[arg-type]
+        items,
+    )
+    assert resolved[0].file == Path("Orders.json")
+
+
+def test_resolve_paginated_report_download_files_appends_stem() -> None:
+    items = [WorkItem(Target(WS, A), Path("Sales"))]
+    resolved = resolve_paginated_report_download_files(
+        FakePaginatedReportPowerBiClient(),  # type: ignore[arg-type]
+        items,
+    )
+    assert resolved[0].file == Path("Sales.rdl")
 
 
 def test_resolve_dataflow_download_files_defaults() -> None:

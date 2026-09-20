@@ -101,3 +101,21 @@ def test_ensure_kind_path_suffix_adds_leading_dot() -> None:
         Path("Sales"),
         canonical_suffix="rdl",
     ) == Path("Sales.rdl")
+
+
+def test_ensure_notebook_path_appends_ipynb() -> None:
+    from fabric_tools.notebook.definition import ensure_notebook_path
+
+    assert ensure_notebook_path(Path("ETL")) == Path("ETL.ipynb")
+    assert ensure_notebook_path(Path("ETL.ipynb")) == Path("ETL.ipynb")
+    assert ensure_notebook_path(Path("ETL.Notebook")) == Path("ETL.Notebook")
+
+
+def test_ensure_model_and_rdl_paths() -> None:
+    from fabric_tools.dataflow_gen1.definition import ensure_model_path
+    from fabric_tools.paginated_report.definition import ensure_rdl_path
+
+    assert ensure_model_path(Path("Orders")) == Path("Orders.json")
+    assert ensure_model_path(Path("Orders.json")) == Path("Orders.json")
+    assert ensure_rdl_path(Path("Sales")) == Path("Sales.rdl")
+    assert ensure_rdl_path(Path("Sales.rdl")) == Path("Sales.rdl")

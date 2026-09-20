@@ -6,13 +6,24 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from fabric_tools.parsing import ensure_kind_path_suffix
+
 
 class DefinitionError(ValueError):
     """Invalid local or remote paginated-report RDL."""
 
 
+def ensure_rdl_path(path: Path | str) -> Path:
+    """Append ``.rdl`` when *path* is not already an ``.rdl`` file path."""
+    p = Path(path)
+    if p.suffix.lower() == ".rdl":
+        return p
+    return ensure_kind_path_suffix(p, canonical_suffix=".rdl")
+
+
 def load_rdl(path: Path) -> bytes:
     """Read and validate a local ``.rdl`` file; return raw bytes."""
+    path = ensure_rdl_path(path)
     if not path.is_file():
         raise DefinitionError(f"rdl file not found: {path}")
     try:
@@ -25,6 +36,7 @@ def load_rdl(path: Path) -> bytes:
 
 def validate_local_rdl(path: Path) -> Path:
     """Ensure ``path`` is a readable ``.rdl``; return the path."""
+    path = ensure_rdl_path(path)
     load_rdl(path)
     return path
 
@@ -75,6 +87,7 @@ def ensure_paginated_report(
 
 def write_rdl(data: bytes, path: Path) -> Path:
     """Write RDL bytes to ``path`` (creates parent dirs)."""
+    path = ensure_rdl_path(path)
     validate_rdl_bytes(data, label=str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)

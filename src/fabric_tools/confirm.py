@@ -12,18 +12,21 @@ from fabric_tools.dataflow.definition import (
     detect_dataflow_path,
     display_name_from_path,
 )
+from fabric_tools.dataflow_gen1.definition import ensure_model_path
 from fabric_tools.environment.definition import (
     detect_environment_path,
 )
 from fabric_tools.environment.definition import (
     display_name_from_path as environment_name_from_path,
 )
+from fabric_tools.notebook.definition import ensure_notebook_path
 from fabric_tools.org_app.definition import (
     detect_org_app_path,
 )
 from fabric_tools.org_app.definition import (
     display_name_from_path as org_app_name_from_path,
 )
+from fabric_tools.paginated_report.definition import ensure_rdl_path
 from fabric_tools.parsing import Target, WorkItem, default_download_paths
 from fabric_tools.pipeline.definition import detect_pipeline_path
 from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
@@ -215,8 +218,10 @@ def resolve_notebook_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote notebook display names (``.ipynb``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, ensure_notebook_path)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
@@ -241,8 +246,10 @@ def resolve_dataflow_gen1_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote dataflow names (``.json``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, ensure_model_path)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
@@ -267,8 +274,10 @@ def resolve_paginated_report_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote report names (``.rdl``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, ensure_rdl_path)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
