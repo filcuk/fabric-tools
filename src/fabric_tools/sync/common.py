@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
 
 import typer
@@ -997,6 +998,29 @@ def _resolve_notebook_inputs(
     )
 
 
+def _remap_paths_from_existing_manifest(
+    manifest: str,
+    *,
+    n_entries: int,
+) -> tuple[Path | None, list[Path | None] | None]:
+    """Load pack/entry remap paths from an existing ``.ftdep`` for rewrite.
+
+    Returns ``(pack_remap, entry_remaps)``. Entry remaps are returned only when
+    the loaded entry count matches *n_entries* so they stay aligned with items.
+    """
+    path = resolve_manifest_path(manifest)
+    if not path.is_file():
+        return None, None
+    try:
+        loaded = load_manifest(path)
+    except ManifestError:
+        return None, None
+    pack_remap = loaded.remap
+    if len(loaded.entries) != n_entries:
+        return pack_remap, None
+    return pack_remap, [entry.remap for entry in loaded.entries]
+
+
 def _write_manifest_after_success(
     manifest: str | None,
     items: list[WorkItem],
@@ -1010,6 +1034,7 @@ def _write_manifest_after_success(
     """Rewrite ``.ftdep`` when ``-m`` is set and the operation or dry-run succeeded.
 
     Skips the write (and the “Wrote manifest” line) when content is unchanged.
+    Preserves pack-level and per-entry ``remap`` path refs from the existing file.
     """
     if not manifest:
         return
@@ -1026,6 +1051,9 @@ def _write_manifest_after_success(
         from_results = semantic_model_id_overrides_from_results(op_results)
         if any(from_results):
             sm_overrides = from_results
+    pack_remap, entry_remaps = _remap_paths_from_existing_manifest(
+        manifest, n_entries=len(items)
+    )
     try:
         built = manifest_from_work_items(
             items,
@@ -1033,6 +1061,8 @@ def _write_manifest_after_success(
             display_names=display_names,
             item_id_overrides=overrides,
             semantic_model_id_overrides=sm_overrides,
+            remap=pack_remap,
+            entry_remaps=entry_remaps,
         )
         path, written = save_manifest(manifest, built)
     except ManifestError as exc:

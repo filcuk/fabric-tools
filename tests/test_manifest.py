@@ -484,6 +484,72 @@ def test_write_manifest_after_success_silent_when_unchanged(
     assert "Wrote manifest:" not in capsys.readouterr().out
 
 
+def test_write_manifest_after_success_preserves_remap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    nb = tmp_path / "a.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    src = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    dst = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    pack_map = tmp_path / "pack.remap.json"
+    entry_map = tmp_path / "entry.remap.json"
+    pack_map.write_text(json.dumps({src: dst}), encoding="utf-8")
+    entry_map.write_text(json.dumps({src: dst}), encoding="utf-8")
+    items = [WorkItem(Target(WS, ITEM), nb)]
+    built = manifest_from_work_items(
+        items,
+        display_names=["A"],
+        remap=pack_map,
+        entry_remaps=[entry_map],
+    )
+    save_manifest("out", built)
+
+    _write_manifest_after_success(
+        "out",
+        items,
+        display_names=["A"],
+        op_results=[OpResult(True, "ok", WS, ITEM)],
+    )
+    assert "Wrote manifest:" not in capsys.readouterr().out
+
+    raw = json.loads((tmp_path / "out.ftdep").read_text(encoding="utf-8"))
+    assert raw["remap"] == "pack.remap.json"
+    assert raw["entries"][0]["remap"] == "entry.remap.json"
+
+
+def test_write_manifest_after_success_preserves_remap_on_item_id_backfill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    nb = tmp_path / "a.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    src = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    dst = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    pack_map = tmp_path / "pack.remap.json"
+    pack_map.write_text(json.dumps({src: dst}), encoding="utf-8")
+    items = [WorkItem(Target(WS, None), nb)]
+    built = manifest_from_work_items(
+        items,
+        display_names=["A"],
+        remap=pack_map,
+    )
+    save_manifest("out", built)
+
+    _write_manifest_after_success(
+        "out",
+        items,
+        display_names=["A"],
+        op_results=[OpResult(True, "created", WS, ITEM2)],
+    )
+    raw = json.loads((tmp_path / "out.ftdep").read_text(encoding="utf-8"))
+    assert raw["entries"][0]["itemId"] == ITEM2
+    assert raw["remap"] == "pack.remap.json"
+
+
 def test_dry_run_writes_manifest_on_success(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
