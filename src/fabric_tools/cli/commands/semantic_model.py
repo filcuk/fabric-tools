@@ -21,8 +21,10 @@ from fabric_tools.cli.options import (
     TARGET_DOWNLOAD_HELP,
     dry_run_opt,
     filter_opt,
+    help_metavar,
     manifest_opt,
     name_opt,
+    option_help,
     origin_opt,
     silent_opt,
     target_opt,
@@ -54,13 +56,23 @@ semantic_model_role_member_app = typer.Typer(
 )
 semantic_model_role_app.add_typer(semantic_model_role_member_app, name="member")
 
-_INDEPENDENT_SM_HELP = (
-    "(optional) Model-only when the source also packages a report "
+_INDEPENDENT_SM_HELP = option_help(
+    "Model-only when the source also packages a report "
     "(reserved for thick .pbix skipReport; no-op for folders today)."
 )
-_ROLE_TARGET_HELP = (
-    "workspace:artifact or workspaceId:*. "
+_ROLE_TARGET_HELP = option_help(
+    f"{help_metavar('workspace:artifact')} or {help_metavar('workspace:*')}. "
     "Repeatable or comma-separated (spaces after commas OK)."
+)
+_ROLE_SILENT_LIST_HELP = option_help(
+    "Do not offer SqlServer Install-Module; fail with the hint."
+)
+_ROLE_DRY_RUN_LIST_HELP = option_help("Resolve targets only; do not call XMLA.")
+_ROLE_SILENT_MUTATE_HELP = option_help(
+    "Skip confirmation; do not offer SqlServer Install-Module."
+)
+_ROLE_DRY_RUN_MUTATE_HELP = option_help(
+    "Resolve targets and confirm plan only; do not mutate."
 )
 
 
@@ -158,12 +170,8 @@ def semantic_model_delete(
 def semantic_model_role_list(
     target: list[str] = target_opt(help=_ROLE_TARGET_HELP, required=True),
     name_filter: str | None = filter_opt(help=FILTER_HELP),
-    silent: bool = silent_opt(
-        help="(optional) Do not offer SqlServer Install-Module; fail with the hint."
-    ),
-    dry_run: bool = dry_run_opt(
-        help="(optional) Resolve targets only; do not call XMLA."
-    ),
+    silent: bool = silent_opt(help=_ROLE_SILENT_LIST_HELP),
+    dry_run: bool = dry_run_opt(help=_ROLE_DRY_RUN_LIST_HELP),
 ) -> None:
     """List RLS roles and members for semantic model(s) via XMLA."""
     run_semantic_model_role_command(
@@ -185,12 +193,8 @@ def semantic_model_role_member_add(
         help="Member UPN or Entra group display name (AzureAD).",
     ),
     name_filter: str | None = filter_opt(help=FILTER_HELP),
-    silent: bool = silent_opt(
-        help=("(optional) Skip confirmation; do not offer SqlServer Install-Module.")
-    ),
-    dry_run: bool = dry_run_opt(
-        help="(optional) Resolve targets and confirm plan only; do not mutate."
-    ),
+    silent: bool = silent_opt(help=_ROLE_SILENT_MUTATE_HELP),
+    dry_run: bool = dry_run_opt(help=_ROLE_DRY_RUN_MUTATE_HELP),
 ) -> None:
     """Add a member to an RLS role on semantic model(s) via XMLA."""
     run_semantic_model_role_command(
@@ -214,12 +218,8 @@ def semantic_model_role_member_remove(
         help="Member UPN or Entra group display name (AzureAD).",
     ),
     name_filter: str | None = filter_opt(help=FILTER_HELP),
-    silent: bool = silent_opt(
-        help=("(optional) Skip confirmation; do not offer SqlServer Install-Module.")
-    ),
-    dry_run: bool = dry_run_opt(
-        help="(optional) Resolve targets and confirm plan only; do not mutate."
-    ),
+    silent: bool = silent_opt(help=_ROLE_SILENT_MUTATE_HELP),
+    dry_run: bool = dry_run_opt(help=_ROLE_DRY_RUN_MUTATE_HELP),
 ) -> None:
     """Remove a member from an RLS role on semantic model(s) via XMLA."""
     run_semantic_model_role_command(

@@ -7,6 +7,7 @@ import typer
 from fabric_tools.auth import AuthError
 from fabric_tools.cli.options import (
     HELP_CONTEXT,
+    help_metavar,
 )
 from fabric_tools.colours import (
     print_warn_panel,
@@ -168,7 +169,7 @@ def debug_xmla_roles_list(
         ...,
         "--target",
         "-t",
-        help="workspaceId:itemId of a SemanticModel.",
+        help=f"{help_metavar('workspaceId:itemId')} of a SemanticModel.",
     ),
     silent: bool = typer.Option(
         False,
@@ -187,7 +188,7 @@ def debug_xmla_roles_member_add(
         ...,
         "--target",
         "-t",
-        help="workspaceId:itemId of a SemanticModel.",
+        help=f"{help_metavar('workspaceId:itemId')} of a SemanticModel.",
     ),
     role: str = typer.Option(..., "--role", help="Model role name."),
     member: str = typer.Option(
@@ -218,7 +219,7 @@ def debug_xmla_roles_member_remove(
         ...,
         "--target",
         "-t",
-        help="workspaceId:itemId of a SemanticModel.",
+        help=f"{help_metavar('workspaceId:itemId')} of a SemanticModel.",
     ),
     role: str = typer.Option(..., "--role", help="Model role name."),
     member: str = typer.Option(

@@ -22,6 +22,7 @@ from fabric_tools.cli.options import (
     filter_opt,
     manifest_opt,
     name_opt,
+    option_help,
     origin_opt,
     remap_opt,
     silent_opt,
@@ -37,17 +38,17 @@ pipeline_app = typer.Typer(
     context_settings=HELP_CONTEXT,
 )
 
-_INCLUDE_SCHEDULES_DOWNLOAD = (
-    "(optional) Include .schedules in the downloaded folder. "
+_INCLUDE_SCHEDULES_DOWNLOAD = option_help(
+    "Include .schedules in the downloaded folder. "
     "Default download also removes a leftover local .schedules file."
 )
-_INCLUDE_SCHEDULES_DEPLOY = (
-    "(optional) Sync .schedules from the source. Default is pipeline-only: "
+_INCLUDE_SCHEDULES_DEPLOY = option_help(
+    "Sync .schedules from the source. Default is pipeline-only: "
     "omit source .schedules; overwrite without this flag reattaches each "
     "target's existing .schedules."
 )
-_INCLUDE_SCHEDULES_COMPARE = (
-    "(optional) Include .schedules in the unified diff. "
+_INCLUDE_SCHEDULES_COMPARE = option_help(
+    "Include .schedules in the unified diff. "
     "Default compares pipeline-content.json only (.platform always excluded)."
 )
 

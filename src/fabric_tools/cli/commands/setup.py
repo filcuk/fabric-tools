@@ -7,6 +7,7 @@ import typer
 from fabric_tools.cli.lifecycle import flush_update_notice, start_bg_update_check
 from fabric_tools.cli.options import (
     HELP_CONTEXT,
+    option_help,
 )
 from fabric_tools.colours import (
     FG_OK,
@@ -78,7 +79,9 @@ def setup_uninstall(
     keep_files: bool = typer.Option(
         False,
         "--keep-files",
-        help="(optional) Leave installed files in place; only remove PATH registration.",
+        help=option_help(
+            "Leave installed files in place; only remove PATH registration."
+        ),
     ),
 ) -> None:
     """Remove fabric-tools registration (and installed files by default)."""
@@ -143,7 +146,7 @@ def setup_update(
         False,
         "--silent",
         "-s",
-        help="(optional) Skip confirmation prompts when downloading/installing.",
+        help=option_help("Skip confirmation prompts when downloading/installing."),
     ),
 ) -> None:
     """Check for a newer release, or download and install it."""

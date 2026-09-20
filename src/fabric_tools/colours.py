@@ -51,6 +51,8 @@ _BANNER_LINES = (
 HELP_STYLE_OPTION = STYLE_OPTION
 HELP_STYLE_SWITCH = STYLE_OPTION_ALIAS
 HELP_STYLE_METAVAR = STYLE_METAVAR
+HELP_STYLE_REQUIRED_SHORT = STYLE_ERROR
+HELP_STYLE_REQUIRED_LONG = "dim red"
 HELP_STYLE_USAGE = STYLE_DIM
 HELP_STYLE_USAGE_COMMAND = ""
 HELP_STYLE_COMMAND = STYLE_ID
@@ -61,6 +63,8 @@ HELP_PANEL_FABRIC = "Fabric"
 # Highlighter patterns: long options before short, and short must not match
 # inside ``--dry-run`` / ``--target`` (Typer's defaults style both as switch).
 # Usage-line tokens: command path cyan, [OPTIONS] magenta, placeholders yellow.
+# Do not match bare ALL-CAPS prose (GUID, OK, XMLA, …) — the Options metavar
+# column is styled by Typer directly; prose yellow only via Rich markup tags.
 # Product names in help prose: Fabric teal, Power BI bright yellow.
 _HELP_OPTION_HIGHLIGHTS = [
     r"(?P<option>\-\-[\w\-]+)",
@@ -70,8 +74,6 @@ _HELP_OPTION_HIGHLIGHTS = [
     r"(?P<option>\[OPTIONS\])",
     r"(?P<metavar>\[ARGS\]\.\.\.)",
     r"(?P<command>\bCOMMAND\b)",
-    r"(?P<metavar>\b(?!OPTIONS\b|ARGS\b|COMMAND\b|BI\b)[A-Z][A-Z0-9_]+\b)",
-    r"(?P<metavar>\[(?!OPTIONS\b|ARGS\b)[A-Z][^\]]*\])",
     r"(?P<powerbi>Power BI)",
     r"(?P<fabric>\bFabric\b)",
 ]
@@ -96,12 +98,17 @@ class PaletteRow:
 
 
 PALETTE_ROWS: tuple[PaletteRow, ...] = (
-    PaletteRow("red", STYLE_ERROR, "Error / failure"),
+    PaletteRow("red", STYLE_ERROR, "Error / failure; help required marker *"),
+    PaletteRow(
+        "dim red",
+        HELP_STYLE_REQUIRED_LONG,
+        "Help required marker [required]",
+    ),
     PaletteRow("yellow", STYLE_WARN, "Warning / cancel / soft fail"),
     PaletteRow(
         "bright yellow",
         STYLE_METAVAR,
-        "Help metavar (e.g. <PATH>, [ARGS]...); Power BI in help",
+        "Help metavar column / <placeholders>; Power BI; optional [metavar] prose",
     ),
     PaletteRow("green", STYLE_OK, "Success / affirmative"),
     PaletteRow(
@@ -149,6 +156,8 @@ def apply_help_theme() -> None:
     rich_utils.STYLE_OPTION = HELP_STYLE_OPTION
     rich_utils.STYLE_SWITCH = HELP_STYLE_SWITCH
     rich_utils.STYLE_METAVAR = HELP_STYLE_METAVAR
+    rich_utils.STYLE_REQUIRED_SHORT = HELP_STYLE_REQUIRED_SHORT
+    rich_utils.STYLE_REQUIRED_LONG = HELP_STYLE_REQUIRED_LONG
     rich_utils.STYLE_USAGE = HELP_STYLE_USAGE
     rich_utils.STYLE_USAGE_COMMAND = HELP_STYLE_USAGE_COMMAND
     rich_utils.OptionHighlighter.highlights = list(_HELP_OPTION_HIGHLIGHTS)
