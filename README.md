@@ -1,9 +1,9 @@
 # <img src="res/app.svg" alt="" width="40" height="40" align="left"> Fabric Tools
 
-_CLI for working with Microsoft Fabric artifacts._
-![Platform](https://img.shields.io/badge/platform-Windows-blue) ![GitHub Issues](https://img.shields.io/github/issues/filcuk/fabric-tools) ![GitHub Release](https://img.shields.io/github/v/release/filcuk/fabric-tools?include_prereleases)
+_CLI for working with Microsoft Fabric artifacts._  
+![Platform](https://img.shields.io/badge/platform-Windows-blue) [![GitHub Issues](https://img.shields.io/github/issues/filcuk/fabric-tools)](https://github.com/filcuk/fabric-tools/issues) [![GitHub Release](https://img.shields.io/github/v/release/filcuk/fabric-tools?include_prereleases)](https://github.com/filcuk/fabric-tools/releases)
 
-_Video here later_
+![Demo](res/readme/demo.avif)
 
 Have you ever wanted to:
 
@@ -18,7 +18,7 @@ Have you ever wanted to:
 
 ## Quick start
 
-1. Download the [latest release](https://github.com/filcuk/fabric-tools/releases/download/v0.4.0/fabric-tools.exe)
+1. Download the [latest release](https://github.com/filcuk/fabric-tools/releases/download/latest/fabric-tools.exe)
 2. _Optionally_ install for improved speed and ease of access:
 
   ```powershell
@@ -26,21 +26,14 @@ Have you ever wanted to:
   ```
 
   _Restart your terminal or IDE to capture PATH change._
-3. Keep up to date (downloads the release exe and installs over `%LOCALAPPDATA%\fabric-tools\app`; works from the installed exe or a Python install):
-
-  ```powershell
-  fabric-tools setup update --check
-  fabric-tools setup update
-  ```
-
-4. See available commands or use interactive wizard to get started:
+3. See available commands or use interactive wizard to get started:
 
   ```powershell
   fabric-tools --help
   fabric-tools --interactive
   ```
 
-> [!success]
+> [!TIP]
 > Are you working with agents? Use `fabric-tools env` to set `FABRIC_TOOLS_READONLY=1` to block any destructive commands.
 
 ## Example workflow
@@ -63,18 +56,16 @@ fabric-tools notebook deploy -m etl
 | Item|One-way|Two-way|Notes|
 |---|---|---|---|
 | Notebook|✅|✅|Can update individual cells.|
-| Dataflow Gen2|✅|✅|Opt-in `--publish` / `-p` after deploy (Apply Changes).|
-| Dataflow Gen1|✅|🚫|Deploy is create-only[^1].|
+| Dataflow Gen2|✅|✅||
+| Dataflow Gen1|✅|🚫|No API support for overwrite.|
 | Data Pipeline|✅|✅||
 | User Data Function|✅|✅||
 | Semantic Model|✅|✅||
 | Report|✅|✅|Standalone or model-joined operations.|
 | Paginated Report|✅|✅|No API support for sources & credentials.|
-| Org App|✅|✅|`definition.json` in a `*.OrgApp` folder.|
-| Environment|✅|✅|Libraries and Spark compute settings in a `*.Environment` folder.|
-| Variable Library|✅|✅|`variables.json`, `settings.json`, and optional `valueSets/` in a `*.VariableLibrary` folder.|
-| Inspect|✅ (Read)|🚫|Browse workspaces and items.|
-| Pack manifests|✅|✅|Schema v3 multi-kind `.ftdep`; `pack …` for mixed.|
+| Org App|✅|✅||
+| Environment|✅|✅||
+| Variable Library|✅|✅||
 | Lakehouse|🚫|🚫|No API support.|
 | Warehouse|❔|❔||
 | Eventhouse|❔|❔||
@@ -91,8 +82,6 @@ fabric-tools notebook deploy -m etl
 📅 = Planned  
 🚫 = Not supported  
 
-[^1]: Dataflow Gen1 don't support overwrite, and credentials must be handled separately.
-
 ## Authentication
 
 By default, interactive Azure sign-in is used, with Windows attempting silent account login first and falling back to browser or device code if needed.
@@ -108,7 +97,7 @@ $env:AZURE_CLIENT_SECRET="..."
 fabric-tools env -h
 ```
 
-> [!warning]
+> [!WARNING]
 > User Data Function APIs do **not** support service principals.
 
 ## Troubleshooting
