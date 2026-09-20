@@ -354,12 +354,27 @@ def test_format_update_notice() -> None:
         update_available=True,
         release_url="https://example/release",
         tag_name="v0.3.0",
+        prerelease=True,
     )
     notice = format_update_notice(result)
     assert notice is not None
     assert "setup update" in notice
     assert "--check" not in notice.split("Run:")[1].splitlines()[0]
     assert "https://example/release" in notice
+    assert "breaking CLI changes" in notice
+
+    stable = format_update_notice(
+        UpdateCheckResult(
+            current="0.2.0",
+            latest="1.0.0",
+            update_available=True,
+            release_url="https://example/release",
+            tag_name="v1.0.0",
+            prerelease=False,
+        ),
+    )
+    assert stable is not None
+    assert "breaking CLI changes" not in stable
 
     assert (
         format_update_notice(

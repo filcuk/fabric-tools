@@ -412,8 +412,12 @@ def format_update_notice(result: UpdateCheckResult) -> str | None:
         return None
     lines = [
         f"Update available: {result.latest} (you have {result.current}).",
-        "Run: fabric-tools setup update",
     ]
+    if result.prerelease:
+        lines.append(
+            "Pre-release may include breaking CLI changes — review release notes."
+        )
+    lines.append("Run: fabric-tools setup update")
     if result.release_url:
         lines.append(result.release_url)
     return "\n".join(lines)
