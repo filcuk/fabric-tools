@@ -4,13 +4,13 @@ CLI for working with Microsoft Fabric artifacts.
 
 ## Quick start
 
-Register the tool:
+Download the single `fabric-tools.exe` release. You can run it as-is, or install it for faster startup:
 
 ```powershell
 .\fabric-tools.exe setup install
 ```
 
-Open a new terminal and get started with the following:
+Open a new terminal (restart your IDE if the command is not found) and get started:
 
 ```powershell
 fabric-tools --help
