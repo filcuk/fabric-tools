@@ -44,6 +44,10 @@ def test_detect_suffix_bare_and_display_name(tmp_path: Path) -> None:
     assert detect_variable_library_path(bare) == bare
     assert display_name_from_path(suffixed) == "Config"
     assert display_name_from_path(tmp_path / "x.variablelibrary") == "x"
+    assert (
+        detect_variable_library_path(tmp_path / "Config")
+        == tmp_path / "Config.VariableLibrary"
+    )
 
 
 def test_validate_requires_both_object_files(tmp_path: Path) -> None:

@@ -65,11 +65,17 @@ def test_detect_folder_with_pbism_without_suffix(tmp_path: Path) -> None:
     assert validate_local_semantic_model(folder) == folder
 
 
-def test_rejects_unsupported_path(tmp_path: Path) -> None:
+def test_detect_appends_stem_suffix(tmp_path: Path) -> None:
     path = tmp_path / "notes.txt"
     path.write_text("nope", encoding="utf-8")
-    with pytest.raises(DefinitionError, match="Unsupported semantic model path"):
-        detect_semantic_model_path(path)
+    assert detect_semantic_model_path(path) == tmp_path / "notes.txt.SemanticModel"
+
+
+def test_detect_appends_missing_stem(tmp_path: Path) -> None:
+    assert (
+        detect_semantic_model_path(tmp_path / "SalesModel")
+        == tmp_path / "SalesModel.SemanticModel"
+    )
 
 
 def test_pack_unpack_tmdl_round_trip(tmp_path: Path) -> None:

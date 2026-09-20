@@ -72,11 +72,14 @@ def test_detect_folder_with_required_files_without_suffix(tmp_path: Path) -> Non
     assert validate_local_dataflow(folder) == folder
 
 
-def test_rejects_unsupported_path(tmp_path: Path) -> None:
+def test_detect_appends_stem_suffix(tmp_path: Path) -> None:
     path = tmp_path / "notes.txt"
     path.write_text("nope", encoding="utf-8")
-    with pytest.raises(DefinitionError, match="Unsupported dataflow path"):
-        detect_dataflow_path(path)
+    assert detect_dataflow_path(path) == tmp_path / "notes.txt.Dataflow"
+
+
+def test_detect_appends_missing_stem(tmp_path: Path) -> None:
+    assert detect_dataflow_path(tmp_path / "Ingest") == tmp_path / "Ingest.Dataflow"
 
 
 def test_validate_requires_metadata_and_mashup(tmp_path: Path) -> None:

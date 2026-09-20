@@ -8,6 +8,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from fabric_tools.parsing import ensure_kind_path_suffix
+
 PLATFORM_PART_PATH = ".platform"
 DEFINITION_JSON_PATH = "definition.json"
 FUNCTION_APP_PATH = "function_app.py"
@@ -30,14 +32,15 @@ class DefinitionError(ValueError):
 
 
 def detect_udf_folder(path: Path | str) -> Path:
-    """Ensure *path* looks like a ``*.UserDataFunction`` folder; return it."""
-    p = Path(path)
-    name = p.name
-    if not any(name.endswith(suffix) for suffix in FOLDER_SUFFIXES):
-        raise DefinitionError(
-            f"Unsupported UDF path '{p}'. Expected a *.UserDataFunction folder."
-        )
-    return p
+    """Ensure *path* looks like a ``*.UserDataFunction`` folder; return it.
+
+    Bare stems (e.g. ``Helpers``) become ``Helpers.UserDataFunction``.
+    """
+    return ensure_kind_path_suffix(
+        path,
+        canonical_suffix=".UserDataFunction",
+        accepted_suffixes=FOLDER_SUFFIXES,
+    )
 
 
 def display_name_from_path(path: Path | str) -> str:

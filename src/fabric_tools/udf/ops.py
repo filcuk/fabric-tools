@@ -56,7 +56,7 @@ def download_udf(client: FabricClient, item: WorkItem) -> OpResult:
     target = item.target
     dest = item.file
     try:
-        detect_udf_folder(dest)
+        dest = detect_udf_folder(dest)
     except DefinitionError as exc:
         return OpResult(False, str(exc), target.workspace_id, target.item_id)
 
@@ -331,9 +331,7 @@ def run_deploy_batch(
         if target is not None and target.is_create:
             progress.advance(status_detail("udf", "creating"))
         elif target is not None:
-            progress.advance(
-                status_detail("udf", "deploying", target.item_id)
-            )
+            progress.advance(status_detail("udf", "deploying", target.item_id))
         else:
             progress.advance(status_detail("udf", "deploying"))
         results.append(

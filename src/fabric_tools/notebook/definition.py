@@ -9,6 +9,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from fabric_tools.parsing import ensure_kind_path_suffix
+
 FABRIC_GIT_CONTENT_NAMES = (
     "notebook-content.py",
     "notebook-content.sql",
@@ -31,9 +33,27 @@ class DefinitionError(ValueError):
     """Invalid local notebook path or definition payload."""
 
 
+def ensure_notebook_path(path: Path | str) -> Path:
+    """Append ``.ipynb`` when *path* is not already a notebook file or folder.
+
+    Explicit ``*.Notebook`` / ``*.notebook`` folders and ``.ipynb`` files are
+    left unchanged. Bare stems (e.g. ``ETL``) become ``ETL.ipynb``.
+    """
+    p = Path(path)
+    if p.suffix.lower() == ".ipynb":
+        return p
+    if p.name.endswith(".Notebook") or p.name.endswith(".notebook"):
+        return p
+    return ensure_kind_path_suffix(
+        p,
+        canonical_suffix=".ipynb",
+        accepted_suffixes=(".ipynb", ".Notebook", ".notebook"),
+    )
+
+
 def detect_format(path: Path | str) -> NotebookFormat:
     """Infer definition format from a local file or `.Notebook` folder path."""
-    p = Path(path)
+    p = ensure_notebook_path(path)
     name = p.name
     if name.endswith(".Notebook") or name.endswith(".notebook"):
         return NotebookFormat.FABRIC_GIT
@@ -57,7 +77,7 @@ def display_name_from_path(path: Path | str) -> str:
 
 def validate_local_notebook(path: Path | str) -> NotebookFormat:
     """Ensure the path exists and looks like a packable notebook. Returns format."""
-    p = Path(path)
+    p = ensure_notebook_path(path)
     fmt = detect_format(p)
     if fmt is NotebookFormat.IPYNB:
         if not p.is_file():

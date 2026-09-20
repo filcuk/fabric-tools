@@ -38,7 +38,7 @@ def download_org_app(client: FabricClient, item: WorkItem) -> OpResult:
     target = item.target
     destination = item.file
     try:
-        detect_org_app_path(destination)
+        destination = detect_org_app_path(destination)
         definition = get_org_app_definition(client, target.workspace_id, target.item_id)
         written = unpack_definition(definition, destination)
     except (FabricApiError, DefinitionError, OSError) as exc:

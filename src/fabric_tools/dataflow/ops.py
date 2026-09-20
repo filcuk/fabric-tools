@@ -39,7 +39,7 @@ def download_dataflow(client: FabricClient, item: WorkItem) -> OpResult:
     target = item.target
     dest = item.file
     try:
-        detect_dataflow_path(dest)
+        dest = detect_dataflow_path(dest)
         definition = get_dataflow_definition(
             client, target.workspace_id, target.item_id
         )

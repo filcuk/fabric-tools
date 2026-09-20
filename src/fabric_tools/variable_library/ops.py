@@ -36,11 +36,11 @@ def download_variable_library(client: FabricClient, item: WorkItem) -> OpResult:
         return OpResult(False, "download requires a local --target path")
     target = item.target
     try:
-        detect_variable_library_path(item.file)
+        dest = detect_variable_library_path(item.file)
         definition = get_variable_library_definition(
             client, target.workspace_id, target.item_id
         )
-        written = unpack_definition(definition, item.file)
+        written = unpack_definition(definition, dest)
     except (FabricApiError, DefinitionError, OSError) as exc:
         return OpResult(
             False,

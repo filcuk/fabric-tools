@@ -39,7 +39,7 @@ def download_semantic_model(client: FabricClient, item: WorkItem) -> OpResult:
     target = item.target
     dest = item.file
     try:
-        detect_semantic_model_path(dest)
+        dest = detect_semantic_model_path(dest)
         definition = get_semantic_model_definition(
             client, target.workspace_id, target.item_id
         )

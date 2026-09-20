@@ -8,6 +8,8 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from fabric_tools.parsing import ensure_kind_path_suffix
+
 VARIABLES_PART = "variables.json"
 SETTINGS_PART = "settings.json"
 PLATFORM_PART = ".platform"
@@ -21,16 +23,28 @@ class DefinitionError(ValueError):
     """Invalid local Variable Library path or definition payload."""
 
 
+def _is_variable_library_folder_name(name: str) -> bool:
+    return name.lower().endswith(".variablelibrary")
+
+
+def _variable_library_bare_content_ok(folder: Path) -> bool:
+    return folder.is_dir() and all((folder / name).is_file() for name in REQUIRED_PARTS)
+
+
 def detect_variable_library_path(path: Path | str) -> Path:
-    """Resolve *path* as a Variable Library folder path."""
+    """Resolve *path* as a Variable Library folder path.
+
+    Bare stems (e.g. ``Config``) become ``Config.VariableLibrary``. Existing
+    folders that already contain the required parts are left unchanged.
+    """
     folder = Path(path)
-    if folder.name.lower().endswith(".variablelibrary"):
+    if _is_variable_library_folder_name(folder.name):
         return folder
-    if folder.is_dir() and all((folder / name).is_file() for name in REQUIRED_PARTS):
-        return folder
-    raise DefinitionError(
-        f"Unsupported Variable Library path '{folder}'. Expected a "
-        f"*.VariableLibrary folder containing {VARIABLES_PART} and {SETTINGS_PART}."
+    return ensure_kind_path_suffix(
+        folder,
+        canonical_suffix=".VariableLibrary",
+        accepted_suffixes=(".VariableLibrary", ".variablelibrary"),
+        bare_content_ok=_variable_library_bare_content_ok,
     )
 
 

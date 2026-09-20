@@ -46,7 +46,7 @@ def download_pipeline(
     target = item.target
     dest = item.file
     try:
-        detect_pipeline_path(dest)
+        dest = detect_pipeline_path(dest)
         definition = get_pipeline_definition(
             client, target.workspace_id, target.item_id
         )

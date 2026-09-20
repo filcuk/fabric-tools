@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from fabric_tools.parsing import ensure_kind_path_suffix
+
 DEFINITION_PART = "definition.json"
 PLATFORM_PART = ".platform"
 REQUIRED_PARTS = (DEFINITION_PART,)
@@ -23,15 +25,16 @@ def is_org_app_folder_name(name: str) -> bool:
 
 
 def detect_org_app_path(path: Path | str) -> Path:
-    """Resolve *path* as an Org App folder path (does not check contents)."""
-    folder = Path(path)
-    if is_org_app_folder_name(folder.name):
-        return folder
-    if folder.is_dir() and (folder / DEFINITION_PART).is_file():
-        return folder
-    raise DefinitionError(
-        f"Unsupported Org App path '{folder}'. Expected a *.OrgApp folder "
-        f"(with {DEFINITION_PART})."
+    """Resolve *path* as an Org App folder path (does not check contents).
+
+    Bare stems (e.g. ``myApp``) become ``myApp.OrgApp``. Existing folders that
+    already contain ``definition.json`` are left unchanged.
+    """
+    return ensure_kind_path_suffix(
+        path,
+        canonical_suffix=".OrgApp",
+        accepted_suffixes=(".OrgApp", ".orgapp"),
+        bare_content_ok=lambda p: p.is_dir() and (p / DEFINITION_PART).is_file(),
     )
 
 
