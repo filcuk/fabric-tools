@@ -30,6 +30,9 @@ def option_help(body: str, *, when: str | None = None) -> str:
     Rich adds the red ``*`` / ``[required]`` markers — do not put ``(required)``
     in *body*. Optional flags use plain prose (no ``(optional)`` prefix); pass
     *when* for a mode scope such as ``deploy only`` or ``create only``.
+
+    Wrap selector/placeholder tokens with :func:`help_metavar` (e.g.
+    ``workspace:artifact``) — do not rely on ALL-CAPS auto-highlighting.
     """
     text = body.strip()
     if when:
@@ -45,6 +48,22 @@ def conditional_required_help(body: str, *, without: str = "-m or -d") -> str:
     return f"(required without {without}) {body.strip()}"
 
 
+def help_metavar(token: str) -> str:
+    """Wrap *token* in Rich ``[metavar]`` markup for intentional help highlighting.
+
+    Use for selector shapes such as ``workspace:artifact`` / ``workspace:*``.
+    Unmarked prose stays primary (see DESIGN.md).
+    """
+    return f"[metavar]{token}[/metavar]"
+
+
+# Common selector tokens (help prose only).
+_MV_WS_ARTIFACT = help_metavar("workspace:artifact")
+_MV_WS_STAR = help_metavar("workspace:*")
+_MV_WS_ITEM = help_metavar("workspaceId:itemId")
+_MV_WS_GUID = help_metavar("workspace GUID")
+
+
 # ---------------------------------------------------------------------------
 # Shared help text (canonical; prefer these over per-command copies)
 # ---------------------------------------------------------------------------
@@ -55,12 +74,12 @@ MANIFEST_HELP = option_help(
     "write/update the manifest."
 )
 MANIFEST_DELETE_HELP = option_help(
-    "Load workspace:artifact targets from a .ftdep "
+    f"Load {_MV_WS_ARTIFACT} targets from a .ftdep "
     "(entries with itemId). Manifest is not rewritten after delete."
 )
 FILTER_HELP = option_help(
     "Case-insensitive displayName substring; "
-    "only valid with workspaceId:* on --origin or --target."
+    f"only valid with {_MV_WS_STAR} on --origin or --target."
 )
 GUID_REMAP_HELP = option_help(
     "JSON file remapping source GUID → target GUID. "
@@ -72,7 +91,7 @@ GUID_REMAP_HELP = option_help(
 SILENT_HELP = option_help("Skip confirmation prompts.")
 
 ORIGIN_DOWNLOAD_HELP = conditional_required_help(
-    "Remote workspace:artifact to download. "
+    f"Remote {_MV_WS_ARTIFACT} to download. "
     "Repeatable or comma-separated (spaces after commas OK). One workspace only."
 )
 TARGET_DOWNLOAD_HELP = option_help(
@@ -83,12 +102,12 @@ TARGET_DOWNLOAD_HELP = option_help(
 )
 
 TARGET_DEPLOY_HELP = conditional_required_help(
-    "workspace GUID (create) or "
-    "workspace:artifact (overwrite). Repeatable or comma-separated "
+    f"{_MV_WS_GUID} (create) or "
+    f"{_MV_WS_ARTIFACT} (overwrite). Repeatable or comma-separated "
     "(spaces after commas OK)."
 )
 ORIGIN_DEPLOY_HELP = conditional_required_help(
-    "Local path or remote workspace:artifact source. "
+    f"Local path or remote {_MV_WS_ARTIFACT} source. "
     "Repeatable or comma-separated (spaces after commas OK). "
     "One origin may broadcast to all targets."
 )
@@ -98,17 +117,17 @@ NAME_DEPLOY_HELP = option_help(
 )
 
 TARGET_COMPARE_HELP = conditional_required_help(
-    "workspace:artifact GUID. Repeatable or comma-separated (spaces after commas OK)."
+    f"{_MV_WS_ARTIFACT} GUID. Repeatable or comma-separated (spaces after commas OK)."
 )
 ORIGIN_COMPARE_HELP = conditional_required_help(
-    "Local path or remote workspace:artifact to compare "
+    f"Local path or remote {_MV_WS_ARTIFACT} to compare "
     "against --target. Must 1:1 match --target (no broadcast)."
 )
 
 TARGET_DELETE_HELP = conditional_required_help(
-    "workspace:artifact GUID. "
+    f"{_MV_WS_ARTIFACT} GUID. "
     "Repeatable or comma-separated (spaces after commas OK). "
-    "Also accepts workspaceId:* (all items of this kind)."
+    f"Also accepts {_MV_WS_STAR} (all items of this kind)."
 )
 
 DRY_RUN_DOWNLOAD_HELP = option_help(

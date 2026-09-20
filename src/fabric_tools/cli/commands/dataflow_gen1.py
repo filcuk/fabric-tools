@@ -20,6 +20,7 @@ from fabric_tools.cli.options import (
     conditional_required_help,
     dry_run_opt,
     filter_opt,
+    help_metavar,
     manifest_opt,
     name_opt,
     option_help,
@@ -38,7 +39,7 @@ dataflow_gen1_app = typer.Typer(
 )
 
 _TARGET_DEPLOY_GEN1 = conditional_required_help(
-    "workspace GUID (create only). "
+    f"{help_metavar('workspace GUID')} (create only). "
     "Repeatable or comma-separated (spaces after commas OK)."
 )
 _NAME_DEPLOY_GEN1 = option_help(

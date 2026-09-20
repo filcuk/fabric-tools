@@ -14,7 +14,7 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | Command-level warnings and cancel (`print_warn_panel` / `_exit_warn`); update notices; compare STATUS `differences` and other inline status tokens stay Rich yellow text only |
 | Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare STATUS `identical`, enabled/set |
 | Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands, **Usage** command path and `COMMAND` placeholder |
-| Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Option/argument placeholders in `--help` (e.g. `<PATH>`, `<DEST>`, `<manifest>`, **Usage** `[ARGS]...`); **Power BI** in help text |
+| Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Options/Arguments metavar column (`TEXT`, …); Usage / synopsis placeholders (`<PATH>`, `[ARGS]...`); **Power BI** in help text; optional Rich `[metavar]…[/metavar]` in prose |
 | Help required marker (`*`) | red | Typer Rich `STYLE_REQUIRED_SHORT` (pinned in `apply_help_theme`) | Leading `*` on always-required options/arguments in `--help` |
 | Help required marker (`[required]`) | dim red | Typer Rich `STYLE_REQUIRED_LONG` (pinned in `apply_help_theme`) | Trailing `[required]` on always-required help lines |
 | Command option — long (help) | magenta | Typer Rich `STYLE_OPTION` | Long options in `--help` (e.g. `--target`); **Usage** `[OPTIONS]` |
@@ -77,11 +77,13 @@ While a GitHub update check runs, the Version value stays green with an inline s
 
 ### Help theme
 
-At CLI startup, Typer Rich help styles are set so **long options** (`--target`) use magenta (`STYLE_OPTION`), **short aliases** (`-t`) use bright magenta / `#ff9cf5` (`STYLE_SWITCH`), and **metavars** (`<PATH>`, `<DEST>`, `<manifest>`) use bright yellow (`STYLE_METAVAR`). Always-required markers use red `*` (`STYLE_REQUIRED_SHORT`) and dim-red `[required]` (`STYLE_REQUIRED_LONG`), pinned in `apply_help_theme`. The option highlighter is also patched so `--long` flags are not mis-classified as short switches (Typer’s default patterns make both look identical).
+At CLI startup, Typer Rich help styles are set so **long options** (`--target`) use magenta (`STYLE_OPTION`), **short aliases** (`-t`) use bright magenta / `#ff9cf5` (`STYLE_SWITCH`), and **metavars** use bright yellow (`STYLE_METAVAR`): the Options/Arguments table metavar column (e.g. `TEXT`, styled by Typer), plus Usage / synopsis placeholders (`<PATH>`, `<DEST>`, `[ARGS]...`). Always-required markers use red `*` (`STYLE_REQUIRED_SHORT`) and dim-red `[required]` (`STYLE_REQUIRED_LONG`), pinned in `apply_help_theme`. The option highlighter is also patched so `--long` flags are not mis-classified as short switches (Typer’s default patterns make both look identical).
+
+Do **not** auto-colour bare ALL-CAPS words in help prose (`GUID`, `OK`, `XMLA`, `RLS`, …). To yellow a prose token intentionally, wrap it with `help_metavar(...)` from `fabric_tools.cli.options` (emits Rich `[metavar]…[/metavar]`); use this for selector shapes such as `workspace:artifact`, `workspace:*`, and `workspaceId:itemId`. Unmarked prose stays primary.
 
 **Usage** lines are highlighted the same way: dim `Usage:` label, cyan command path (`fabric-tools notebook …`) and `COMMAND` placeholder, magenta `[OPTIONS]` / `--flags`, bright yellow argument placeholders (`[ARGS]...`, `<…>`).
 
-In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is bright yellow (`fabric-tools` is left alone).
+In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is bright yellow (`fabric-tools` is left alone). Do not grow an acronym highlighter list for other product terms.
 
 On **root** `--help` only, the **Fabric** commands panel title and frame use teal (`#8acfb3`); the **Local** panel keeps the default dim border. The ASCII banner colours ``FABRIC`` as `#8acfb3` and the hyphen gap plus ``TOOLS`` as `#1d8e7a`. The subtitle under the banner is **dim**. Subcommand help is unchanged.
 

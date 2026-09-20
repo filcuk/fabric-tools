@@ -232,7 +232,12 @@ def test_pack_download_help_uses_required_marker() -> None:
 
 
 def test_option_help_builders() -> None:
-    from fabric_tools.cli.options import conditional_required_help, option_help
+    from fabric_tools.cli.options import (
+        TARGET_COMPARE_HELP,
+        conditional_required_help,
+        help_metavar,
+        option_help,
+    )
 
     assert option_help("Skip confirmation prompts.") == "Skip confirmation prompts."
     assert (
@@ -247,6 +252,8 @@ def test_option_help_builders() -> None:
         conditional_required_help("Origin path.", without="-m/-o or -d")
         == "(required without -m/-o or -d) Origin path."
     )
+    assert help_metavar("workspace:artifact") == "[metavar]workspace:artifact[/metavar]"
+    assert "[metavar]workspace:artifact[/metavar]" in TARGET_COMPARE_HELP
 
 
 def test_org_app_download_help_omits_optional_prefix() -> None:
@@ -255,6 +262,24 @@ def test_org_app_download_help_omits_optional_prefix() -> None:
     assert "(optional)" not in result.stdout
     assert "(required without -m or -d)" in result.stdout
     assert "Skip confirmation prompts." in result.stdout
+    assert "workspace:artifact" in result.stdout
+    assert "[metavar]" not in result.stdout
+
+
+def test_dataflow_compare_help_renders_workspace_artifact_selector() -> None:
+    result = CliRunner().invoke(app, ["dataflow", "compare", "--help"])
+    assert result.exit_code == 0
+    assert "workspace:artifact" in result.stdout
+    assert "[metavar]" not in result.stdout
+    assert "(optional)" not in result.stdout
+
+
+def test_dataflow_delete_help_uses_workspace_star_metavar() -> None:
+    result = CliRunner().invoke(app, ["dataflow", "delete", "--help"])
+    assert result.exit_code == 0
+    assert "workspace:*" in result.stdout
+    assert "workspaceId:*" not in result.stdout
+    assert "[metavar]" not in result.stdout
 
 
 def test_semantic_model_role_member_add_help_omits_optional_prefix() -> None:

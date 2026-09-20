@@ -21,6 +21,7 @@ from fabric_tools.cli.options import (
     TARGET_DOWNLOAD_HELP,
     dry_run_opt,
     filter_opt,
+    help_metavar,
     manifest_opt,
     name_opt,
     option_help,
@@ -60,7 +61,7 @@ _INDEPENDENT_SM_HELP = option_help(
     "(reserved for thick .pbix skipReport; no-op for folders today)."
 )
 _ROLE_TARGET_HELP = option_help(
-    "workspace:artifact or workspaceId:*. "
+    f"{help_metavar('workspace:artifact')} or {help_metavar('workspace:*')}. "
     "Repeatable or comma-separated (spaces after commas OK)."
 )
 _ROLE_SILENT_LIST_HELP = option_help(

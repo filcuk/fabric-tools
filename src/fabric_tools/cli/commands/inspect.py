@@ -6,6 +6,7 @@ import typer
 
 from fabric_tools.cli.options import (
     HELP_CONTEXT,
+    help_metavar,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK
 from fabric_tools.sync.common import (
@@ -194,7 +195,7 @@ def inspect_item_get(
         ...,
         "--target",
         "-t",
-        help="Workspace and item as workspaceId:itemId.",
+        help=f"Workspace and item as {help_metavar('workspaceId:itemId')}.",
     ),
 ) -> None:
     """Show detailed information for one Fabric item."""

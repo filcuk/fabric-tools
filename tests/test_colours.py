@@ -39,6 +39,42 @@ def test_apply_help_theme_sets_option_and_switch_styles() -> None:
     assert colours.HELP_STYLE_REQUIRED_LONG == "dim red"
 
 
+def _span_styles_covering(text, start: int, end: int) -> set[str]:
+    """Return Rich style names covering ``text.plain[start:end]``."""
+    styles: set[str] = set()
+    for span_start, span_end, style in text.spans:
+        if span_end <= start or span_start >= end:
+            continue
+        styles.add(str(style))
+    return styles
+
+
+def test_help_highlighter_skips_all_caps_prose_but_styles_placeholders() -> None:
+    from rich.text import Text
+    from typer import rich_utils
+
+    colours.apply_help_theme()
+    prose = "workspace:artifact GUID. spaces after commas OK. XMLA RLS UPN"
+    highlighted = rich_utils.highlighter(Text(prose))
+    for token in ("GUID", "OK", "XMLA", "RLS", "UPN"):
+        idx = prose.index(token)
+        styles = _span_styles_covering(highlighted, idx, idx + len(token))
+        assert "metavar" not in styles, f"{token} should not be metavar-styled"
+
+    placeholder = rich_utils.highlighter(Text("get -t <workspaceId>"))
+    start = placeholder.plain.index("<workspaceId>")
+    styles = _span_styles_covering(placeholder, start, start + len("<workspaceId>"))
+    assert "metavar" in styles
+
+    branded = rich_utils.highlighter(Text("Fabric and Power BI items"))
+    fabric_i = branded.plain.index("Fabric")
+    assert "fabric" in _span_styles_covering(
+        branded, fabric_i, fabric_i + len("Fabric")
+    )
+    pbi_i = branded.plain.index("Power BI")
+    assert "powerbi" in _span_styles_covering(branded, pbi_i, pbi_i + len("Power BI"))
+
+
 def test_palette_rows_cover_core_roles() -> None:
     by_name = {row.name: row for row in colours.PALETTE_ROWS}
     assert by_name["red"].usage.startswith("Error / failure")
