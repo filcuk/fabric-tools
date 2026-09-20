@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -754,3 +755,33 @@ def default_download_paths(
         used.add(candidate.casefold())
         paths.append(Path(candidate))
     return paths
+
+
+def ensure_kind_path_suffix(
+    path: Path | str,
+    *,
+    canonical_suffix: str,
+    accepted_suffixes: tuple[str, ...] | None = None,
+    bare_content_ok: Callable[[Path], bool] | None = None,
+) -> Path:
+    """Append a kind suffix when missing, mirroring ``resolve_manifest_path``.
+
+    If the final path segment already ends with an accepted suffix, return
+    unchanged. If ``bare_content_ok`` reports an existing contentful bare path
+    (e.g. a folder already containing the kind marker file), leave it. Otherwise
+    append ``canonical_suffix`` via ``name + suffix`` (not ``with_suffix``).
+
+    ``canonical_suffix`` should include the leading dot (e.g. ``.OrgApp``).
+    When ``accepted_suffixes`` is omitted, both the canonical form and its
+    lowercased form are accepted.
+    """
+    folder = Path(path)
+    if not canonical_suffix.startswith("."):
+        canonical_suffix = f".{canonical_suffix}"
+    accepted = accepted_suffixes or (canonical_suffix, canonical_suffix.lower())
+    name = folder.name
+    if any(name.endswith(suffix) for suffix in accepted):
+        return folder
+    if bare_content_ok is not None and bare_content_ok(folder):
+        return folder
+    return folder.with_name(name + canonical_suffix)
