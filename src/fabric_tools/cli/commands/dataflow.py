@@ -22,6 +22,7 @@ from fabric_tools.cli.options import (
     filter_opt,
     manifest_opt,
     name_opt,
+    option_help,
     origin_opt,
     remap_opt,
     silent_opt,
@@ -73,8 +74,8 @@ def dataflow_deploy(
         False,
         "--publish",
         "-p",
-        help=(
-            "(optional) After successful create/update, run Fabric Apply Changes "
+        help=option_help(
+            "After successful create/update, run Fabric Apply Changes "
             "(prepare for refresh; same preparation as UI Save). User identity only."
         ),
     ),

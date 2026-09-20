@@ -17,10 +17,12 @@ from fabric_tools.cli.options import (
     TARGET_COMPARE_HELP,
     TARGET_DELETE_HELP,
     TARGET_DOWNLOAD_HELP,
+    conditional_required_help,
     dry_run_opt,
     filter_opt,
     manifest_opt,
     name_opt,
+    option_help,
     origin_opt,
     silent_opt,
     target_opt,
@@ -35,12 +37,12 @@ dataflow_gen1_app = typer.Typer(
     context_settings=HELP_CONTEXT,
 )
 
-_TARGET_DEPLOY_GEN1 = (
-    "(required without -m or -d) workspace GUID (create only). "
+_TARGET_DEPLOY_GEN1 = conditional_required_help(
+    "workspace GUID (create only). "
     "Repeatable or comma-separated (spaces after commas OK)."
 )
-_NAME_DEPLOY_GEN1 = (
-    "(optional) Display name written into model.json before import. "
+_NAME_DEPLOY_GEN1 = option_help(
+    "Display name written into model.json before import. "
     "Defaults to file stem or origin display name."
 )
 

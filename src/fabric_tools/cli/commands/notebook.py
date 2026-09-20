@@ -22,6 +22,7 @@ from fabric_tools.cli.options import (
     filter_opt,
     manifest_opt,
     name_opt,
+    option_help,
     origin_opt,
     remap_opt,
     silent_opt,
@@ -106,7 +107,7 @@ def notebook_compare(
         True,
         "--include-outputs",
         "-i",
-        help="(optional) For .ipynb diffs, include cell outputs.",
+        help=option_help("For .ipynb diffs, include cell outputs."),
     ),
 ) -> None:
     """Compare local/remote notebooks to remote targets."""

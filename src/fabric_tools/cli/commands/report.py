@@ -22,6 +22,7 @@ from fabric_tools.cli.options import (
     filter_opt,
     manifest_opt,
     name_opt,
+    option_help,
     origin_opt,
     silent_opt,
     target_opt,
@@ -36,8 +37,8 @@ report_app = typer.Typer(
     context_settings=HELP_CONTEXT,
 )
 
-_INDEPENDENT_HELP = (
-    "(optional) Report-only: do not join/download/deploy a packable semantic model."
+_INDEPENDENT_HELP = option_help(
+    "Report-only: do not join/download/deploy a packable semantic model."
 )
 
 
