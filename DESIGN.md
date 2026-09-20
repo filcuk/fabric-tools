@@ -58,7 +58,7 @@ Install  C:\Users\...\fabric-tools\app
   Cache  no
 ```
 
-While a GitHub update check runs, the Version value stays green with an inline spinner (`checking…`). When the check finishes: green `0.3.0 (up to date)`, or yellow `0.3.0 < 0.4.0` if a newer release exists. Timeouts show yellow `0.3.0 (update check timeout)`; other check errors show `(update check failed)`. `FABRIC_TOOLS_DISABLE_UPDATE_CHECK` leaves the green installed/running version only.
+While a GitHub update check runs on a TTY, the full status block (Status through Cache) is drawn immediately; the Version value stays green with an inline spinner (`checking…`) and is refreshed in place when the check finishes: green `0.3.0 (up to date)`, or yellow `0.3.0 < 0.4.0` if a newer release exists. Timeouts show yellow `0.3.0 (update check timeout)`; other check errors show `(update check failed)`. `FABRIC_TOOLS_DISABLE_UPDATE_CHECK` leaves the green installed/running version only.
 ### Env report statuses
 
 | Status token | Style |
