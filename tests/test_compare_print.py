@@ -83,3 +83,25 @@ def test_compare_row_cells_defaults() -> None:
         "identical",
         "-",
     )
+
+
+def test_print_compare_results_blank_line_before_diff(capsys) -> None:
+    from fabric_tools.compare_print import print_compare_results
+
+    print_compare_results(
+        [
+            _Result(
+                ok=True,
+                identical=False,
+                remote_name="A",
+                local_name="B",
+                target_ref="ws:item",
+                diff_text="--- remote\n+++ local\n",
+            )
+        ]
+    )
+    lines = capsys.readouterr().out.splitlines()
+    # Table row, blank line, then unified diff header.
+    assert "differences" in lines[1]
+    assert lines[2] == ""
+    assert lines[3].startswith("---")

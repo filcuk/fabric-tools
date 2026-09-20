@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.confirm import status_item_label
 from fabric_tools.dataflow.definition import (
     DefinitionError,
     definition_has_platform,
@@ -256,9 +257,13 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
-        item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("dataflow", "downloading", item_id))
+        progress.advance(
+            status_detail(
+                "dataflow",
+                "downloading",
+                status_item_label(client, item.target),
+            )
+        )
         results.append(download_dataflow(client, item))
     return results
 
@@ -282,12 +287,13 @@ def run_deploy_batch(
         if guid_maps and index < len(guid_maps):
             guid_map = guid_maps[index]
         target = item.target
+        label = status_item_label(client, target, fallback=name)
         if target is not None and target.is_create:
-            progress.advance(status_detail("dataflow", "creating"))
+            progress.advance(status_detail("dataflow", "creating", label))
         elif target is not None:
-            progress.advance(status_detail("dataflow", "deploying", target.item_id))
+            progress.advance(status_detail("dataflow", "deploying", label))
         else:
-            progress.advance(status_detail("dataflow", "deploying"))
+            progress.advance(status_detail("dataflow", "deploying", label))
         results.append(
             deploy_dataflow(
                 client,
@@ -339,9 +345,13 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
-        item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("dataflow", "deleting", item_id))
+        progress.advance(
+            status_detail(
+                "dataflow",
+                "deleting",
+                status_item_label(client, item.target),
+            )
+        )
         results.append(delete_dataflow(client, item))
     return results
 

@@ -46,7 +46,7 @@ Shared formatting rules for multi-column / key-value CLI output:
 - **No trailing colon** on keys or header labels (use `Status`, not `Status:`).
 - **Key / value rows** (inspect get, setup status): left column is the key, **right-aligned** within the widest key width, styled **dim**; value column is **left-aligned** primary text (or a semantic colour when the value itself is a status token).
 - **List tables** (inspect workspace/item list): header row is **blue**; first data column (name) is primary; remaining columns are **dim**.
-- **Compare summary** (all `compare` commands): header row is **blue**; columns `REMOTE`, `LOCAL`, `STATUS`, `TARGET` (one row per comparison). `REMOTE` / `LOCAL` are primary (display name or local basename — not a full path). `STATUS` is a coloured token (`identical` green, `differences` yellow, `error` red). `TARGET` is dim `workspaceId:itemId`. After the table: Error panels for failed rows, dim advisory notes, then unified diffs for non-identical rows (primary text).
+- **Compare summary** (all `compare` commands): header row is **blue**; columns `REMOTE`, `LOCAL`, `STATUS`, `TARGET` (one row per comparison). `REMOTE` / `LOCAL` are primary (display name or local basename — not a full path). `STATUS` is a coloured token (`identical` green, `differences` yellow, `error` red). `TARGET` is dim `workspaceId:itemId`. After the table, one blank line, then: Error panels for failed rows, dim advisory notes, then unified diffs for non-identical rows (primary text).
 
 Example setup status shape:
 
@@ -58,7 +58,7 @@ Install  C:\Users\...\fabric-tools\app
   Cache  no
 ```
 
-While a GitHub update check runs, the Version value stays green with an inline spinner (`checking…`). When the check finishes: green `0.3.0 (up to date)`, or yellow `0.3.0 < 0.4.0` if a newer release exists. Timeouts show yellow `0.3.0 (update check timeout)`; other check errors show `(update check failed)`. `FABRIC_TOOLS_DISABLE_UPDATE_CHECK` leaves the green installed/running version only.
+While a GitHub update check runs on a TTY, the full status block (Status through Cache) is drawn immediately; the Version value stays green with an inline spinner (`checking…`) and is refreshed in place when the check finishes: green `0.3.0 (up to date)`, or yellow `0.3.0 < 0.4.0` if a newer release exists. Timeouts show yellow `0.3.0 (update check timeout)`; other check errors show `(update check failed)`. `FABRIC_TOOLS_DISABLE_UPDATE_CHECK` leaves the green installed/running version only.
 ### Env report statuses
 
 | Status token | Style |
@@ -118,7 +118,7 @@ Long-running work uses a Rich dots spinner on stderr (`fabric_tools.status.busy`
 
 - **module** — CLI command group (`notebook`, `semantic-model`, `inspect`, `setup`, `auth`, …)
 - **action** — lowercase verb phrase (`downloading`, `adding role member`, `authenticating`)
-- **name** — optional display name or short GUID in parentheses; omit the ` (…)` segment when there is no name
+- **name** — optional **display name** in parentheses; omit the ` (…)` segment when there is no name. Resolve via `item_display_name` / `status_item_label` (or kind-specific helpers) before calling `status_detail` — do not pass a raw item GUID. Short GUID truncation is only a fallback when lookup fails.
 
 Examples:
 

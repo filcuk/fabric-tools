@@ -72,13 +72,18 @@ def compact_windows_version(value: str) -> str:
     return text
 
 
-def parse_version_tuple(value: str) -> tuple[int, ...]:
-    """Parse a dotted version into an int tuple for comparison (ignores pre-release suffixes)."""
-    core = normalize_version(value).split("+", 1)[0].split("-", 1)[0]
-    if not core:
-        raise UpdateCheckError(f"invalid version: {value!r}")
+def _split_version_core_and_suffix(value: str) -> tuple[str, str | None]:
+    """Split ``1.0.0-hotfix.1`` into ``("1.0.0", "hotfix.1")`` (build metadata stripped)."""
+    text = normalize_version(value).split("+", 1)[0].strip()
+    if "-" not in text:
+        return text, None
+    core, suffix = text.split("-", 1)
+    return core, suffix if suffix else None
+
+
+def _parse_numeric_segments(value: str) -> tuple[int, ...]:
     parts: list[int] = []
-    for segment in core.split("."):
+    for segment in value.split("."):
         digits = ""
         for char in segment:
             if char.isdigit():
@@ -88,12 +93,45 @@ def parse_version_tuple(value: str) -> tuple[int, ...]:
         if not digits:
             raise UpdateCheckError(f"invalid version: {value!r}")
         parts.append(int(digits))
+    if not parts:
+        raise UpdateCheckError(f"invalid version: {value!r}")
     return tuple(parts)
+
+
+def parse_version_tuple(value: str) -> tuple[int, ...]:
+    """Parse the dotted core of a version (suffix after ``-`` is ignored)."""
+    core, _suffix = _split_version_core_and_suffix(value)
+    if not core:
+        raise UpdateCheckError(f"invalid version: {value!r}")
+    return _parse_numeric_segments(core)
+
+
+def is_semver_prerelease(value: str) -> bool:
+    """True for tags like ``1.0.0-pre.1`` / ``1.0.0-rc.1``; False for ``*-hotfix.*``."""
+    _core, suffix = _split_version_core_and_suffix(value)
+    if suffix is None:
+        return False
+    label = suffix.split(".", 1)[0].strip().lower()
+    return label != "hotfix"
+
+
+def version_sort_key(value: str) -> tuple[tuple[int, ...], int, tuple[int, ...]]:
+    """Comparable key so ``1.0.0-pre.1`` < ``1.0.0`` < ``1.0.0-hotfix.1`` < ``1.0.1``."""
+    core_tuple = parse_version_tuple(value)
+    _core, suffix = _split_version_core_and_suffix(value)
+    if suffix is None:
+        return core_tuple, 0, ()
+    label, _, rest = suffix.partition(".")
+    nums = _parse_numeric_segments(rest) if rest.strip() else (0,)
+    if label.strip().lower() == "hotfix":
+        return core_tuple, 1, nums
+    # Semver pre-release identifiers rank below the matching stable base.
+    return core_tuple, -1, nums
 
 
 def version_is_newer(latest: str, current: str) -> bool:
     """Return True if ``latest`` is strictly newer than ``current``."""
-    return parse_version_tuple(latest) > parse_version_tuple(current)
+    return version_sort_key(latest) > version_sort_key(current)
 
 
 def _exe_asset_url(payload: dict[str, Any]) -> str | None:
@@ -129,9 +167,17 @@ def _parse_release(
 def _select_newest_release(
     releases: list[Any],
 ) -> tuple[str, str, str | None, bool, str | None]:
-    """Pick the highest semver among non-draft releases (includes pre-releases)."""
+    """Pick the highest eligible release among non-draft items.
+
+    Skips non-semver tags (e.g. ``latest``) and semver pre-releases
+    (``1.0.0-pre.1``, ``1.0.0-rc.1``, …). Hotfix tags (``1.0.0-hotfix.1``)
+    are included and rank above their base version.
+    """
     candidates: list[
-        tuple[tuple[int, ...], tuple[str, str, str | None, bool, str | None]]
+        tuple[
+            tuple[tuple[int, ...], int, tuple[int, ...]],
+            tuple[str, str, str | None, bool, str | None],
+        ]
     ] = []
     for item in releases:
         if not isinstance(item, dict):
@@ -140,9 +186,11 @@ def _select_newest_release(
             continue
         try:
             parsed = _parse_release(item)
+            if is_semver_prerelease(parsed[1]):
+                continue
+            candidates.append((version_sort_key(parsed[1]), parsed))
         except UpdateCheckError:
             continue
-        candidates.append((parse_version_tuple(parsed[1]), parsed))
 
     if not candidates:
         raise UpdateCheckError(
@@ -158,10 +206,10 @@ def fetch_latest_release(
     client: httpx.Client | None = None,
     timeout: float = DEFAULT_TIMEOUT_S,
 ) -> tuple[str, str, str | None, bool, str | None]:
-    """Fetch the newest GitHub release (incl. pre-releases).
+    """Fetch the newest eligible GitHub release (stable + hotfix; no pre-releases).
 
-    Uses the releases list rather than ``/releases/latest``, which ignores
-    pre-releases and returns 404 when only pre-releases exist.
+    Uses the releases list rather than ``/releases/latest`` so hotfix tags are
+    visible even when GitHub's "latest" pointer differs.
 
     Returns ``(tag_name, version, html_url, prerelease, asset_url)``.
     """
@@ -364,8 +412,12 @@ def format_update_notice(result: UpdateCheckResult) -> str | None:
         return None
     lines = [
         f"Update available: {result.latest} (you have {result.current}).",
-        "Run: fabric-tools setup update",
     ]
+    if result.prerelease:
+        lines.append(
+            "Pre-release may include breaking CLI changes — review release notes."
+        )
+    lines.append("Run: fabric-tools setup update")
     if result.release_url:
         lines.append(result.release_url)
     return "\n".join(lines)

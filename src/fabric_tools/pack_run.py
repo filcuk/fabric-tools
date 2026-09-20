@@ -222,7 +222,8 @@ def _entry_cli_args(
     """Build polymorphic ``--target`` / ``--origin`` CLI lists from pack entries.
 
     Download: ``--origin`` = remotes, ``--target`` = local paths.
-    Deploy/compare: ``--target`` = remotes; ``--origin`` = local paths or remotes.
+    Deploy/compare: same download-shaped layout is accepted (roles inferred), or
+    ``--target`` = remotes with ``--origin`` = local paths / remotes.
     Delete: ``--target`` = remotes only.
     """
     remotes: list[str] = []

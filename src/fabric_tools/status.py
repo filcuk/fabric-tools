@@ -84,7 +84,9 @@ def status_detail(module: str, action: str, name: str | None = None) -> str:
 
     *module* is the CLI group (e.g. ``notebook``, ``semantic-model``, ``auth``).
     *action* is a lowercase verb phrase (e.g. ``downloading``, ``adding role member``).
-    *name* is an optional display name or short GUID; omitted when absent.
+    *name* is an optional display name; omit when absent. Prefer resolving via
+    ``status_item_label`` / ``item_display_name`` — pass a GUID only as lookup
+    fallback (truncated by ``_format_label``).
     """
     if name:
         return f"{module}: {action} ({_format_label(name)})…"

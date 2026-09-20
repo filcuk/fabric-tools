@@ -35,11 +35,22 @@ def detect_udf_folder(path: Path | str) -> Path:
     """Ensure *path* looks like a ``*.UserDataFunction`` folder; return it.
 
     Bare stems (e.g. ``Helpers``) become ``Helpers.UserDataFunction``.
+    Existing folders that already contain the required parts are left unchanged.
     """
     return ensure_kind_path_suffix(
         path,
         canonical_suffix=".UserDataFunction",
         accepted_suffixes=FOLDER_SUFFIXES,
+        bare_content_ok=_udf_bare_content_ok,
+    )
+
+
+def _udf_bare_content_ok(folder: Path) -> bool:
+    return (
+        folder.is_dir()
+        and _resolve_local_file(folder, _DEFINITION_JSON_ALIASES) is not None
+        and _resolve_local_file(folder, _FUNCTION_APP_ALIASES) is not None
+        and _resolve_local_file(folder, _FUNCTIONS_JSON_ALIASES) is not None
     )
 
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.confirm import status_item_label
 from fabric_tools.org_app.definition import (
     DefinitionError,
     definition_has_platform,
@@ -230,9 +231,13 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
-        item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("org-app", "downloading", item_id))
+        progress.advance(
+            status_detail(
+                "org-app",
+                "downloading",
+                status_item_label(client, item.target),
+            )
+        )
         results.append(download_org_app(client, item))
     return results
 
@@ -254,10 +259,13 @@ def run_deploy_batch(
         )
         target = item.target
         action = "creating" if target is not None and target.is_create else "deploying"
-        item_id = (
-            target.item_id if target is not None and not target.is_create else None
+        progress.advance(
+            status_detail(
+                "org-app",
+                action,
+                status_item_label(client, target, fallback=name),
+            )
         )
-        progress.advance(status_detail("org-app", action, item_id))
         results.append(
             deploy_org_app(
                 client,
@@ -273,9 +281,13 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
-        item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("org-app", "deleting", item_id))
+        progress.advance(
+            status_detail(
+                "org-app",
+                "deleting",
+                status_item_label(client, item.target),
+            )
+        )
         results.append(delete_org_app(client, item))
     return results
 

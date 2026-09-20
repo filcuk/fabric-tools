@@ -94,6 +94,9 @@ def print_compare_results(results: Sequence[Any]) -> None:
                 line.append(cell)
         console.print(line, soft_wrap=True)
 
+    if _has_compare_details(results):
+        console.print()
+
     for result in results:
         error = getattr(result, "error", None)
         if error:
@@ -105,6 +108,20 @@ def print_compare_results(results: Sequence[Any]) -> None:
         diff_text = getattr(result, "diff_text", None) or ""
         if not getattr(result, "identical", False) and diff_text:
             typer.echo(diff_text.rstrip())
+
+
+def _has_compare_details(results: Sequence[Any]) -> bool:
+    """True when any result will print detail after the summary table."""
+    for result in results:
+        if getattr(result, "error", None):
+            return True
+        if getattr(result, "messages", None):
+            return True
+        if not getattr(result, "identical", False) and (
+            getattr(result, "diff_text", None) or ""
+        ):
+            return True
+    return False
 
 
 def _column_widths(

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.confirm import status_item_label
 from fabric_tools.environment.definition import (
     DefinitionError,
     definition_has_platform,
@@ -221,12 +222,11 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
         progress.advance(
             status_detail(
                 "environment",
                 "downloading",
-                target.item_id if target is not None else None,
+                status_item_label(client, item.target),
             )
         )
         results.append(download_environment(client, item))
@@ -250,10 +250,13 @@ def run_deploy_batch(
         )
         target = item.target
         action = "creating" if target is not None and target.is_create else "deploying"
-        item_id = (
-            target.item_id if target is not None and not target.is_create else None
+        progress.advance(
+            status_detail(
+                "environment",
+                action,
+                status_item_label(client, target, fallback=name),
+            )
         )
-        progress.advance(status_detail("environment", action, item_id))
         results.append(
             deploy_environment(
                 client,
@@ -269,12 +272,11 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
         progress.advance(
             status_detail(
                 "environment",
                 "deleting",
-                target.item_id if target is not None else None,
+                status_item_label(client, item.target),
             )
         )
         results.append(delete_environment(client, item))

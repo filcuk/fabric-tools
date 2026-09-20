@@ -16,6 +16,7 @@ from fabric_tools.udf.definition import (
     DefinitionError,
     definition_has_platform,
     definition_json_from_definition,
+    detect_udf_folder,
     display_name_from_path,
     merge_remote_connections,
     pack_definition,
@@ -127,11 +128,18 @@ def test_missing_required_part(tmp_path: Path) -> None:
         validate_local_udf(folder)
 
 
-def test_rejects_unsupported_path(tmp_path: Path) -> None:
+def test_detect_appends_suffix_for_empty_bare_folder(tmp_path: Path) -> None:
     path = tmp_path / "not-a-udf"
     path.mkdir()
-    with pytest.raises(DefinitionError, match="Unsupported"):
+    assert detect_udf_folder(path) == tmp_path / "not-a-udf.UserDataFunction"
+    with pytest.raises(DefinitionError, match="UDF folder not found"):
         validate_local_udf(path)
+
+
+def test_detect_keeps_contentful_bare_folder(tmp_path: Path) -> None:
+    bare = _write_udf_folder(tmp_path / "Helpers")
+    assert detect_udf_folder(bare) == bare
+    assert validate_local_udf(bare) == bare
 
 
 def test_merge_remote_connections_replaces_list() -> None:

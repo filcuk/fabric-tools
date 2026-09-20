@@ -202,8 +202,9 @@ def run_interactive_wizard() -> None:
         else None
     )
 
-    # Polymorphic CLI: download uses --origin=remote and optional --target=path;
-    # deploy/compare use --target=remote and --origin=path|remote.
+    # Polymorphic CLI: download uses --origin=remote and optional --target=path.
+    # Deploy/compare accept the same layout (roles inferred) or --target=remote
+    # with --origin=path|remote; remote-to-remote stays origin → target.
     if mode is CommandMode.DOWNLOAD:
         cli_targets = files or None
         cli_origins = targets or None

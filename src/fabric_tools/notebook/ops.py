@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.confirm import status_item_label
 from fabric_tools.guid_map import GuidMapError, apply_guid_map_to_definition
 from fabric_tools.notebook.cells import (
     CellSelectionError,
@@ -28,7 +29,7 @@ from fabric_tools.notebook.definition import (
     unpack_definition,
 )
 from fabric_tools.parsing import WorkItem
-from fabric_tools.status import BatchProgress, short_guid, status_detail
+from fabric_tools.status import BatchProgress, status_detail
 
 
 @dataclass
@@ -403,9 +404,13 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
-        item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("notebook", "downloading", item_id))
+        progress.advance(
+            status_detail(
+                "notebook",
+                "downloading",
+                status_item_label(client, item.target),
+            )
+        )
         results.append(download_notebook(client, item))
     return results
 
@@ -429,19 +434,22 @@ def run_deploy_batch(
         if guid_maps and index < len(guid_maps):
             guid_map = guid_maps[index]
         target = item.target
+        label = status_item_label(client, target, fallback=name)
         if target is not None and target.is_create:
-            progress.advance(status_detail("notebook", "creating"))
+            progress.advance(status_detail("notebook", "creating", label))
         elif target is not None and cell_indices is not None:
             cells_label = format_cell_indices(cell_indices)
-            item_id = target.item_id
-            detail = f"Updating cells [{cells_label}]"
-            if item_id:
-                detail = f"{detail} ({short_guid(item_id)})"
-            progress.advance(f"{detail}…")
+            progress.advance(
+                status_detail(
+                    "notebook",
+                    f"updating cells [{cells_label}]",
+                    label,
+                )
+            )
         elif target is not None:
-            progress.advance(status_detail("notebook", "deploying", target.item_id))
+            progress.advance(status_detail("notebook", "deploying", label))
         else:
-            progress.advance(status_detail("notebook", "deploying"))
+            progress.advance(status_detail("notebook", "deploying", label))
         results.append(
             deploy_notebook(
                 client,
@@ -459,9 +467,13 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        target = item.target
-        item_id = target.item_id if target is not None else None
-        progress.advance(status_detail("notebook", "deleting", item_id))
+        progress.advance(
+            status_detail(
+                "notebook",
+                "deleting",
+                status_item_label(client, item.target),
+            )
+        )
         results.append(delete_notebook(client, item))
     return results
 

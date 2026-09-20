@@ -112,6 +112,32 @@ def item_display_name(client: FabricClient, target: Target) -> str:
     return target.item_id
 
 
+def status_item_label(
+    client: FabricClient,
+    target: Target | None,
+    *,
+    fallback: str | None = None,
+) -> str | None:
+    """Display name for ``status_detail`` brackets (never a raw GUID preference).
+
+    Returns *fallback* when *target* has no item id (e.g. create). Falls back to
+    the item id only when the remote lookup fails — ``status_detail`` then shortens
+    it. Prefer passing a local/create display name as *fallback* when known.
+    """
+    if target is None or target.item_id is None:
+        return fallback
+    return item_display_name(client, target)
+
+
+def status_item_label_for_id(
+    client: FabricClient,
+    workspace_id: str,
+    item_id: str,
+) -> str:
+    """Display name for a workspace item id (joined model downloads, etc.)."""
+    return item_display_name(client, Target(workspace_id, item_id))
+
+
 def resolve_powerbi_group_name(client: PowerBiClient, group_id: str) -> str:
     try:
         data = client.get_group(group_id)
@@ -176,6 +202,30 @@ def paginated_report_display_name(client: PowerBiClient, target: Target) -> str:
     if isinstance(name, str) and name.strip():
         return name.strip()
     return target.item_id
+
+
+def status_gen1_label(
+    client: PowerBiClient,
+    target: Target | None,
+    *,
+    fallback: str | None = None,
+) -> str | None:
+    """Display name for Gen1 spinner brackets (Power BI)."""
+    if target is None or target.item_id is None:
+        return fallback
+    return dataflow_gen1_display_name(client, target)
+
+
+def status_paginated_label(
+    client: PowerBiClient,
+    target: Target | None,
+    *,
+    fallback: str | None = None,
+) -> str | None:
+    """Display name for paginated-report spinner brackets (Power BI)."""
+    if target is None or target.item_id is None:
+        return fallback
+    return paginated_report_display_name(client, target)
 
 
 def dataflow_display_name(client: FabricClient, target: Target) -> str:

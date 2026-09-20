@@ -54,6 +54,23 @@ def test_parse_and_compare_versions() -> None:
     assert not version_is_newer("0.1.9", "0.2.0")
 
 
+def test_hotfix_outranks_base_and_skips_prerelease() -> None:
+    from fabric_tools.update_check import is_semver_prerelease, version_sort_key
+
+    assert is_semver_prerelease("1.0.0-pre.1")
+    assert is_semver_prerelease("1.0.0-rc.1")
+    assert not is_semver_prerelease("1.0.0")
+    assert not is_semver_prerelease("1.0.0-hotfix.1")
+
+    assert version_is_newer("1.0.0-hotfix.1", "1.0.0")
+    assert version_is_newer("1.0.0-hotfix.2", "1.0.0-hotfix.1")
+    assert version_is_newer("1.0.1", "1.0.0-hotfix.9")
+    assert version_is_newer("1.0.0", "1.0.0-pre.1")
+    assert not version_is_newer("1.0.0", "1.0.0-hotfix.1")
+    assert version_sort_key("1.0.0-hotfix.1") > version_sort_key("1.0.0")
+    assert version_sort_key("1.0.0") > version_sort_key("1.0.0-pre.1")
+
+
 def test_parse_version_rejects_garbage() -> None:
     with pytest.raises(UpdateCheckError):
         parse_version_tuple("not-a-version")
@@ -98,16 +115,43 @@ def test_check_for_update_available() -> None:
     assert result.asset_url.endswith("fabric-tools.exe")
 
 
-def test_check_for_update_includes_prerelease() -> None:
-    """``/releases/latest`` ignores pre-releases; the list endpoint must still find them."""
+def test_check_for_update_skips_semver_prerelease() -> None:
+    """Semver pre-releases (``-pre``, ``-rc``, …) must not drive auto-update."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
             json=[
                 {
-                    "tag_name": "v0.1.0",
-                    "html_url": "https://github.com/filcuk/fabric-tools/releases/tag/v0.1.0",
+                    "tag_name": "v1.0.0-pre.1",
+                    "html_url": "https://github.com/filcuk/fabric-tools/releases/tag/v1.0.0-pre.1",
+                    "draft": False,
+                    "prerelease": True,
+                },
+                {
+                    "tag_name": "v0.2.0",
+                    "html_url": "https://github.com/filcuk/fabric-tools/releases/tag/v0.2.0",
+                    "draft": False,
+                    "prerelease": False,
+                },
+            ],
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = check_for_update(current="0.2.0", client=client)
+
+    assert result.latest == "0.2.0"
+    assert result.update_available is False
+
+
+def test_check_for_update_only_prerelease_errors() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "tag_name": "v1.0.0-rc.1",
+                    "html_url": "https://example/v1.0.0-rc.1",
                     "draft": False,
                     "prerelease": True,
                 }
@@ -115,11 +159,51 @@ def test_check_for_update_includes_prerelease() -> None:
         )
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = check_for_update(current="0.2.0", client=client)
+        with pytest.raises(UpdateCheckError, match="no GitHub releases"):
+            check_for_update(current="0.2.0", client=client)
 
-    assert result.latest == "0.1.0"
-    assert result.prerelease is True
-    assert result.update_available is False
+
+def test_check_for_update_includes_hotfix() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "tag_name": "v1.0.0-pre.1",
+                    "html_url": "https://example/v1.0.0-pre.1",
+                    "draft": False,
+                    "prerelease": True,
+                },
+                {
+                    "tag_name": "v1.0.0-hotfix.1",
+                    "html_url": "https://example/v1.0.0-hotfix.1",
+                    "draft": False,
+                    "prerelease": False,
+                    "assets": [
+                        {
+                            "name": "fabric-tools.exe",
+                            "browser_download_url": (
+                                "https://example/v1.0.0-hotfix.1/fabric-tools.exe"
+                            ),
+                        }
+                    ],
+                },
+                {
+                    "tag_name": "v1.0.0",
+                    "html_url": "https://example/v1.0.0",
+                    "draft": False,
+                    "prerelease": False,
+                },
+            ],
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = check_for_update(current="1.0.0", client=client)
+
+    assert result.latest == "1.0.0-hotfix.1"
+    assert result.tag_name == "v1.0.0-hotfix.1"
+    assert result.update_available is True
+    assert result.asset_url is not None
 
 
 def test_check_for_update_picks_newest_among_mixed() -> None:
@@ -153,6 +237,50 @@ def test_check_for_update_picks_newest_among_mixed() -> None:
 
     assert result.latest == "0.2.0"
     assert result.prerelease is False
+
+
+def test_check_for_update_skips_non_semver_latest_alias() -> None:
+    """Distribution alias tag ``latest`` must not abort the update check."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "tag_name": "v0.5.1",
+                    "html_url": "https://example/v0.5.1",
+                    "draft": False,
+                    "prerelease": True,
+                },
+                {
+                    "tag_name": "latest",
+                    "html_url": "https://example/latest",
+                    "draft": False,
+                    "prerelease": False,
+                    "assets": [
+                        {
+                            "name": "fabric-tools.exe",
+                            "browser_download_url": (
+                                "https://example/latest/fabric-tools.exe"
+                            ),
+                        }
+                    ],
+                },
+                {
+                    "tag_name": "v0.5.0",
+                    "html_url": "https://example/v0.5.0",
+                    "draft": False,
+                    "prerelease": True,
+                },
+            ],
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = check_for_update(current="0.5.1", client=client)
+
+    assert result.latest == "0.5.1"
+    assert result.tag_name == "v0.5.1"
+    assert result.update_available is False
 
 
 def test_check_for_update_up_to_date() -> None:
@@ -226,12 +354,27 @@ def test_format_update_notice() -> None:
         update_available=True,
         release_url="https://example/release",
         tag_name="v0.3.0",
+        prerelease=True,
     )
     notice = format_update_notice(result)
     assert notice is not None
     assert "setup update" in notice
     assert "--check" not in notice.split("Run:")[1].splitlines()[0]
     assert "https://example/release" in notice
+    assert "breaking CLI changes" in notice
+
+    stable = format_update_notice(
+        UpdateCheckResult(
+            current="0.2.0",
+            latest="1.0.0",
+            update_available=True,
+            release_url="https://example/release",
+            tag_name="v1.0.0",
+            prerelease=False,
+        ),
+    )
+    assert stable is not None
+    assert "breaking CLI changes" not in stable
 
     assert (
         format_update_notice(

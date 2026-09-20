@@ -224,14 +224,19 @@ def classify_cli_endpoints(
     target_values: list[str] | None,
     mode: CommandMode,
 ) -> ClassifiedEndpoints:
-    """Classify CLI ``--origin`` / ``--target`` for *mode* (create allowed on deploy targets)."""
-    origin_allow_create = False
-    target_allow_create = mode is CommandMode.DEPLOY
+    """Classify CLI ``--origin`` / ``--target`` for *mode*.
+
+    Deploy allows workspace-only (create) remotes on either flag so a local path
+    may sit on ``--origin`` or ``--target``; remote-to-remote still requires an
+    artifact id on the source side (enforced in
+    :func:`build_work_items_from_classified`).
+    """
+    allow_create = mode is CommandMode.DEPLOY
     origin_remotes, origin_paths = classify_endpoint_values(
-        origin_values, option="--origin", allow_create=origin_allow_create
+        origin_values, option="--origin", allow_create=allow_create
     )
     target_remotes, target_paths = classify_endpoint_values(
-        target_values, option="--target", allow_create=target_allow_create
+        target_values, option="--target", allow_create=allow_create
     )
     return ClassifiedEndpoints(
         origin_remotes=origin_remotes,
@@ -408,32 +413,65 @@ def build_work_items_from_classified(
             deploy_create_only=deploy_create_only,
         )
 
-    # deploy / compare
-    if t_path:
-        raise ParseError(
-            f"{mode.value} --target must be a remote selector "
-            "(local paths belong in --origin)"
-        )
+    # deploy / compare: when one side is local and the other is remote, infer
+    # roles from endpoint type so download → compare → deploy can keep the same
+    # -o/-t values. Remote-to-remote stays directional (origin → target).
     if o_rem and o_path:
         raise ParseError("use either a local path or a remote --origin, not both")
+    if t_rem and t_path:
+        raise ParseError("use either a local path or a remote --target, not both")
+    if o_path and t_path:
+        raise ParseError(
+            f"{mode.value} requires a remote selector on one side "
+            "(cannot use local paths for both --origin and --target)"
+        )
 
-    if not dry_run and not t_rem:
-        raise ParseError(f"{mode.value} requires remote --target selector(s)")
+    remotes: list[Target]
+    paths: list[Path]
+    origins: list[Target] | None
 
-    if o_path:
+    if o_path and t_rem:
+        remotes, paths, origins = t_rem, o_path, None
+    elif o_rem and t_path:
+        remotes, paths, origins = o_rem, t_path, None
+    elif o_rem and t_rem:
+        missing = [o.label() for o in o_rem if o.is_create]
+        if missing:
+            raise ParseError(
+                f"{mode.value} remote --origin requires workspace:artifact; "
+                f"missing artifact id on: {', '.join(missing)}"
+            )
+        remotes, paths, origins = t_rem, [], o_rem
+    elif o_path:
+        remotes, paths, origins = [], o_path, None
+    elif t_path:
+        remotes, paths, origins = [], t_path, None
+    elif t_rem:
+        remotes, paths, origins = t_rem, [], None
+    elif o_rem:
+        remotes, paths, origins = [], [], o_rem
+    else:
+        remotes, paths, origins = [], [], None
+
+    if not dry_run and not remotes:
+        raise ParseError(
+            f"{mode.value} requires a remote selector on --origin or --target"
+        )
+
+    if paths:
         return build_work_items(
             mode,
-            t_rem,
-            o_path,
+            remotes,
+            paths,
             origins=None,
             dry_run=dry_run,
             deploy_create_only=deploy_create_only,
         )
     return build_work_items(
         mode,
-        t_rem,
+        remotes,
         [],
-        origins=o_rem,
+        origins=origins,
         dry_run=dry_run,
         deploy_create_only=deploy_create_only,
     )
