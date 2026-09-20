@@ -18,6 +18,8 @@ _CSV_OPTION_FLAGS = frozenset(
         "--origin",
         "-c",
         "--cells",
+        "--remap",
+        "-r",
     }
 )
 

@@ -78,6 +78,7 @@ def _write_local_pipeline(
     *,
     wait_seconds: int = 10,
     with_platform: bool = True,
+    with_schedules: bool = False,
 ) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     content = _content()
@@ -93,6 +94,8 @@ def _write_local_pipeline(
             json.dumps({"metadata": {"type": "DataPipeline", "displayName": "ETL"}}),
             encoding="utf-8",
         )
+    if with_schedules:
+        (folder / ".schedules").write_text('{"schedules":[]}\n', encoding="utf-8")
     return folder
 
 
@@ -251,3 +254,332 @@ def test_download_rejects_bad_destination(tmp_path: Path) -> None:
     result = download_pipeline(client, item)  # type: ignore[arg-type]
     assert not result.ok
     assert "Unsupported pipeline path" in result.message
+
+
+def test_download_default_omits_schedules(tmp_path: Path) -> None:
+    client = FakeClient(definitions_by_item={PL: _definition(with_schedules=True)})
+    dest = tmp_path / "out.DataPipeline"
+    dest.mkdir()
+    (dest / ".schedules").write_text(
+        '{"schedules":[{"name":"stale"}]}\n', encoding="utf-8"
+    )
+    item = WorkItem(Target(WS, PL), dest)
+    result = download_pipeline(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert (dest / "pipeline-content.json").is_file()
+    assert not (dest / ".schedules").exists()
+
+
+def test_download_include_schedules(tmp_path: Path) -> None:
+    client = FakeClient(definitions_by_item={PL: _definition(with_schedules=True)})
+    dest = tmp_path / "out.DataPipeline"
+    item = WorkItem(Target(WS, PL), dest)
+    result = download_pipeline(client, item, include_schedules=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert (dest / ".schedules").is_file()
+
+
+def test_deploy_overwrite_default_preserves_remote_schedules(tmp_path: Path) -> None:
+    client = FakeClient(
+        definitions_by_item={
+            PL: _definition(wait_seconds=10, with_schedules=True),
+        }
+    )
+    # Make remote schedules distinct so we can assert they were reattached.
+    remote_schedules = _part(".schedules", b'{"schedules":[{"name":"remote"}]}\n')
+    client.definitions_by_item[PL]["parts"] = [
+        p for p in client.definitions_by_item[PL]["parts"] if p["path"] != ".schedules"
+    ] + [remote_schedules]
+
+    src = _write_local_pipeline(tmp_path / "ETL.DataPipeline", with_schedules=True)
+    item = WorkItem(Target(WS, PL), src)
+    result = deploy_pipeline(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert "preserved remote schedules" in result.message
+    assert client.last_update_definition is not None
+    paths = {
+        part["path"] for part in client.last_update_definition["definition"]["parts"]
+    }
+    assert "pipeline-content.json" in paths
+    assert ".schedules" in paths
+    schedules = next(
+        p
+        for p in client.last_update_definition["definition"]["parts"]
+        if p["path"] == ".schedules"
+    )
+    assert b"remote" in base64.b64decode(schedules["payload"])
+    # Source schedules must not be sent when include_schedules is false.
+    assert client.calls  # getDefinition for preserve + updateDefinition
+    get_calls = [c for c in client.calls if str(c[1]).endswith("/getDefinition")]
+    assert len(get_calls) == 1
+
+
+def test_deploy_overwrite_include_schedules_from_folder(tmp_path: Path) -> None:
+    client = FakeClient(
+        definitions_by_item={PL: _definition(wait_seconds=10, with_schedules=True)}
+    )
+    src = _write_local_pipeline(tmp_path / "ETL.DataPipeline", with_schedules=True)
+    # Distinct local schedules content
+    (src / ".schedules").write_text(
+        '{"schedules":[{"name":"local"}]}\n', encoding="utf-8"
+    )
+    item = WorkItem(Target(WS, PL), src)
+    result = deploy_pipeline(client, item, include_schedules=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert "preserved remote schedules" not in result.message
+    assert client.last_update_definition is not None
+    schedules = next(
+        p
+        for p in client.last_update_definition["definition"]["parts"]
+        if p["path"] == ".schedules"
+    )
+    assert b"local" in base64.b64decode(schedules["payload"])
+    # No preserve getDefinition when including source schedules.
+    get_calls = [c for c in client.calls if str(c[1]).endswith("/getDefinition")]
+    assert get_calls == []
+
+
+def test_deploy_create_default_omits_schedules(tmp_path: Path) -> None:
+    client = FakeClient()
+    src = _write_local_pipeline(tmp_path / "ETL.DataPipeline", with_schedules=True)
+    item = WorkItem(Target(WS), src)
+    result = deploy_pipeline(client, item, display_name="ETL")  # type: ignore[arg-type]
+    assert result.ok
+    assert client.last_create_payload is not None
+    paths = {part["path"] for part in client.last_create_payload["definition"]["parts"]}
+    assert ".schedules" not in paths
+    assert "pipeline-content.json" in paths
+
+
+def test_deploy_include_schedules_from_origin() -> None:
+    client = FakeClient(
+        definitions_by_item={ORIGIN: _definition(wait_seconds=20, with_schedules=True)}
+    )
+    item = WorkItem(Target(WS, PL), None, origin=Target(WS, ORIGIN))
+    # Target also needs a definition for FakeClient get_item, but include path
+    # should not fetch target getDefinition for preserve.
+    client.definitions_by_item[PL] = _definition(wait_seconds=10, with_schedules=True)
+    result = deploy_pipeline(client, item, include_schedules=True)  # type: ignore[arg-type]
+    assert result.ok
+    assert client.last_update_definition is not None
+    paths = {
+        part["path"] for part in client.last_update_definition["definition"]["parts"]
+    }
+    assert ".schedules" in paths
+    get_calls = [c for c in client.calls if str(c[1]).endswith("/getDefinition")]
+    # Only origin getDefinition, not target preserve fetch.
+    assert len(get_calls) == 1
+    assert ORIGIN in get_calls[0][1]
+
+
+def test_deploy_overwrite_from_origin_preserves_target_schedules() -> None:
+    client = FakeClient(
+        definitions_by_item={
+            ORIGIN: _definition(wait_seconds=20, with_schedules=True),
+            PL: _definition(wait_seconds=10, with_schedules=True),
+        }
+    )
+    # Distinct target schedules
+    client.definitions_by_item[PL]["parts"] = [
+        p for p in client.definitions_by_item[PL]["parts"] if p["path"] != ".schedules"
+    ] + [_part(".schedules", b'{"schedules":[{"name":"target"}]}\n')]
+
+    item = WorkItem(Target(WS, PL), None, origin=Target(WS, ORIGIN))
+    result = deploy_pipeline(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert "preserved remote schedules" in result.message
+    assert client.last_update_definition is not None
+    schedules = next(
+        p
+        for p in client.last_update_definition["definition"]["parts"]
+        if p["path"] == ".schedules"
+    )
+    assert b"target" in base64.b64decode(schedules["payload"])
+    # Origin getDefinition + target preserve getDefinition
+    get_calls = [c for c in client.calls if str(c[1]).endswith("/getDefinition")]
+    assert len(get_calls) == 2
+
+
+def test_download_missing_remote(tmp_path: Path) -> None:
+    # Non-empty map so FakeClient does not fall back to default PL definition.
+    client = FakeClient(definitions_by_item={ORIGIN: _definition(wait_seconds=1)})
+    dest = tmp_path / "out.DataPipeline"
+    item = WorkItem(Target(WS, PL), dest)
+    result = download_pipeline(client, item)  # type: ignore[arg-type]
+    assert not result.ok
+    assert "download failed" in result.message
+
+
+def test_deploy_source_bad_folder(tmp_path: Path) -> None:
+    client = FakeClient()
+    bad = tmp_path / "not-a-pipeline.json"
+    bad.write_text("{}", encoding="utf-8")
+    item = WorkItem(Target(WS, PL), bad)
+    result = deploy_pipeline(client, item)  # type: ignore[arg-type]
+    assert not result.ok
+    assert "deploy source failed" in result.message
+
+
+def test_deploy_overwrite_preserves_when_target_missing_schedules(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient(
+        definitions_by_item={PL: _definition(wait_seconds=10, with_schedules=False)}
+    )
+    src = _write_local_pipeline(tmp_path / "ETL.DataPipeline", with_schedules=True)
+    item = WorkItem(Target(WS, PL), src)
+    result = deploy_pipeline(client, item)  # type: ignore[arg-type]
+    assert result.ok
+    assert "preserved remote schedules" not in result.message
+    assert client.last_update_definition is not None
+    paths = {
+        part["path"] for part in client.last_update_definition["definition"]["parts"]
+    }
+    assert ".schedules" not in paths
+
+
+def test_get_pipeline_definition_accepts_bare_parts() -> None:
+    from fabric_tools.pipeline.ops import get_pipeline_definition
+
+    class BarePartsClient(FakeClient):
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict[str, Any] | None = None,
+            json: Any = None,
+            wait: bool = True,
+        ) -> Any:
+            self.calls.append((method, path, params, json))
+            if method == "POST" and path.endswith("/getDefinition"):
+                return _definition(wait_seconds=10)
+            raise AssertionError(f"Unexpected call {method} {path}")
+
+    client = BarePartsClient()
+    definition = get_pipeline_definition(client, WS, PL)  # type: ignore[arg-type]
+    assert "parts" in definition
+    assert any(p["path"] == "pipeline-content.json" for p in definition["parts"])
+
+
+def test_deploy_create_applies_guid_map(tmp_path: Path) -> None:
+    nb_src = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    nb_dst = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    ws_src = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    ws_dst = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+    folder = tmp_path / "ETL.DataPipeline"
+    folder.mkdir()
+    content = {
+        "properties": {
+            "activities": [
+                {
+                    "name": "RunNotebook",
+                    "type": "TridentNotebook",
+                    "dependsOn": [],
+                    "typeProperties": {
+                        "notebookId": nb_src,
+                        "workspaceId": ws_src,
+                    },
+                }
+            ]
+        }
+    }
+    (folder / "pipeline-content.json").write_text(
+        json.dumps(content, indent=2) + "\n", encoding="utf-8"
+    )
+
+    client = FakeClient()
+    item = WorkItem(Target(WS), folder)
+    result = deploy_pipeline(
+        client,
+        item,
+        display_name="ETL",
+        guid_map={nb_src: nb_dst, ws_src: ws_dst},
+    )  # type: ignore[arg-type]
+    assert result.ok
+    assert "remapped 2 GUID(s)" in result.message
+    assert client.last_create_payload is not None
+    raw = base64.b64decode(
+        client.last_create_payload["definition"]["parts"][0]["payload"]
+    )
+    uploaded = json.loads(raw.decode("utf-8"))
+    props = uploaded["properties"]["activities"][0]["typeProperties"]
+    assert props["notebookId"] == nb_dst
+    assert props["workspaceId"] == ws_dst
+    # Local folder unchanged.
+    local = json.loads((folder / "pipeline-content.json").read_text(encoding="utf-8"))
+    assert (
+        local["properties"]["activities"][0]["typeProperties"]["notebookId"] == nb_src
+    )
+
+
+def test_deploy_origin_cache_does_not_cross_contaminate_maps() -> None:
+    from fabric_tools.pipeline.ops import run_deploy_batch
+
+    nb_dev = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    nb_test = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    nb_prod = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    origin_def = {
+        "parts": [
+            _part(
+                "pipeline-content.json",
+                json.dumps(
+                    {
+                        "properties": {
+                            "activities": [
+                                {
+                                    "name": "RunNotebook",
+                                    "type": "TridentNotebook",
+                                    "dependsOn": [],
+                                    "typeProperties": {
+                                        "notebookId": nb_dev,
+                                        "workspaceId": WS,
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ).encode("utf-8"),
+            )
+        ]
+    }
+    client = FakeClient(definitions_by_item={ORIGIN: origin_def, PL: _definition()})
+    test_ws = "11111111-1111-1111-1111-111111111111"
+    prod_ws = "22222222-2222-2222-2222-222222222222"
+    items = [
+        WorkItem(Target(test_ws), None, origin=Target(WS, ORIGIN)),
+        WorkItem(Target(prod_ws), None, origin=Target(WS, ORIGIN)),
+    ]
+    results = run_deploy_batch(
+        client,  # type: ignore[arg-type]
+        items,
+        guid_maps=[
+            {nb_dev: nb_test},
+            {nb_dev: nb_prod},
+        ],
+    )
+    assert all(r.ok for r in results)
+    # Two creates; inspect notebook ids from create payloads via calls.
+    creates = [
+        call
+        for call in client.calls
+        if call[0] == "POST" and str(call[1]).endswith("/items")
+    ]
+    assert len(creates) == 2
+    first = json.loads(
+        base64.b64decode(creates[0][3]["definition"]["parts"][0]["payload"]).decode(
+            "utf-8"
+        )
+    )
+    second = json.loads(
+        base64.b64decode(creates[1][3]["definition"]["parts"][0]["payload"]).decode(
+            "utf-8"
+        )
+    )
+    assert (
+        first["properties"]["activities"][0]["typeProperties"]["notebookId"] == nb_test
+    )
+    assert (
+        second["properties"]["activities"][0]["typeProperties"]["notebookId"] == nb_prod
+    )

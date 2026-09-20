@@ -130,12 +130,65 @@ class FabricClient:
             raise FabricApiError("Unexpected empty workspace response")
         return result
 
+    def list_workspaces(self) -> list[dict[str, Any]]:
+        """GET /workspaces (all pages via continuationToken)."""
+        return self._list_paginated("/workspaces")
+
     def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
         """GET /workspaces/{workspaceId}/items/{itemId}."""
         result = self.request("GET", f"/workspaces/{workspace_id}/items/{item_id}")
         if not isinstance(result, dict):
             raise FabricApiError("Unexpected empty item response")
         return result
+
+    def list_items(
+        self,
+        workspace_id: str,
+        *,
+        type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """GET /workspaces/{workspaceId}/items (all pages; optional ``type`` filter)."""
+        params: dict[str, Any] | None = None
+        if type is not None and type != "":
+            params = {"type": type}
+        return self._list_paginated(
+            f"/workspaces/{workspace_id}/items",
+            params=params,
+        )
+
+    def _list_paginated(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Collect all ``value`` entries across Fabric continuationToken pages."""
+        items: list[dict[str, Any]] = []
+        query: dict[str, Any] = dict(params) if params else {}
+        while True:
+            result = self.request("GET", path, params=query or None)
+            if not isinstance(result, dict):
+                raise FabricApiError(f"Unexpected empty list response for {path}")
+            page = result.get("value")
+            if page is None:
+                page = []
+            if not isinstance(page, list):
+                raise FabricApiError(
+                    f"Unexpected list response for {path}: value is not a list"
+                )
+            for entry in page:
+                if isinstance(entry, dict):
+                    items.append(entry)
+                else:
+                    raise FabricApiError(
+                        f"Unexpected list entry for {path}: expected object"
+                    )
+            token = result.get("continuationToken")
+            if not token or not isinstance(token, str):
+                break
+            query = dict(params) if params else {}
+            query["continuationToken"] = token
+        return items
 
     def wait_for_operation(self, response: httpx.Response) -> Any:
         """Poll a 202 Accepted response until the LRO finishes; return result body."""

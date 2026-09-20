@@ -4,7 +4,7 @@ CLI for working with Microsoft Fabric artifacts.
 
 ## Quick start
 
-Download the single `fabric-tools.exe` release. You can run it as-is, or install it for faster startup:
+Download the single `fabric-tools.exe` release. You can run it as-is (portable), or install it for everyday use (faster startups; uses PATH):
 
 ```powershell
 .\fabric-tools.exe setup install
@@ -24,10 +24,24 @@ Install, update, check status, or remove registration:
 fabric-tools setup install
 fabric-tools setup update
 fabric-tools setup status
+fabric-tools setup clean
 fabric-tools setup uninstall
 ```
 
 Commands may print a one-line update notice on stderr at most once per local day when a newer GitHub release exists. Disable with `$env:FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`.
+
+Set `$env:FABRIC_TOOLS_READONLY=1` to refuse deploy, delete, and mutating `setup` actions (install / update / uninstall / clean). Download, compare, `inspect`, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `setup status`, and `setup update --check` still work. Useful for agents.
+
+List or change supported environment variables (Windows user environment for set/unset):
+
+```powershell
+fabric-tools env list
+fabric-tools env set FABRIC_TOOLS_READONLY 1
+fabric-tools env set AZURE_TENANT_ID <guid>
+fabric-tools env unset AZURE_CLIENT_SECRET
+```
+
+`env set` / `env unset` only accept catalogued names. Open a new terminal for other shells to pick up changes. `AZURE_CLIENT_SECRET` is never printed back.
 
 ## Support
 
@@ -35,10 +49,11 @@ Commands may print a one-line update notice on stderr at most once per local day
   - `.ipynb` — Jupyter notebook
   - `*.Notebook\` — Fabric Git folder with `notebook-content.*` and `.platform`
   - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Deploy `--remap` / `-r`: rewrite embedded GUIDs (e.g. lakehouse deps / cell text) for another workspace; overwrite still preserves target lakehouse/environment when applicable
 - Dataflow Gen2 (Fabric)
   - `*.Dataflow\` — Git-style folder with `queryMetadata.json`, `mashup.pq` (optional `.platform`, `*.mdf`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
-  - Connection IDs in the definition are environment-specific; Publish may still be needed in the service after sync
+  - Connection IDs in the definition are environment-specific; use `--remap` / `-r` on deploy to rewrite GUIDs for another workspace. Publish may still be needed in the service after sync
 - Dataflow Gen1 (Power BI)
   - `model.json` — CDM dataflow definition
   - download, deploy (**create only**), compare, delete
@@ -46,30 +61,68 @@ Commands may print a one-line update notice on stderr at most once per local day
 - DataPipeline (`pipeline`)
   - `*.DataPipeline\` — Fabric Git folder with `pipeline-content.json` (optional `.platform`, `.schedules`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
-  - Activity references (notebooks, lakehouses, connections) are passed through as-is and must be valid in the target workspace
+  - Activity references (notebooks, lakehouses, connections) are environment-specific; use `--remap` / `-r` on deploy to rewrite GUIDs for another workspace
+  - Default is pipeline-only (omit `.schedules`). `--include-schedules` / `-i` syncs schedules: download writes them; compare includes them; deploy create/overwrite sends source schedules. Overwrite without `-i` reattaches each target's existing `.schedules` so remote schedules stay untouched
 - User Data Functions (`udf`)
   - `*.UserDataFunction\` — Fabric Git-style folder (`definition.json`, `function_app.py`, `resources/functions.json`; optional `.platform`, `privateLibraries/*.whl`)
   - download, deploy (create/overwrite), compare, delete (soft delete)
   - Overwrite preserves the target item’s `connectedDataSources`
+  - Deploy `--remap` / `-r`: rewrite embedded GUIDs on create (and other text parts on overwrite); overwrite still preserves target `connectedDataSources`
   - Fabric APIs require interactive user auth (service principal is not supported)
+- Semantic models (`semantic-model`)
+  - `*.SemanticModel\` — Fabric Git folder (`definition.pbism` + TMDL `definition/` or TMSL `model.bim`)
+  - download, deploy (create/overwrite), compare, delete (soft delete)
+  - Delete confirms list dependent reports in the workspace (service removes them with the model)
+  - Overwrite confirms list other reports bound to the model
+  - Deploy `--independent` / `-i`: reserved for model-only from a packaged report source (e.g. future `.pbix`); no-op for folders; not on delete
+- Reports (`report`)
+  - `*.Report\` folder or `.pbix` — joins a packable semantic model by default
+  - download, deploy (create/overwrite), compare, delete (soft delete; model left intact)
+  - `--independent` / `-i`: report only (errors on thick `.pbix` deploy)
+  - Overwrite confirms name shared-model consumers; delete confirms note the orphan model when known
+- Paginated reports (`paginated-report`)
+  - `.rdl` — Power BI Report Builder definition (Power BI API; not Fabric Items definition)
+  - download, deploy (create/overwrite), compare, delete
+  - Overwrite uses the existing remote report name (`--name` is create-only)
+  - Datasources/credentials are not synced; configure them in the service after deploy
+- Inspect (`inspect`)
+  - Read-only browse of Fabric workspaces and items (GUIDs for use with `--target` elsewhere)
+  - `inspect workspace list|get`, `inspect item list|get`
+  - `--filter` / `-f` (name), `--item` / `-i` (type) are inspect-scoped (not the global `--file` / `--interactive` meanings)
+  - Includes Personal / My workspace when signed in as a user
 
 ## Flags
 
 | Flag | Alias | Purpose |
 |------|---------|---------|
 | `--target` | `-t` | `workspaceId` (create) or `workspaceId:artifactId` (repeatable or comma-separated). Overwrite CSV: one workspace per `-t` (bare artifact ids inherit that workspace). Create CSV may list multiple workspaces. |
-| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, Gen1 `model.json`, DataPipeline `*.DataPipeline` folder, or UDF `*.UserDataFunction` folder (repeatable or comma-separated). Optional on download: defaults to remote name + `.ipynb` / `.Dataflow` / `.json` / `.DataPipeline` / `.UserDataFunction` in the current folder. |
+| `--file` | `-f` | Local notebook path/folder, Gen2 `*.Dataflow` folder, Gen1 `model.json`, DataPipeline `*.DataPipeline` folder, UDF `*.UserDataFunction` folder, `*.SemanticModel` folder, `*.Report` folder, `.pbix`, or paginated `.rdl` (repeatable or comma-separated). Optional on download: defaults to remote name + extension in the current folder. |
 | `--origin` | `-o` | Remote `workspaceId:artifactId` source for deploy/compare (mutually exclusive with `--file`; same per-flag shorthand as `--target`) |
 | `--manifest` | `-m` | Deployment manifest stem/path (`.ftdep`); load and/or write |
 | `--silent` | `-s` | Skip confirmation prompts |
 | `--dry-run` | `-d` | Validate only (either side may be omitted); with `-m`, writes the manifest on success |
 | `--name` | `-n` | Display name for create deploys |
 | `--cells` | `-c` | Notebook overwrite only: listed 1-based cells (single local `.ipynb` only) |
-| `--interactive` | `-i` | Guided wizard to build a request |
+| `--interactive` | `-i` | Guided wizard to build a request (root only, before a subcommand: `fabric-tools -i`). Esc or ← Back returns one major step; Ctrl+C cancels |
+| `--independent` | `-i` | `report` download/deploy/compare and `semantic-model deploy`: act only on this command’s artifact; not on `semantic-model delete` |
+| `--include-schedules` | `-i` | `pipeline` download/deploy/compare: sync `.schedules` (default is pipeline-only; overwrite without `-i` preserves remote schedules; not on delete) |
+| `--remap` | `-r` | `notebook` / `dataflow` / `pipeline` / `udf` deploy only: JSON file of source GUID → target GUID applied in memory to definition text (skips `.platform`). One file may broadcast to all targets, or pair 1:1 with targets. |
+| `--filter` | `-f` | `inspect` only: case-insensitive display-name substring |
+| `--item` | `-i` | `inspect` only: Fabric type filter (`Personal`, `Notebook`, …) |
 
 ## Example commands
 
 ```powershell
+# Discover workspaces (My workspace: --item Personal)
+fabric-tools inspect workspace list
+fabric-tools inspect workspace list -f sales -i Workspace
+fabric-tools inspect workspace get -t <workspaceId>
+
+# List / get items in a workspace
+fabric-tools inspect item list -t <workspaceId>
+fabric-tools inspect item list -t <workspaceId> -f etl -i Notebook
+fabric-tools inspect item get -t <workspaceId>:<itemId>
+
 # Dry-run: local file only
 fabric-tools notebook deploy -d -f .\etl.ipynb
 
@@ -112,6 +165,7 @@ fabric-tools dataflow download -s -t <workspaceId>:<dataflowId> -f .\Sales.Dataf
 fabric-tools dataflow download -s -t <workspaceId>:<dataflowId>
 fabric-tools dataflow deploy -s -t <workspaceId> -f .\Sales.Dataflow -n "Sales"
 fabric-tools dataflow deploy -s -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
+fabric-tools dataflow deploy -s -t <testWs>:<dataflowId> -f .\Sales.Dataflow -r .\test.remap.json
 fabric-tools dataflow compare -t <workspaceId>:<dataflowId> -f .\Sales.Dataflow
 fabric-tools dataflow delete -s -t <workspaceId>:<dataflowId>
 
@@ -125,9 +179,13 @@ fabric-tools dataflow-gen1 delete -s -t <workspaceId>:<dataflowId>
 # DataPipeline: download / create / overwrite / compare / delete
 fabric-tools pipeline download -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
 fabric-tools pipeline download -s -t <workspaceId>:<pipelineId>
+fabric-tools pipeline download -s -t <workspaceId>:<pipelineId> -i
 fabric-tools pipeline deploy -s -t <workspaceId> -f .\ETL.DataPipeline -n "ETL"
 fabric-tools pipeline deploy -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
+fabric-tools pipeline deploy -s -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline -i
+fabric-tools pipeline deploy -s -o <devWs>:<pipelineId> -t <testWs>:<pipelineId> -t <prodWs>:<pipelineId> -r .\test.remap.json -r .\prod.remap.json
 fabric-tools pipeline compare -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline
+fabric-tools pipeline compare -t <workspaceId>:<pipelineId> -f .\ETL.DataPipeline -i
 fabric-tools pipeline delete -s -t <workspaceId>:<pipelineId>
 
 # User Data Function: download / create / overwrite / compare / delete
@@ -137,6 +195,31 @@ fabric-tools udf deploy -s -t <workspaceId> -f .\Demo.UserDataFunction -n "Demo"
 fabric-tools udf deploy -s -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
 fabric-tools udf compare -t <workspaceId>:<udfId> -f .\Demo.UserDataFunction
 fabric-tools udf delete -s -t <workspaceId>:<udfId>
+
+# Semantic model: download / create / overwrite / compare / delete
+fabric-tools semantic-model download -s -t <workspaceId>:<modelId> -f .\Sales.SemanticModel
+fabric-tools semantic-model download -s -t <workspaceId>:<modelId>
+fabric-tools semantic-model deploy -s -t <workspaceId> -f .\Sales.SemanticModel -n "Sales"
+fabric-tools semantic-model deploy -s -t <workspaceId>:<modelId> -f .\Sales.SemanticModel
+fabric-tools semantic-model compare -t <workspaceId>:<modelId> -f .\Sales.SemanticModel
+fabric-tools semantic-model delete -s -t <workspaceId>:<modelId>
+
+# Report: download / create / overwrite / compare / delete (joins model by default)
+fabric-tools report download -s -t <workspaceId>:<reportId> -f .\Sales.Report
+fabric-tools report download -s -t <workspaceId>:<reportId> -i
+fabric-tools report deploy -s -t <workspaceId> -f .\Sales.Report -n "Sales"
+fabric-tools report deploy -s -t <workspaceId> -f .\Sales.pbix -n "Sales"
+fabric-tools report deploy -s -t <workspaceId>:<reportId> -f .\Sales.Report
+fabric-tools report compare -t <workspaceId>:<reportId> -f .\Sales.Report
+fabric-tools report delete -s -t <workspaceId>:<reportId>
+
+# Paginated report: download / create / overwrite / compare / delete
+fabric-tools paginated-report download -s -t <workspaceId>:<reportId> -f .\Sales.rdl
+fabric-tools paginated-report download -s -t <workspaceId>:<reportId>
+fabric-tools paginated-report deploy -s -t <workspaceId> -f .\Sales.rdl -n "Sales"
+fabric-tools paginated-report deploy -s -t <workspaceId>:<reportId> -f .\Sales.rdl
+fabric-tools paginated-report compare -t <workspaceId>:<reportId> -f .\Sales.rdl
+fabric-tools paginated-report delete -s -t <workspaceId>:<reportId>
 
 # Dry-run validate and write test.ftdep (no remote changes)
 fabric-tools notebook deploy -d -t <workspaceId>:<notebookId> -f .\etl.ipynb -m test
@@ -148,10 +231,20 @@ fabric-tools notebook deploy -s -t <workspaceId> -f .\etl.ipynb -n "ETL" -m test
 fabric-tools notebook compare -m test
 
 # Show what a manifest contains (no Fabric API calls)
-fabric-tools inspect -m test
+fabric-tools manifest inspect -m test
 
-# List all manifests in the current folder
-fabric-tools inspect
+# One-line summaries for all manifests in the current folder
+fabric-tools manifest inspect
+
+# One-line summaries for manifests in a folder
+fabric-tools manifest inspect -m .\jobs
+
+# Filenames only
+fabric-tools manifest list
+
+# Delete or move a local .ftdep (not a Fabric item)
+fabric-tools manifest delete -s -m test
+fabric-tools manifest move -s -m test subdir\test1
 
 # Check GitHub Releases for a newer fabric-tools version
 fabric-tools setup update --check
@@ -164,11 +257,18 @@ fabric-tools setup update -s
 
 ## Authentication
 
-Interactive Azure sign-in by default. On Windows, Fabric Tools prefers the OS account
-broker, then falls back to browser or device-code auth.
+Interactive Azure sign-in by default. On Windows, Fabric Tools first tries a silent OS
+account broker (same work account Teams/Office use). An interactive Windows sign-in
+prompt is skipped in IDE / non-TTY terminals (where it often never appears) and otherwise
+limited to 45 seconds so the CLI can fall through to browser, then device-code auth.
+While waiting, the status line names the current method — check the taskbar if a Windows
+dialog is hidden.
 
-Notebooks, Dataflow Gen2, DataPipeline, and User Data Functions use the Fabric API token. Dataflow Gen1 uses a Power BI API token
-(same sign-in / service principal; different audience).
+Notebooks, Dataflow Gen2, DataPipeline, User Data Functions, semantic models, and reports
+(folders) use the Fabric API token. Dataflow Gen1, paginated reports (`.rdl`), and `.pbix`
+import/export use a Power BI API token (same sign-in / service principal; different audience).
+Report and semantic-model overwrite/delete confirms may also call Power BI to list reports
+bound to a model.
 
 User Data Function APIs do **not** support service principals — use interactive user sign-in for `udf` commands.
 
@@ -178,6 +278,17 @@ For automation, set a service principal:
 $env:AZURE_TENANT_ID="..."
 $env:AZURE_CLIENT_ID="..."
 $env:AZURE_CLIENT_SECRET="..."
+```
+
+### Troubleshooting
+
+If `Authenticating...` never finishes in Cursor / VS Code, the Windows account prompt is
+probably not visible. The CLI should move on to browser sign-in after a short wait; you
+can also run the same command in Windows Terminal. To drop a bad cached login:
+
+```powershell
+# Remove bad cached auth record
+Remove-Item "$env:LOCALAPPDATA\fabric-tools\msal-auth-record.json" -ErrorAction SilentlyContinue
 ```
 
 ### Exit codes

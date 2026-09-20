@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -94,20 +95,34 @@ def validate_local_pipeline(path: Path | str) -> Path:
     return folder
 
 
-def pack_definition(path: Path | str) -> dict[str, Any]:
-    """Build a Fabric pipeline definition object from a local ``*.DataPipeline`` folder."""
+def pack_definition(
+    path: Path | str,
+    *,
+    include_schedules: bool = False,
+) -> dict[str, Any]:
+    """Build a Fabric pipeline definition object from a local ``*.DataPipeline`` folder.
+
+    By default omits ``.schedules`` (pipeline-only sync). Pass
+    ``include_schedules=True`` to pack a local ``.schedules`` file when present.
+    """
     folder = validate_local_pipeline(path)
     parts = [_part(CONTENT_PART, (folder / CONTENT_PART).read_bytes())]
-    for name in OPTIONAL_PARTS:
+    for name in _optional_part_names(include_schedules=include_schedules):
         optional = folder / name
         if optional.is_file():
             parts.append(_part(name, optional.read_bytes()))
     return {"parts": parts}
 
 
-def unpack_definition(definition: dict[str, Any], destination: Path | str) -> Path:
+def unpack_definition(
+    definition: dict[str, Any],
+    destination: Path | str,
+    *,
+    include_schedules: bool = False,
+) -> Path:
     """Write a Fabric definition response to a local pipeline folder.
 
+    By default skips ``.schedules`` and removes a leftover local ``.schedules``.
     Returns the destination folder written.
     """
     dest = Path(destination)
@@ -131,9 +146,65 @@ def unpack_definition(definition: dict[str, Any], destination: Path | str) -> Pa
 
     dest.mkdir(parents=True, exist_ok=True)
     for relative_path, payload in decoded_parts:
-        target = dest / Path(relative_path).name
+        name = Path(relative_path).name
+        if not include_schedules and name == SCHEDULES_PART:
+            continue
+        target = dest / name
         target.write_bytes(payload)
+    if not include_schedules:
+        leftover = dest / SCHEDULES_PART
+        if leftover.is_file():
+            leftover.unlink()
     return dest
+
+
+def definition_without_schedules(definition: dict[str, Any]) -> dict[str, Any]:
+    """Return *definition* with any ``.schedules`` parts removed (copy when needed)."""
+    parts = definition.get("parts")
+    if not isinstance(parts, list) or not parts:
+        return definition
+    filtered = [
+        part
+        for part in parts
+        if not (
+            isinstance(part, dict)
+            and Path(str(part.get("path", ""))).name == SCHEDULES_PART
+        )
+    ]
+    if len(filtered) == len(parts):
+        return definition
+    return {**definition, "parts": filtered}
+
+
+def schedules_parts(definition: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return deep-copied ``.schedules`` part objects from *definition*."""
+    parts = definition.get("parts")
+    if not isinstance(parts, list) or not parts:
+        return []
+    return [
+        deepcopy(part)
+        for part in parts
+        if isinstance(part, dict)
+        and Path(str(part.get("path", ""))).name == SCHEDULES_PART
+    ]
+
+
+def definition_with_remote_schedules(
+    definition: dict[str, Any],
+    remote: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Attach remote ``.schedules`` parts onto *definition* (pipeline-only overwrite).
+
+    Strips any schedules already on *definition*, then appends schedules from
+    *remote* when present. Returns ``(merged, preserved)``.
+    """
+    base = definition_without_schedules(definition)
+    remote_schedules = schedules_parts(remote)
+    if not remote_schedules:
+        return base, False
+    parts = list(base.get("parts") or [])
+    parts.extend(remote_schedules)
+    return {**base, "parts": parts}, True
 
 
 def definition_has_platform(definition: dict[str, Any]) -> bool:
@@ -148,7 +219,11 @@ def definition_has_platform(definition: dict[str, Any]) -> bool:
     return False
 
 
-def part_payloads(definition: dict[str, Any]) -> dict[str, bytes]:
+def part_payloads(
+    definition: dict[str, Any],
+    *,
+    include_schedules: bool = False,
+) -> dict[str, bytes]:
     """Decode definition parts to a ``{filename: bytes}`` map (last wins)."""
     parts = definition.get("parts")
     if not isinstance(parts, list) or not parts:
@@ -156,40 +231,68 @@ def part_payloads(definition: dict[str, Any]) -> dict[str, bytes]:
     out: dict[str, bytes] = {}
     for part in parts:
         path, payload = _decode_part(part)
-        out[Path(path).name] = payload
+        name = Path(path).name
+        if not include_schedules and name == SCHEDULES_PART:
+            continue
+        out[name] = payload
     return out
 
 
-def folder_payloads(path: Path | str) -> dict[str, bytes]:
+def folder_payloads(
+    path: Path | str,
+    *,
+    include_schedules: bool = False,
+) -> dict[str, bytes]:
     """Read packable local pipeline parts into a ``{filename: bytes}`` map."""
     folder = validate_local_pipeline(path)
     payloads: dict[str, bytes] = {
         CONTENT_PART: (folder / CONTENT_PART).read_bytes(),
     }
-    for name in OPTIONAL_PARTS:
+    for name in _optional_part_names(include_schedules=include_schedules):
         optional = folder / name
         if optional.is_file():
             payloads[name] = optional.read_bytes()
     return payloads
 
 
-def definition_to_diff_text(definition: dict[str, Any]) -> str:
+def definition_to_diff_text(
+    definition: dict[str, Any],
+    *,
+    include_schedules: bool = False,
+) -> str:
     """Stable multi-file text used for unified diffs of a Fabric definition."""
-    return payloads_to_diff_text(part_payloads(definition))
+    # Load all parts; payloads_to_diff_text applies the compare whitelist.
+    return payloads_to_diff_text(
+        part_payloads(definition, include_schedules=True),
+        include_schedules=include_schedules,
+    )
 
 
-def folder_to_diff_text(path: Path | str) -> str:
+def folder_to_diff_text(
+    path: Path | str,
+    *,
+    include_schedules: bool = False,
+) -> str:
     """Stable multi-file text used for unified diffs of a local pipeline folder."""
-    return payloads_to_diff_text(folder_payloads(path))
+    # Load all packable parts; payloads_to_diff_text applies the compare whitelist.
+    return payloads_to_diff_text(
+        folder_payloads(path, include_schedules=True),
+        include_schedules=include_schedules,
+    )
 
 
-def payloads_to_diff_text(payloads: dict[str, bytes]) -> str:
+def payloads_to_diff_text(
+    payloads: dict[str, bytes],
+    *,
+    include_schedules: bool = False,
+) -> str:
     """Render compare-relevant part payloads as a deterministic multi-section text blob.
 
-    Excludes ``.platform`` (logicalId differs across workspaces).
+    Excludes ``.platform`` (logicalId differs across workspaces). Whitelists
+    ``pipeline-content.json`` and optionally ``.schedules``.
     """
     chunks: list[str] = []
-    for name in DIFF_PARTS:
+    for name in _diff_part_names(include_schedules=include_schedules):
         if name not in payloads:
             continue
         chunks.append(f"=== {name} ===\n")
@@ -197,10 +300,26 @@ def payloads_to_diff_text(payloads: dict[str, bytes]) -> str:
     return "".join(chunks)
 
 
+def _optional_part_names(*, include_schedules: bool) -> tuple[str, ...]:
+    if include_schedules:
+        return OPTIONAL_PARTS
+    return (PLATFORM_PART,)
+
+
+def _diff_part_names(*, include_schedules: bool) -> tuple[str, ...]:
+    if include_schedules:
+        return DIFF_PARTS
+    return (CONTENT_PART,)
+
+
 def _normalize_part_text(name: str, payload: bytes) -> str:
-    text = payload.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    try:
+        text = payload.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    except UnicodeError as exc:
+        raise DefinitionError(f"Invalid UTF-8 in part '{name}': {exc}") from exc
     lower = name.lower()
-    if lower.endswith(".json") or lower in (PLATFORM_PART, SCHEDULES_PART):
+    # .schedules has no .json suffix but is JSON; .platform is excluded from diffs.
+    if lower.endswith(".json") or lower == SCHEDULES_PART:
         try:
             data = json.loads(text)
         except json.JSONDecodeError:

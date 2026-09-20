@@ -253,3 +253,38 @@ def test_check_udf_user_auth_ok_without_sp(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.delenv("AZURE_CLIENT_ID", raising=False)
     monkeypatch.delenv("AZURE_CLIENT_SECRET", raising=False)
     check_udf_user_auth()
+
+
+def test_deploy_create_applies_guid_map(tmp_path: Path) -> None:
+    art_src = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    art_dst = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    src = _write_local_udf(
+        tmp_path / "Demo.UserDataFunction",
+        connected=[
+            {
+                "alias": "lh",
+                "artifactId": art_src,
+                "artifactType": "Lakehouse",
+                "workspaceId": WS,
+            }
+        ],
+    )
+    (src / "function_app.py").write_text(f'ARTIFACT = "{art_src}"\n', encoding="utf-8")
+    client = FakeClient()
+    item = WorkItem(Target(WS), src)
+    result = deploy_udf(client, item, display_name="Demo", guid_map={art_src: art_dst})  # type: ignore[arg-type]
+    assert result.ok
+    assert "remapped 2 GUID(s)" in result.message
+    create = next(
+        c
+        for c in client.calls
+        if c[0] == "POST" and str(c[1]).endswith("/userDataFunctions")
+    )
+    parts = {
+        p["path"]: base64.b64decode(p["payload"]).decode("utf-8")
+        for p in create[3]["definition"]["parts"]
+    }
+    definition = json.loads(parts[DEFINITION_JSON_PATH])
+    assert definition["connectedDataSources"][0]["artifactId"] == art_dst
+    assert art_dst in parts[FUNCTION_APP_PATH]
+    assert art_src not in parts[FUNCTION_APP_PATH]

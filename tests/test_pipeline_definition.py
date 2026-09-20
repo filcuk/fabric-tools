@@ -12,6 +12,8 @@ from fabric_tools.pipeline.definition import (
     DefinitionError,
     definition_has_platform,
     definition_to_diff_text,
+    definition_with_remote_schedules,
+    definition_without_schedules,
     detect_pipeline_path,
     display_name_from_path,
     folder_to_diff_text,
@@ -113,7 +115,7 @@ def test_pack_unpack_round_trip(tmp_path: Path) -> None:
         tmp_path / "ETL.DataPipeline",
         schedules='{"schedules":[]}\n',
     )
-    definition = pack_definition(folder)
+    definition = pack_definition(folder, include_schedules=True)
     assert definition_has_platform(definition)
     paths = {part["path"] for part in definition["parts"]}
     assert paths == {
@@ -123,7 +125,7 @@ def test_pack_unpack_round_trip(tmp_path: Path) -> None:
     }
 
     out = tmp_path / "Restored.DataPipeline"
-    written = unpack_definition(definition, out)
+    written = unpack_definition(definition, out, include_schedules=True)
     assert written == out
     restored = json.loads((out / "pipeline-content.json").read_text(encoding="utf-8"))
     assert restored["properties"]["activities"][0]["type"] == "Wait"
@@ -180,11 +182,208 @@ def test_diff_text_excludes_platform(tmp_path: Path) -> None:
         tmp_path / "Diff.DataPipeline",
         schedules='{"schedules":[{"name":"daily"}]}\n',
     )
-    text = folder_to_diff_text(folder)
+    text = folder_to_diff_text(folder, include_schedules=True)
     assert "=== pipeline-content.json ===" in text
     assert "=== .schedules ===" in text
     assert ".platform" not in text
     assert "Wait_1" in text
 
+    definition = pack_definition(folder, include_schedules=True)
+    assert ".platform" not in definition_to_diff_text(
+        definition, include_schedules=True
+    )
+
+
+def test_pack_default_omits_schedules(tmp_path: Path) -> None:
+    folder = _write_pipeline_folder(
+        tmp_path / "ETL.DataPipeline",
+        schedules='{"schedules":[{"name":"daily"}]}\n',
+    )
     definition = pack_definition(folder)
-    assert ".platform" not in definition_to_diff_text(definition)
+    assert {part["path"] for part in definition["parts"]} == {
+        "pipeline-content.json",
+        ".platform",
+    }
+
+
+def test_pack_include_schedules(tmp_path: Path) -> None:
+    folder = _write_pipeline_folder(
+        tmp_path / "ETL.DataPipeline",
+        schedules='{"schedules":[{"name":"daily"}]}\n',
+    )
+    definition = pack_definition(folder, include_schedules=True)
+    assert {part["path"] for part in definition["parts"]} == {
+        "pipeline-content.json",
+        ".platform",
+        ".schedules",
+    }
+
+
+def test_unpack_default_skips_and_removes_leftover_schedules(tmp_path: Path) -> None:
+    folder = _write_pipeline_folder(
+        tmp_path / "ETL.DataPipeline",
+        schedules='{"schedules":[]}\n',
+    )
+    definition = pack_definition(folder, include_schedules=True)
+    out = tmp_path / "Restored.DataPipeline"
+    out.mkdir()
+    (out / ".schedules").write_text(
+        '{"schedules":[{"name":"stale"}]}\n', encoding="utf-8"
+    )
+    unpack_definition(definition, out)
+    assert (out / "pipeline-content.json").is_file()
+    assert (out / ".platform").is_file()
+    assert not (out / ".schedules").exists()
+
+
+def test_unpack_include_schedules(tmp_path: Path) -> None:
+    folder = _write_pipeline_folder(
+        tmp_path / "ETL.DataPipeline",
+        schedules='{"schedules":[{"name":"daily"}]}\n',
+    )
+    definition = pack_definition(folder, include_schedules=True)
+    out = tmp_path / "Restored.DataPipeline"
+    unpack_definition(definition, out, include_schedules=True)
+    assert (out / ".schedules").is_file()
+
+
+def test_definition_without_schedules() -> None:
+    content = json.dumps(_sample_content()).encode("utf-8")
+    definition = {
+        "parts": [
+            {
+                "path": "pipeline-content.json",
+                "payload": base64.b64encode(content).decode("ascii"),
+                "payloadType": "InlineBase64",
+            },
+            {
+                "path": ".schedules",
+                "payload": base64.b64encode(b'{"schedules":[]}').decode("ascii"),
+                "payloadType": "InlineBase64",
+            },
+        ]
+    }
+    stripped = definition_without_schedules(definition)
+    assert {part["path"] for part in stripped["parts"]} == {"pipeline-content.json"}
+    assert definition_without_schedules(stripped) is stripped
+
+
+def test_definition_with_remote_schedules() -> None:
+    content = json.dumps(_sample_content()).encode("utf-8")
+    source = {
+        "parts": [
+            {
+                "path": "pipeline-content.json",
+                "payload": base64.b64encode(content).decode("ascii"),
+                "payloadType": "InlineBase64",
+            },
+            {
+                "path": ".schedules",
+                "payload": base64.b64encode(b'{"schedules":[{"name":"src"}]}\n').decode(
+                    "ascii"
+                ),
+                "payloadType": "InlineBase64",
+            },
+        ]
+    }
+    remote = {
+        "parts": [
+            {
+                "path": "pipeline-content.json",
+                "payload": base64.b64encode(content).decode("ascii"),
+                "payloadType": "InlineBase64",
+            },
+            {
+                "path": ".schedules",
+                "payload": base64.b64encode(
+                    b'{"schedules":[{"name":"remote"}]}\n'
+                ).decode("ascii"),
+                "payloadType": "InlineBase64",
+            },
+        ]
+    }
+    merged, preserved = definition_with_remote_schedules(source, remote)
+    assert preserved
+    paths = {part["path"] for part in merged["parts"]}
+    assert paths == {"pipeline-content.json", ".schedules"}
+    schedules = next(p for p in merged["parts"] if p["path"] == ".schedules")
+    decoded = base64.b64decode(schedules["payload"])
+    assert b"remote" in decoded
+    assert b'"src"' not in decoded
+
+
+def test_diff_text_default_omits_schedules(tmp_path: Path) -> None:
+    folder = _write_pipeline_folder(
+        tmp_path / "Diff.DataPipeline",
+        schedules='{"schedules":[{"name":"daily"}]}\n',
+    )
+    text = folder_to_diff_text(folder)
+    assert "=== pipeline-content.json ===" in text
+    assert ".schedules" not in text
+    definition = pack_definition(folder, include_schedules=True)
+    assert ".schedules" not in definition_to_diff_text(definition)
+
+
+def test_diff_text_include_schedules(tmp_path: Path) -> None:
+    folder = _write_pipeline_folder(
+        tmp_path / "Diff.DataPipeline",
+        schedules='{"schedules":[{"name":"daily"}]}\n',
+    )
+    text = folder_to_diff_text(folder, include_schedules=True)
+    assert "=== pipeline-content.json ===" in text
+    assert "=== .schedules ===" in text
+    definition = pack_definition(folder, include_schedules=True)
+    assert "=== .schedules ===" in definition_to_diff_text(
+        definition, include_schedules=True
+    )
+
+
+def test_unpack_rejects_empty_parts() -> None:
+    with pytest.raises(DefinitionError, match="no parts"):
+        unpack_definition({"parts": []}, "unused.DataPipeline")
+
+
+def test_unpack_rejects_wrong_payload_type() -> None:
+    content = json.dumps(_sample_content()).encode("utf-8")
+    with pytest.raises(DefinitionError, match="payloadType"):
+        unpack_definition(
+            {
+                "parts": [
+                    {
+                        "path": "pipeline-content.json",
+                        "payload": base64.b64encode(content).decode("ascii"),
+                        "payloadType": "InlineText",
+                    }
+                ]
+            },
+            "unused.DataPipeline",
+        )
+
+
+def test_part_payloads_rejects_invalid_base64() -> None:
+    with pytest.raises(DefinitionError, match="base64"):
+        part_payloads(
+            {
+                "parts": [
+                    {
+                        "path": "pipeline-content.json",
+                        "payload": "abc",  # incorrect padding
+                        "payloadType": "InlineBase64",
+                    }
+                ]
+            }
+        )
+
+
+def test_definition_to_diff_text_rejects_non_utf8_payload() -> None:
+    definition = {
+        "parts": [
+            {
+                "path": "pipeline-content.json",
+                "payload": base64.b64encode(b"\xff\xfe").decode("ascii"),
+                "payloadType": "InlineBase64",
+            }
+        ]
+    }
+    with pytest.raises(DefinitionError, match="UTF-8"):
+        definition_to_diff_text(definition)

@@ -59,6 +59,19 @@ def normalize_version(value: str) -> str:
     return text
 
 
+def compact_windows_version(value: str) -> str:
+    """Drop a trailing ``.0`` fourth segment from a Windows file/product version.
+
+    Nuitka stamps ``0.3.0`` as ``0.3.0.0``; trim that padding so display and
+    compare align with package ``__version__``.
+    """
+    text = normalize_version(value)
+    parts = text.split(".")
+    if len(parts) == 4 and parts[3] == "0":
+        return ".".join(parts[:3])
+    return text
+
+
 def parse_version_tuple(value: str) -> tuple[int, ...]:
     """Parse a dotted version into an int tuple for comparison (ignores pre-release suffixes)."""
     core = normalize_version(value).split("+", 1)[0].split("-", 1)[0]
@@ -364,6 +377,11 @@ def format_update_notice(result: UpdateCheckResult, *, frozen: bool) -> str | No
 def _update_check_disabled() -> bool:
     value = os.environ.get(DISABLE_UPDATE_CHECK_ENV, "").strip().lower()
     return value in {"1", "true", "yes", "on"}
+
+
+def is_update_check_disabled() -> bool:
+    """True when ``FABRIC_TOOLS_DISABLE_UPDATE_CHECK`` opts out of update checks."""
+    return _update_check_disabled()
 
 
 def reset_background_update_check() -> None:
