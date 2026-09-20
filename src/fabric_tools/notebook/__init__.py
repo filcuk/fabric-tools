@@ -1,0 +1,55 @@
+"""Notebook sync operations."""
+
+from fabric_tools.notebook.compare import CompareResult, compare_notebook, run_compare_batch
+from fabric_tools.notebook.cells import (
+    CellSelectionError,
+    merge_notebook_cells,
+    parse_cell_indices,
+)
+from fabric_tools.notebook.definition import (
+    DefinitionError,
+    NotebookFormat,
+    definition_has_platform,
+    detect_format,
+    display_name_from_path,
+    format_for_api,
+    pack_definition,
+    unpack_definition,
+    validate_local_notebook,
+)
+from fabric_tools.notebook.ops import (
+    OpResult,
+    create_notebook,
+    download_notebook,
+    get_notebook_definition,
+    run_download_batch,
+    run_upload_batch,
+    update_notebook_definition,
+    upload_notebook,
+)
+
+__all__ = [
+    "CellSelectionError",
+    "CompareResult",
+    "DefinitionError",
+    "NotebookFormat",
+    "OpResult",
+    "compare_notebook",
+    "create_notebook",
+    "definition_has_platform",
+    "detect_format",
+    "display_name_from_path",
+    "download_notebook",
+    "format_for_api",
+    "get_notebook_definition",
+    "merge_notebook_cells",
+    "pack_definition",
+    "parse_cell_indices",
+    "run_compare_batch",
+    "run_download_batch",
+    "run_upload_batch",
+    "unpack_definition",
+    "update_notebook_definition",
+    "upload_notebook",
+    "validate_local_notebook",
+]
