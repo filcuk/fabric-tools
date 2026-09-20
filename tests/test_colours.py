@@ -29,15 +29,20 @@ def test_apply_help_theme_sets_option_and_switch_styles() -> None:
     assert rich_utils.STYLE_OPTION == colours.HELP_STYLE_OPTION
     assert rich_utils.STYLE_SWITCH == colours.HELP_STYLE_SWITCH
     assert rich_utils.STYLE_METAVAR == colours.HELP_STYLE_METAVAR
+    assert rich_utils.STYLE_REQUIRED_SHORT == colours.HELP_STYLE_REQUIRED_SHORT
+    assert rich_utils.STYLE_REQUIRED_LONG == colours.HELP_STYLE_REQUIRED_LONG
     assert rich_utils.STYLE_USAGE == colours.HELP_STYLE_USAGE
     assert colours.HELP_STYLE_OPTION == "magenta"
     assert colours.HELP_STYLE_SWITCH == colours.STYLE_OPTION_ALIAS
     assert colours.HELP_STYLE_METAVAR == "bright_yellow"
+    assert colours.HELP_STYLE_REQUIRED_SHORT == colours.STYLE_ERROR
+    assert colours.HELP_STYLE_REQUIRED_LONG == "dim red"
 
 
 def test_palette_rows_cover_core_roles() -> None:
     by_name = {row.name: row for row in colours.PALETTE_ROWS}
-    assert by_name["red"].usage == "Error / failure"
+    assert by_name["red"].usage.startswith("Error / failure")
+    assert by_name["dim red"].style == colours.HELP_STYLE_REQUIRED_LONG
     assert by_name["yellow"].usage.startswith("Warning")
     assert by_name["green"].usage.startswith("Success")
     assert by_name["cyan"].style == colours.STYLE_ID

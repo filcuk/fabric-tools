@@ -51,6 +51,8 @@ _BANNER_LINES = (
 HELP_STYLE_OPTION = STYLE_OPTION
 HELP_STYLE_SWITCH = STYLE_OPTION_ALIAS
 HELP_STYLE_METAVAR = STYLE_METAVAR
+HELP_STYLE_REQUIRED_SHORT = STYLE_ERROR
+HELP_STYLE_REQUIRED_LONG = "dim red"
 HELP_STYLE_USAGE = STYLE_DIM
 HELP_STYLE_USAGE_COMMAND = ""
 HELP_STYLE_COMMAND = STYLE_ID
@@ -96,7 +98,12 @@ class PaletteRow:
 
 
 PALETTE_ROWS: tuple[PaletteRow, ...] = (
-    PaletteRow("red", STYLE_ERROR, "Error / failure"),
+    PaletteRow("red", STYLE_ERROR, "Error / failure; help required marker *"),
+    PaletteRow(
+        "dim red",
+        HELP_STYLE_REQUIRED_LONG,
+        "Help required marker [required]",
+    ),
     PaletteRow("yellow", STYLE_WARN, "Warning / cancel / soft fail"),
     PaletteRow(
         "bright yellow",
@@ -149,6 +156,8 @@ def apply_help_theme() -> None:
     rich_utils.STYLE_OPTION = HELP_STYLE_OPTION
     rich_utils.STYLE_SWITCH = HELP_STYLE_SWITCH
     rich_utils.STYLE_METAVAR = HELP_STYLE_METAVAR
+    rich_utils.STYLE_REQUIRED_SHORT = HELP_STYLE_REQUIRED_SHORT
+    rich_utils.STYLE_REQUIRED_LONG = HELP_STYLE_REQUIRED_LONG
     rich_utils.STYLE_USAGE = HELP_STYLE_USAGE
     rich_utils.STYLE_USAGE_COMMAND = HELP_STYLE_USAGE_COMMAND
     rich_utils.OptionHighlighter.highlights = list(_HELP_OPTION_HIGHLIGHTS)
