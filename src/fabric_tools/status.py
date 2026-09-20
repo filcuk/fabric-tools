@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 
 from rich.console import Console
 from rich.status import Status
@@ -14,6 +16,57 @@ _active: ContextVar[Status | None] = ContextVar("fabric_tools_status", default=N
 _message: ContextVar[str | None] = ContextVar(
     "fabric_tools_status_message", default=None
 )
+_GUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def short_guid(value: str, *, length: int = 8) -> str:
+    """Return a truncated GUID for spinner text (e.g. ``a1b2c3d4…``)."""
+    if length < 1 or len(value) <= length:
+        return value
+    return f"{value[:length]}…"
+
+
+def progress_message(current: int, total: int, detail: str) -> str:
+    """Format a step-prefixed status line: ``1 of 4 · detail``."""
+    return f"{current} of {total} · {detail}"
+
+
+def status_detail(verb: str, kind: str, label: str | None = None) -> str:
+    """Build spinner detail text: ``Comparing report (Sales)…``.
+
+    Full GUIDs are shortened; other labels (display names) are shown clipped.
+    """
+    if label:
+        return f"{verb} {kind} ({_format_label(label)})…"
+    return f"{verb} {kind}…"
+
+
+def _format_label(label: str, *, max_length: int = 48) -> str:
+    text = label.strip()
+    if _GUID_RE.fullmatch(text):
+        return short_guid(text)
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 1]}…"
+
+
+@dataclass
+class BatchProgress:
+    """Mutable ``n of m`` counter for batch spinner updates."""
+
+    current: int = 0
+    total: int = 0
+
+    def advance(self, detail: str) -> None:
+        self.current += 1
+        update(progress_message(self.current, self.total, detail))
+
+    def skip_planned(self) -> None:
+        if self.total > self.current:
+            self.total -= 1
 
 
 @contextmanager
@@ -59,7 +112,7 @@ def update(message: str) -> None:
     """Update the active status message, if any.
 
     No-op when no ``busy`` context is active. On non-TTY, prints only when the
-    message changes (e.g. phase transitions during LRO waits).
+    message changes (e.g. phase transitions during a batch).
     """
     current = _message.get()
     if current == message:
@@ -74,3 +127,8 @@ def update(message: str) -> None:
     if current is not None and not _console.is_terminal:
         _console.print(message, highlight=False)
         _message.set(message)
+
+
+def current_message() -> str | None:
+    """Return the active status message, if any."""
+    return _message.get()

@@ -18,7 +18,7 @@ from fabric_tools.pipeline.definition import (
     pack_definition,
     unpack_definition,
 )
-from fabric_tools.status import update as update_status
+from fabric_tools.status import BatchProgress, status_detail
 
 ITEM_TYPE = "DataPipeline"
 
@@ -272,14 +272,12 @@ def run_download_batch(
     *,
     include_schedules: bool = False,
 ) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        dest = item.file
-        if target is not None and dest is not None:
-            update_status(f"Downloading {target.label()} -> {dest}...")
-        else:
-            update_status("Downloading pipeline...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Downloading", "pipeline", item_id))
         results.append(
             download_pipeline(client, item, include_schedules=include_schedules)
         )
@@ -294,6 +292,7 @@ def run_deploy_batch(
     include_schedules: bool = False,
     guid_maps: list[dict[str, str] | None] | None = None,
 ) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(items):
@@ -305,16 +304,11 @@ def run_deploy_batch(
             guid_map = guid_maps[index]
         target = item.target
         if target is not None and target.is_create:
-            label = name or (
-                display_name_from_path(item.file)
-                if item.file is not None
-                else "pipeline"
-            )
-            update_status(f"Creating '{label}' in {target.workspace_id}...")
+            progress.advance(status_detail("Creating", "pipeline"))
         elif target is not None:
-            update_status(f"Deploying to {target.label()}...")
+            progress.advance(status_detail("Deploying", "pipeline", target.item_id))
         else:
-            update_status("Deploying pipeline...")
+            progress.advance(status_detail("Deploying", "pipeline"))
         results.append(
             deploy_pipeline(
                 client,
@@ -329,13 +323,12 @@ def run_deploy_batch(
 
 
 def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        if target is not None:
-            update_status(f"Deleting {target.label()}...")
-        else:
-            update_status("Deleting pipeline...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Deleting", "pipeline", item_id))
         results.append(delete_pipeline(client, item))
     return results
 

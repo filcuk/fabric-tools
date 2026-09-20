@@ -219,7 +219,7 @@ def test_download_release_asset(tmp_path: Path) -> None:
     assert not dest.with_name(dest.name + ".partial").exists()
 
 
-def test_format_update_notice_frozen_vs_not() -> None:
+def test_format_update_notice() -> None:
     result = UpdateCheckResult(
         current="0.2.0",
         latest="0.3.0",
@@ -227,14 +227,11 @@ def test_format_update_notice_frozen_vs_not() -> None:
         release_url="https://example/release",
         tag_name="v0.3.0",
     )
-    frozen = format_update_notice(result, frozen=True)
-    assert frozen is not None
-    assert "setup update" in frozen
-    assert "--check" not in frozen.split("Run:")[1].splitlines()[0]
-
-    plain = format_update_notice(result, frozen=False)
-    assert plain is not None
-    assert "setup update --check" in plain
+    notice = format_update_notice(result)
+    assert notice is not None
+    assert "setup update" in notice
+    assert "--check" not in notice.split("Run:")[1].splitlines()[0]
+    assert "https://example/release" in notice
 
     assert (
         format_update_notice(
@@ -245,7 +242,6 @@ def test_format_update_notice_frozen_vs_not() -> None:
                 release_url=None,
                 tag_name="v0.2.0",
             ),
-            frozen=True,
         )
         is None
     )
@@ -280,11 +276,10 @@ def test_same_day_cache_skips_network(
     start_background_update_check(
         cache_path=cache,
         today=today,
-        check=boom,
-        frozen=False,
+        check=boom
     )
     assert calls["n"] == 0
-    assert consume_update_notice(cache_path=cache, today=today, frozen=False) is None
+    assert consume_update_notice(cache_path=cache, today=today) is None
 
 
 def test_same_day_cache_shows_notice_without_network(
@@ -312,10 +307,9 @@ def test_same_day_cache_shows_notice_without_network(
     start_background_update_check(
         cache_path=cache,
         today=today,
-        check=boom,
-        frozen=True,
+        check=boom
     )
-    notice = consume_update_notice(cache_path=cache, today=today, frozen=True)
+    notice = consume_update_notice(cache_path=cache, today=today)
     assert notice is not None
     assert "0.3.0" in notice
     assert "setup update" in notice
@@ -357,14 +351,13 @@ def test_next_day_allows_new_check(
     start_background_update_check(
         cache_path=cache,
         today=today,
-        check=fake_check,
-        frozen=False,
+        check=fake_check
     )
     import fabric_tools.update_check as uc
 
     assert uc._bg_thread is not None
     uc._bg_thread.join(timeout=2.0)
-    notice = consume_update_notice(cache_path=cache, today=today, frozen=False)
+    notice = consume_update_notice(cache_path=cache, today=today)
     assert calls["n"] == 1
     assert notice is not None
     assert checked_today(path=cache, today=today)
@@ -387,14 +380,13 @@ def test_failed_background_check_does_not_stamp_day(
     start_background_update_check(
         cache_path=cache,
         today=today,
-        check=boom,
-        frozen=False,
+        check=boom
     )
     import fabric_tools.update_check as uc
 
     assert uc._bg_thread is not None
     uc._bg_thread.join(timeout=2.0)
-    assert consume_update_notice(cache_path=cache, today=today, frozen=False) is None
+    assert consume_update_notice(cache_path=cache, today=today) is None
     assert not checked_today(path=cache, today=today)
     assert load_update_cache(path=cache) is None
 

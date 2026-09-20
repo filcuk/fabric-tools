@@ -116,7 +116,7 @@ def test_prompt_save_manifest_writes_file(
     from fabric_tools.interactive import prompt_save_manifest
     from fabric_tools.parsing import Target, WorkItem
 
-    selects = iter([_yn(True)])
+    selects = iter([_yn(True), _yn(False)])
     texts = iter([str(tmp_path / "deploy")])
 
     monkeypatch.setattr(
@@ -339,6 +339,43 @@ def test_interactive_dataflow_download(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["kwargs"]["on_success"] is not None
 
 
+def test_interactive_variable_library_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selects = iter(
+        [
+            "variable-library",
+            "download",
+            "execute",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(True),
+        ]
+    )
+    texts = iter(
+        [
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr("questionary.select", lambda *a, **k: _Ask(next(selects)))
+    monkeypatch.setattr("questionary.text", lambda *a, **k: _Ask(next(texts)))
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_variable_library_command", fake_run)
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DOWNLOAD
+    assert captured["kwargs"]["file_values"] is None
+    assert captured["kwargs"]["on_success"] is not None
+
+
 def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
     # another target? destination paths? silent? include-schedules? proceed?
     selects = iter(
@@ -388,7 +425,7 @@ def test_interactive_pipeline_download(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_interactive_pipeline_deploy_include_schedules(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # another pair? silent? include-schedules? proceed?
+    # another pair? silent? include-schedules? apply remap? proceed?
     selects = iter(
         [
             "pipeline",
@@ -398,6 +435,7 @@ def test_interactive_pipeline_deploy_include_schedules(
             _yn(False),
             _yn(False),
             _yn(True),
+            _yn(False),
             _yn(True),
         ]
     )
@@ -430,10 +468,107 @@ def test_interactive_pipeline_deploy_include_schedules(
     assert exc_info.value.exit_code == 0
     assert captured["mode"] is CommandMode.DEPLOY
     assert captured["kwargs"]["include_schedules"] is True
+    assert captured["kwargs"]["remap_values"] is None
     assert captured["kwargs"]["file_values"] == [r".\ETL.DataPipeline"]
     assert captured["kwargs"]["target_values"] == [
         "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222"
     ]
+
+
+def test_interactive_notebook_deploy_remap(monkeypatch: pytest.MonkeyPatch) -> None:
+    # another pair? silent? apply remap? another remap? proceed?
+    selects = iter(
+        [
+            "notebook",
+            "deploy",
+            "execute",
+            "file",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(False),
+            _yn(True),
+        ]
+    )
+    texts = iter(
+        [
+            r".\etl.ipynb",
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+            r".\prod.remap.json",
+        ]
+    )
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_notebook_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DEPLOY
+    assert captured["kwargs"]["remap_values"] == [r".\prod.remap.json"]
+    assert captured["kwargs"]["file_values"] == [r".\etl.ipynb"]
+
+
+def test_interactive_dataflow_deploy_publish(monkeypatch: pytest.MonkeyPatch) -> None:
+    # another pair? silent? publish? apply remap? proceed?
+    selects = iter(
+        [
+            "dataflow",
+            "deploy",
+            "execute",
+            "file",
+            _yn(False),
+            _yn(False),
+            _yn(True),
+            _yn(False),
+            _yn(True),
+        ]
+    )
+    texts = iter(
+        [
+            r".\Sales.Dataflow",
+            "11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222",
+        ]
+    )
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "questionary.select",
+        lambda *a, **k: _Ask(next(selects)),
+    )
+    monkeypatch.setattr(
+        "questionary.text",
+        lambda *a, **k: _Ask(next(texts)),
+    )
+
+    def fake_run(mode: CommandMode, **kwargs: Any) -> None:
+        captured["mode"] = mode
+        captured["kwargs"] = kwargs
+        raise typer.Exit(code=0)
+
+    monkeypatch.setattr("fabric_tools.cli.run_dataflow_command", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_interactive_wizard()
+    assert exc_info.value.exit_code == 0
+    assert captured["mode"] is CommandMode.DEPLOY
+    assert captured["kwargs"]["publish"] is True
+    assert captured["kwargs"]["remap_values"] is None
+    assert captured["kwargs"]["file_values"] == [r".\Sales.Dataflow"]
 
 
 def test_interactive_udf_download(monkeypatch: pytest.MonkeyPatch) -> None:

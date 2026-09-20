@@ -20,6 +20,7 @@ from fabric_tools.powerbi_client import (
     PowerBiClient,
     dataflow_id_from_import,
 )
+from fabric_tools.status import BatchProgress, status_detail
 from fabric_tools.status import update as update_status
 
 
@@ -172,20 +173,14 @@ def run_deploy_batch(
     *,
     display_names: list[str] | None = None,
 ) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     origin_cache: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(items):
         name = None
         if display_names and index < len(display_names):
             name = display_names[index]
-        target = item.target
-        if target is not None:
-            label = name or (
-                item.file.name if item.file is not None else "dataflow-gen1"
-            )
-            update_status(f"Creating '{label}' in {target.workspace_id}...")
-        else:
-            update_status("Creating dataflow-gen1...")
+        progress.advance(status_detail("Creating", "dataflow-gen1"))
         results.append(
             deploy_dataflow(
                 client,
@@ -198,13 +193,12 @@ def run_deploy_batch(
 
 
 def run_delete_batch(client: PowerBiClient, items: list[WorkItem]) -> list[OpResult]:
+    progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
         target = item.target
-        if target is not None:
-            update_status(f"Deleting {target.label()}...")
-        else:
-            update_status("Deleting dataflow-gen1...")
+        item_id = target.item_id if target is not None else None
+        progress.advance(status_detail("Deleting", "dataflow-gen1", item_id))
         results.append(delete_dataflow(client, item))
     return results
 

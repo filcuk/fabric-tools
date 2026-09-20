@@ -104,10 +104,12 @@ def test_http_error_raises() -> None:
     assert exc_info.value.request_id == "req-1"
 
 
-def test_lro_updates_activity_status(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lro_does_not_overwrite_activity_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     messages: list[str] = []
     monkeypatch.setattr(
-        "fabric_tools.client.update_status",
+        "fabric_tools.status.update",
         lambda msg: messages.append(msg),
     )
 
@@ -130,4 +132,33 @@ def test_lro_updates_activity_status(monkeypatch: pytest.MonkeyPatch) -> None:
     with _client(httpx.MockTransport(handler)) as client:
         client.request("POST", "/workspaces/ws/notebooks/nb/getDefinition")
 
-    assert messages == ["Waiting for Fabric operation (op-1)..."]
+    assert messages == []
+
+
+def test_run_dataflow_apply_changes_polls_job_instance() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(f"{request.method} {request.url.path}")
+        if request.method == "POST" and request.url.path.endswith(
+            "/jobs/applyChanges/instances"
+        ):
+            return httpx.Response(
+                202,
+                headers={
+                    "Location": (
+                        "https://api.fabric.microsoft.com/v1/workspaces/ws/"
+                        "items/df/jobs/instances/job-1"
+                    ),
+                    "Retry-After": "1",
+                },
+            )
+        if request.url.path.endswith("/jobs/instances/job-1"):
+            return httpx.Response(200, json={"status": "Succeeded"})
+        return httpx.Response(404)
+
+    with _client(httpx.MockTransport(handler)) as client:
+        result = client.run_dataflow_apply_changes("ws", "df")
+
+    assert result is None or result.get("status") == "Succeeded"
+    assert any(c.startswith("POST ") and "applyChanges" in c for c in calls)

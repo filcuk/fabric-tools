@@ -8,7 +8,6 @@ from typing import Any
 import httpx
 
 from fabric_tools.auth import TokenProvider, token_provider
-from fabric_tools.status import update as update_status
 
 DEFAULT_BASE_URL = "https://api.fabric.microsoft.com/v1"
 DEFAULT_RETRY_AFTER_SECONDS = 5
@@ -156,6 +155,22 @@ class FabricClient:
             params=params,
         )
 
+    def run_dataflow_apply_changes(
+        self,
+        workspace_id: str,
+        dataflow_id: str,
+    ) -> Any:
+        """POST Dataflow Apply Changes job and wait (UI Save / publish for refresh).
+
+        Uses ``/dataflows/{id}/jobs/applyChanges/instances``. Requires user
+        identity today (service principal is not supported by this Fabric API).
+        """
+        return self.request(
+            "POST",
+            f"/workspaces/{workspace_id}/dataflows/{dataflow_id}"
+            "/jobs/applyChanges/instances",
+        )
+
     def _list_paginated(
         self,
         path: str,
@@ -208,12 +223,6 @@ class FabricClient:
             )
 
         state_url = location or f"{self.base_url}/operations/{operation_id}"
-        wait_label = (
-            f"Waiting for Fabric operation ({operation_id})..."
-            if operation_id
-            else "Waiting for Fabric operation..."
-        )
-        update_status(wait_label)
 
         while True:
             self._sleep(retry_after)

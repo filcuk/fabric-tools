@@ -63,3 +63,52 @@ def test_debug_hidden_from_root_help() -> None:
     # Hidden group: not listed among root commands (avoid matching incidental text).
     assert "\ndebug " not in result.stdout
     assert " debug " not in result.stdout
+
+
+def test_print_error_panel_uses_error_title(capsys) -> None:
+    colours.print_error_panel("Refusing setup update: FABRIC_TOOLS_READONLY is set.")
+    err = capsys.readouterr().err
+    assert "Error" in err
+    assert "FABRIC_TOOLS_READONLY" in err
+
+
+def test_print_warn_panel_uses_warning_title(capsys) -> None:
+    colours.print_warn_panel("Cancelled.")
+    err = capsys.readouterr().err
+    assert "Warning" in err
+    assert "Cancelled." in err
+
+
+def test_print_compare_results_uses_warning_panel(capsys) -> None:
+    from types import SimpleNamespace
+
+    from fabric_tools.cli import _print_compare_results
+
+    _print_compare_results(
+        [
+            SimpleNamespace(
+                header="remote vs local",
+                error=None,
+                identical=True,
+                ok=True,
+                diff_text=None,
+                messages=[
+                    "local packable model present; joined model compare requires a bound id"
+                ],
+            )
+        ]
+    )
+    err = capsys.readouterr().err
+    assert "Warning" in err
+    assert "joined model compare" in err
+
+
+def test_cli_exit_error_renders_error_panel(monkeypatch) -> None:
+    from fabric_tools.exit_codes import EXIT_USER
+
+    monkeypatch.setenv("FABRIC_TOOLS_READONLY", "1")
+    result = CliRunner().invoke(app, ["setup", "update"])
+    assert result.exit_code == EXIT_USER
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "Error" in combined
+    assert "read-only" in combined.lower() or "readonly" in combined.lower()

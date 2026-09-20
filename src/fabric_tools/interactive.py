@@ -11,17 +11,20 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from questionary import Choice, Style
 
-from fabric_tools.colours import FG_OK, FG_WARN
+from fabric_tools.colours import FG_OK, print_warn_panel
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
+    KIND_ENVIRONMENT,
     KIND_NOTEBOOK,
+    KIND_ORG_APP,
     KIND_PAGINATED_REPORT,
     KIND_PIPELINE,
     KIND_REPORT,
     KIND_SEMANTIC_MODEL,
     KIND_UDF,
+    KIND_VARIABLE_LIBRARY,
     ManifestError,
     item_id_overrides_from_results,
     manifest_from_work_items,
@@ -36,6 +39,9 @@ _TOOL_KIND = {
     "notebook": KIND_NOTEBOOK,
     "dataflow": KIND_DATAFLOW,
     "dataflow-gen1": KIND_DATAFLOW_GEN1,
+    "environment": KIND_ENVIRONMENT,
+    "org-app": KIND_ORG_APP,
+    "variable-library": KIND_VARIABLE_LIBRARY,
     "pipeline": KIND_PIPELINE,
     "udf": KIND_UDF,
     "semantic-model": KIND_SEMANTIC_MODEL,
@@ -56,6 +62,8 @@ _STEP_KEYS: dict[str, tuple[str, ...]] = {
         "ignore_outputs",
         "independent",
         "include_schedules",
+        "publish",
+        "remap_values",
     ),
     "proceed": (),
 }
@@ -70,12 +78,15 @@ def run_interactive_wizard() -> None:
     from fabric_tools.cli import (
         run_dataflow_command,
         run_dataflow_gen1_command,
+        run_environment_command,
         run_notebook_command,
+        run_org_app_command,
         run_paginated_report_command,
         run_pipeline_command,
         run_report_command,
         run_semantic_model_command,
         run_udf_command,
+        run_variable_library_command,
     )
 
     typer.echo("fabric-tools interactive mode")
@@ -96,16 +107,14 @@ def run_interactive_wizard() -> None:
             _run_step(step, answers)
         except _Back:
             if idx == 0:
-                typer.secho("Aborted by user.", fg=FG_WARN, err=True)
+                print_warn_panel("Aborted by user.")
                 raise typer.Exit(code=EXIT_USER) from None
             idx -= 1
             while True:
                 _clear_from(answers, _STEPS[idx])
                 if _STEPS[idx] == "source" and not _needs_source_step(answers):
                     if idx == 0:
-                        typer.secho(
-                            "Aborted by user.", fg=FG_WARN, err=True
-                        )
+                        print_warn_panel("Aborted by user.")
                         raise typer.Exit(code=EXIT_USER) from None
                     idx -= 1
                     continue
@@ -126,6 +135,10 @@ def run_interactive_wizard() -> None:
     ignore_outputs = bool(answers.get("ignore_outputs", False))
     independent = bool(answers.get("independent", False))
     include_schedules = bool(answers.get("include_schedules", False))
+    publish = bool(answers.get("publish", False))
+    remap_values: list[str] | None = answers.get("remap_values")
+    if remap_values is not None and not remap_values:
+        remap_values = None
 
     resolved_names: list[str | None] | None = None
     if names:
@@ -168,6 +181,41 @@ def run_interactive_wizard() -> None:
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
+            remap_values=remap_values,
+            publish=publish,
+            on_success=on_success,
+        )
+    elif tool == "org-app":
+        run_org_app_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    elif tool == "variable-library":
+        run_variable_library_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
+            on_success=on_success,
+        )
+    elif tool == "environment":
+        run_environment_command(
+            mode,
+            target_values=targets or None,
+            file_values=files or None,
+            origin_values=origins or None,
+            silent=silent,
+            dry_run=dry_run,
+            names=resolved_names,
             on_success=on_success,
         )
     elif tool == "pipeline":
@@ -180,6 +228,7 @@ def run_interactive_wizard() -> None:
             dry_run=dry_run,
             names=resolved_names,
             include_schedules=include_schedules,
+            remap_values=remap_values,
             on_success=on_success,
         )
     elif tool == "udf":
@@ -191,6 +240,7 @@ def run_interactive_wizard() -> None:
             silent=silent,
             dry_run=dry_run,
             names=resolved_names,
+            remap_values=remap_values,
             on_success=on_success,
         )
     elif tool == "semantic-model":
@@ -237,6 +287,7 @@ def run_interactive_wizard() -> None:
             dry_run=dry_run,
             names=resolved_names,
             ignore_outputs=ignore_outputs,
+            remap_values=remap_values,
             on_success=on_success,
         )
 
@@ -264,6 +315,17 @@ def prompt_save_manifest(
         allow_empty=False,
         allow_back=False,
     )
+    pack_remap: str | None = None
+    if kind in {"notebook", "dataflow", "pipeline", "udf"} and _confirm(
+        "Store a pack-level GUID remap path in the manifest?",
+        default=False,
+        allow_back=False,
+    ):
+        pack_remap = _text(
+            "GUID remap JSON path (stored relative to the .ftdep)",
+            allow_empty=False,
+            allow_back=False,
+        )
     overrides = (
         item_id_overrides_from_results(op_results) if op_results is not None else None
     )
@@ -279,12 +341,14 @@ def prompt_save_manifest(
             display_names=display_names,
             item_id_overrides=overrides,
             semantic_model_id_overrides=sm_overrides,
+            remap=pack_remap,
         )
-        path = save_manifest(stem, built)
+        path, written = save_manifest(stem, built)
     except ManifestError as exc:
-        typer.secho(f"manifest not written: {exc}", fg=FG_WARN, err=True)
+        print_warn_panel(f"manifest not written: {exc}")
         return
-    typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
+    if written:
+        typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
 
 
 def _needs_source_step(answers: dict[str, Any]) -> bool:
@@ -320,6 +384,9 @@ def _run_step(step: str, answers: dict[str, Any]) -> None:
                 "notebook",
                 "dataflow",
                 "dataflow-gen1",
+                "environment",
+                "org-app",
+                "variable-library",
                 "pipeline",
                 "udf",
                 "semantic-model",
@@ -383,7 +450,7 @@ def _run_step(step: str, answers: dict[str, Any]) -> None:
 
     if step == "proceed":
         if not _confirm("Proceed?", default=True):
-            typer.secho("Aborted by user.", fg=FG_WARN, err=True)
+            print_warn_panel("Aborted by user.")
             raise typer.Exit(code=EXIT_USER)
         return
 
@@ -397,6 +464,12 @@ def _file_prompt(tool: str) -> str:
         return "Enter file (.rdl)"
     if tool == "dataflow":
         return "Enter folder (*.Dataflow)"
+    if tool == "org-app":
+        return "Enter folder (*.OrgApp)"
+    if tool == "variable-library":
+        return "Enter folder (*.VariableLibrary)"
+    if tool == "environment":
+        return "Enter folder (*.Environment)"
     if tool == "pipeline":
         return "Enter folder (*.DataPipeline)"
     if tool == "udf":
@@ -590,10 +663,38 @@ def _collect_options(answers: dict[str, Any]) -> None:
         )
         typer.echo(f"  include-schedules: {include_schedules}")
 
+    publish = False
+    if tool == "dataflow" and mode is CommandMode.DEPLOY:
+        publish = _confirm(
+            "Publish after deploy (Fabric Apply Changes / prepare for refresh)?",
+            default=False,
+        )
+        typer.echo(f"  publish: {publish}")
+
+    remap_values: list[str] | None = None
+    if (
+        mode is CommandMode.DEPLOY
+        and tool in {"notebook", "dataflow", "pipeline", "udf"}
+        and _confirm("Apply GUID remap file(s)?", default=False)
+    ):
+        paths: list[str] = []
+        while True:
+            path = _text(
+                "GUID remap JSON path (--remap / -r)",
+                allow_empty=False,
+            )
+            paths.append(path)
+            if not _confirm("Add another remap file?", default=False):
+                break
+        remap_values = paths
+        typer.echo(f"  remap: {', '.join(paths)}")
+
     answers["silent"] = silent
     answers["ignore_outputs"] = ignore_outputs
     answers["independent"] = independent
     answers["include_schedules"] = include_schedules
+    answers["publish"] = publish
+    answers["remap_values"] = remap_values
 
 
 def _target_prompt(mode: CommandMode, *, tool: str) -> str:

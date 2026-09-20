@@ -17,19 +17,26 @@ from fabric_tools.client import FabricApiError
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
+    KIND_ENVIRONMENT,
     KIND_NOTEBOOK,
+    KIND_ORG_APP,
+    KIND_PACK,
     KIND_PAGINATED_REPORT,
     KIND_PIPELINE,
     KIND_REPORT,
     KIND_SEMANTIC_MODEL,
     KIND_UDF,
+    KIND_VARIABLE_LIBRARY,
     DeploymentManifest,
     ManifestEntry,
     ManifestError,
     delete_manifest_file,
     delete_targets_from_manifest,
+    effective_remap_path,
+    entry_guid_maps_from_manifest,
     format_inspect,
     format_inspect_line,
+    group_pack_entries_by_kind,
     item_id_overrides_from_results,
     list_manifest_paths,
     load_manifest,
@@ -59,11 +66,13 @@ def test_save_load_round_trip_relative_paths(tmp_path: Path) -> None:
     nb.write_text("{}", encoding="utf-8")
     items = [WorkItem(Target(WS, ITEM), nb)]
     built = manifest_from_work_items(items, display_names=["ETL"])
-    path = save_manifest(tmp_path / "deploy", built)
+    path, written = save_manifest(tmp_path / "deploy", built)
+    assert written
 
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["schemaVersion"] == 1
-    assert raw["kind"] == "notebook"
+    assert raw["schemaVersion"] == 3
+    assert raw["kind"] == "pack"
+    assert raw["entries"][0]["kind"] == "notebook"
     assert raw["entries"][0]["file"] == "etl.ipynb"
     assert raw["entries"][0]["displayName"] == "ETL"
 
@@ -90,10 +99,11 @@ def test_wrong_kind_rejected(tmp_path: Path) -> None:
     path.write_text(
         json.dumps(
             {
-                "schemaVersion": 1,
-                "kind": "semanticModel",
+                "schemaVersion": 3,
+                "kind": "pack",
                 "entries": [
                     {
+                        "kind": "semantic-model",
                         "workspaceId": WS,
                         "itemId": ITEM,
                         "file": "model.bim",
@@ -104,7 +114,7 @@ def test_wrong_kind_rejected(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     loaded = load_manifest(path)
-    with pytest.raises(ManifestError, match="expected 'notebook'"):
+    with pytest.raises(ManifestError, match="expected all 'notebook'"):
         work_items_from_manifest(loaded)
 
 
@@ -117,9 +127,10 @@ def test_report_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_REPORT,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "rpt", built)
+    path, _ = save_manifest(tmp_path / "rpt", built)
     loaded = load_manifest(path)
-    assert loaded.kind == KIND_REPORT
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_REPORT
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_REPORT)
     assert names == ["Sales"]
     assert work_items[0].file == folder.resolve()
@@ -134,9 +145,10 @@ def test_semantic_model_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_SEMANTIC_MODEL,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "sm", built)
+    path, _ = save_manifest(tmp_path / "sm", built)
     loaded = load_manifest(path)
-    assert loaded.kind == KIND_SEMANTIC_MODEL
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_SEMANTIC_MODEL
     work_items, names = work_items_from_manifest(
         loaded, expected_kind=KIND_SEMANTIC_MODEL
     )
@@ -148,9 +160,10 @@ def test_report_semantic_model_id_round_trip(tmp_path: Path) -> None:
     folder = tmp_path / "Sales.Report"
     folder.mkdir()
     built = DeploymentManifest(
-        kind=KIND_REPORT,
+        kind=KIND_PACK,
         entries=(
             ManifestEntry(
+                kind=KIND_REPORT,
                 workspace_id=WS,
                 item_id=ITEM,
                 file=folder,
@@ -159,7 +172,7 @@ def test_report_semantic_model_id_round_trip(tmp_path: Path) -> None:
             ),
         ),
     )
-    path = save_manifest(tmp_path / "rpt_sm", built)
+    path, _ = save_manifest(tmp_path / "rpt_sm", built)
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert raw["entries"][0]["semanticModelId"] == ITEM2
     loaded = load_manifest(path)
@@ -177,9 +190,10 @@ def test_dataflow_gen1_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_DATAFLOW_GEN1,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "df", built)
+    path, _ = save_manifest(tmp_path / "df", built)
     loaded = load_manifest(path)
-    assert loaded.kind == KIND_DATAFLOW_GEN1
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_DATAFLOW_GEN1
     work_items, names = work_items_from_manifest(
         loaded, expected_kind=KIND_DATAFLOW_GEN1
     )
@@ -196,9 +210,10 @@ def test_paginated_report_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_PAGINATED_REPORT,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "pr", built)
+    path, _ = save_manifest(tmp_path / "pr", built)
     loaded = load_manifest(path)
-    assert loaded.kind == KIND_PAGINATED_REPORT
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_PAGINATED_REPORT
     work_items, names = work_items_from_manifest(
         loaded, expected_kind=KIND_PAGINATED_REPORT
     )
@@ -215,11 +230,68 @@ def test_dataflow_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_DATAFLOW,
         display_names=["Sales"],
     )
-    path = save_manifest(tmp_path / "df2", built)
+    path, _ = save_manifest(tmp_path / "df2", built)
     loaded = load_manifest(path)
-    assert loaded.kind == KIND_DATAFLOW
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_DATAFLOW
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_DATAFLOW)
     assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_org_app_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Sales.OrgApp"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_ORG_APP,
+        display_names=["Sales"],
+    )
+    path, _ = save_manifest(tmp_path / "org-app", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_ORG_APP
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_ORG_APP)
+    assert names == ["Sales"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_variable_library_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Config.VariableLibrary"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_VARIABLE_LIBRARY,
+        display_names=["Config"],
+    )
+    path, _ = save_manifest(tmp_path / "variable-library", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_VARIABLE_LIBRARY
+    work_items, names = work_items_from_manifest(
+        loaded, expected_kind=KIND_VARIABLE_LIBRARY
+    )
+    assert names == ["Config"]
+    assert work_items[0].file == folder.resolve()
+
+
+def test_environment_kind_round_trip(tmp_path: Path) -> None:
+    folder = tmp_path / "Dev.Environment"
+    folder.mkdir()
+    items = [WorkItem(Target(WS, ITEM), folder)]
+    built = manifest_from_work_items(
+        items,
+        kind=KIND_ENVIRONMENT,
+        display_names=["Dev"],
+    )
+    path, _ = save_manifest(tmp_path / "environment", built)
+    loaded = load_manifest(path)
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_ENVIRONMENT
+    work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_ENVIRONMENT)
+    assert names == ["Dev"]
     assert work_items[0].file == folder.resolve()
 
 
@@ -232,9 +304,10 @@ def test_udf_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_UDF,
         display_names=["Demo"],
     )
-    path = save_manifest(tmp_path / "udf", built)
+    path, _ = save_manifest(tmp_path / "udf", built)
     loaded = load_manifest(path)
-    assert loaded.kind == KIND_UDF
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_UDF
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_UDF)
     assert names == ["Demo"]
     assert work_items[0].file == folder.resolve()
@@ -249,9 +322,10 @@ def test_pipeline_kind_round_trip(tmp_path: Path) -> None:
         kind=KIND_PIPELINE,
         display_names=["ETL"],
     )
-    path = save_manifest(tmp_path / "pipe", built)
+    path, _ = save_manifest(tmp_path / "pipe", built)
     loaded = load_manifest(path)
-    assert loaded.kind == KIND_PIPELINE
+    assert loaded.kind == KIND_PACK
+    assert loaded.entries[0].kind == KIND_PIPELINE
     work_items, names = work_items_from_manifest(loaded, expected_kind=KIND_PIPELINE)
     assert names == ["ETL"]
     assert work_items[0].file == folder.resolve()
@@ -265,7 +339,7 @@ def test_delete_targets_from_manifest(tmp_path: Path) -> None:
         WorkItem(Target(WS, ITEM2), model),
     ]
     built = manifest_from_work_items(items, kind=KIND_DATAFLOW_GEN1)
-    path = save_manifest(tmp_path / "df-del", built)
+    path, _ = save_manifest(tmp_path / "df-del", built)
     loaded = load_manifest(path)
     delete_items = delete_targets_from_manifest(
         loaded, expected_kind=KIND_DATAFLOW_GEN1
@@ -281,7 +355,7 @@ def test_delete_targets_from_manifest_requires_item_id(tmp_path: Path) -> None:
     model.write_text("{}", encoding="utf-8")
     items = [WorkItem(Target(WS, None), model)]
     built = manifest_from_work_items(items, kind=KIND_NOTEBOOK)
-    path = save_manifest(tmp_path / "create-only", built)
+    path, _ = save_manifest(tmp_path / "create-only", built)
     loaded = load_manifest(path)
     with pytest.raises(ManifestError, match="itemId"):
         delete_targets_from_manifest(loaded, expected_kind=KIND_NOTEBOOK)
@@ -290,7 +364,8 @@ def test_delete_targets_from_manifest_requires_item_id(tmp_path: Path) -> None:
 def test_format_inspect_includes_kind() -> None:
     items = [WorkItem(Target(WS, ITEM), Path("a.ipynb"))]
     text = format_inspect(manifest_from_work_items(items), path=Path("m.ftdep"))
-    assert "kind: notebook" in text
+    assert "kind: pack" in text
+    assert "[notebook]" in text
     assert WS in text
 
 
@@ -300,7 +375,7 @@ def test_format_inspect_line() -> None:
         manifest_from_work_items(items),
         path=Path("demo.ftdep"),
     )
-    assert line == "demo.ftdep  kind=notebook  schemaVersion=1  entries=1"
+    assert line == "demo.ftdep  kind=pack[notebook]  schemaVersion=3  entries=1"
 
 
 def test_list_manifest_paths(tmp_path: Path) -> None:
@@ -374,6 +449,40 @@ def test_write_manifest_after_success_writes(
     )
     data = json.loads((tmp_path / "out.ftdep").read_text(encoding="utf-8"))
     assert data["entries"][0]["itemId"] == ITEM2
+
+
+def test_save_manifest_skips_identical_content(tmp_path: Path) -> None:
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    items = [WorkItem(Target(WS, ITEM), nb)]
+    built = manifest_from_work_items(items, display_names=["ETL"])
+    path, written = save_manifest(tmp_path / "deploy", built)
+    assert written
+    mtime = path.stat().st_mtime_ns
+    path2, written_again = save_manifest(tmp_path / "deploy", built)
+    assert path2 == path
+    assert not written_again
+    assert path.stat().st_mtime_ns == mtime
+
+
+def test_write_manifest_after_success_silent_when_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    nb = tmp_path / "a.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    items = [WorkItem(Target(WS, ITEM), nb)]
+    built = manifest_from_work_items(items, display_names=["A"])
+    save_manifest("out", built)
+    _write_manifest_after_success(
+        "out",
+        items,
+        display_names=["A"],
+        op_results=[OpResult(True, "ok", WS, ITEM)],
+    )
+    assert "Wrote manifest:" not in capsys.readouterr().out
 
 
 def test_dry_run_writes_manifest_on_success(
@@ -476,10 +585,11 @@ def _save_simple_manifest(directory: Path, stem: str) -> Path:
     nb = directory / "etl.ipynb"
     if not nb.exists():
         nb.write_text("{}", encoding="utf-8")
-    return save_manifest(
+    path, _ = save_manifest(
         directory / stem,
         manifest_from_work_items([WorkItem(Target(WS, ITEM), nb)]),
     )
+    return path
 
 
 def test_resolve_inspect_target_directory(tmp_path: Path) -> None:
@@ -513,7 +623,8 @@ def test_inspect_cli(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["manifest", "inspect", "-m", str(tmp_path / "demo")])
     assert result.exit_code == 0
-    assert "kind: notebook" in result.stdout
+    assert "kind: pack" in result.stdout
+    assert "[notebook]" in result.stdout
     assert "entries: 1" in result.stdout
 
 
@@ -539,8 +650,12 @@ def test_inspect_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["manifest", "inspect"])
     assert result.exit_code == 0
-    assert "alpha.ftdep  kind=notebook  schemaVersion=1  entries=1" in result.stdout
-    assert "beta.ftdep  kind=notebook  schemaVersion=1  entries=2" in result.stdout
+    assert (
+        "alpha.ftdep  kind=pack[notebook]  schemaVersion=3  entries=1" in result.stdout
+    )
+    assert (
+        "beta.ftdep  kind=pack[notebook]  schemaVersion=3  entries=2" in result.stdout
+    )
     assert "broken.ftdep  error:" in result.stderr
 
 
@@ -553,7 +668,9 @@ def test_inspect_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     runner = CliRunner()
     result = runner.invoke(app, ["manifest", "inspect", "-m", str(jobs)])
     assert result.exit_code == 0
-    assert "alpha.ftdep  kind=notebook  schemaVersion=1  entries=1" in result.stdout
+    assert (
+        "alpha.ftdep  kind=pack[notebook]  schemaVersion=3  entries=1" in result.stdout
+    )
     assert "cwd_only" not in result.stdout
 
 
@@ -656,11 +773,11 @@ def test_manifest_move_overwrite_silent(
 ) -> None:
     nb = tmp_path / "etl.ipynb"
     nb.write_text("{}", encoding="utf-8")
-    source = save_manifest(
+    source, _ = save_manifest(
         tmp_path / "alpha",
         manifest_from_work_items([WorkItem(Target(WS, ITEM), nb)]),
     )
-    dest = save_manifest(
+    dest, _ = save_manifest(
         tmp_path / "beta",
         manifest_from_work_items([WorkItem(Target(WS, ITEM2), nb)]),
     )
@@ -699,15 +816,18 @@ def test_manifest_move_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert "manifest not found" in result.output
 
 
-def test_origin_manifest_v2_round_trip(tmp_path: Path) -> None:
+def test_origin_manifest_round_trip(tmp_path: Path) -> None:
     origin = Target(WS, ITEM)
     target = Target(WS, ITEM2)
     items = [WorkItem(target, None, origin=origin)]
     built = manifest_from_work_items(items)
-    assert built.schema_version == 2
-    path = save_manifest(tmp_path / "origin-deploy", built)
+    assert built.schema_version == 3
+    assert built.kind == KIND_PACK
+    path, _ = save_manifest(tmp_path / "origin-deploy", built)
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["schemaVersion"] == 2
+    assert raw["schemaVersion"] == 3
+    assert raw["kind"] == "pack"
+    assert raw["entries"][0]["kind"] == "notebook"
     assert raw["entries"][0]["originWorkspaceId"] == WS
     assert raw["entries"][0]["originItemId"] == ITEM
     assert "file" not in raw["entries"][0]
@@ -721,7 +841,7 @@ def test_origin_manifest_v2_round_trip(tmp_path: Path) -> None:
     assert ITEM in format_inspect(loaded)
 
 
-def test_v1_manifest_still_loads(tmp_path: Path) -> None:
+def test_legacy_v1_manifest_rejected(tmp_path: Path) -> None:
     path = tmp_path / "legacy.ftdep"
     path.write_text(
         json.dumps(
@@ -739,8 +859,141 @@ def test_v1_manifest_still_loads(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    with pytest.raises(
+        ManifestError, match="Unsupported schema version. Requires v3 or higher."
+    ):
+        load_manifest(path)
+
+
+def test_pack_remap_paths_round_trip(tmp_path: Path) -> None:
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    pack_map = tmp_path / "pack.remap.json"
+    entry_map = tmp_path / "entry.remap.json"
+    src = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    dst = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    pack_map.write_text(json.dumps({src: dst}), encoding="utf-8")
+    entry_map.write_text(
+        json.dumps({src: "cccccccc-cccc-cccc-cccc-cccccccccccc"}),
+        encoding="utf-8",
+    )
+    built = DeploymentManifest(
+        kind=KIND_PACK,
+        remap=pack_map,
+        entries=(
+            ManifestEntry(
+                kind=KIND_NOTEBOOK,
+                workspace_id=WS,
+                item_id=ITEM,
+                file=nb,
+                remap=entry_map,
+            ),
+            ManifestEntry(
+                kind=KIND_PIPELINE,
+                workspace_id=WS,
+                item_id=ITEM2,
+                file=nb,
+            ),
+        ),
+    )
+    path, _ = save_manifest(tmp_path / "pack", built)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["remap"] == "pack.remap.json"
+    assert raw["entries"][0]["remap"] == "entry.remap.json"
+    assert "remap" not in raw["entries"][1]
+
     loaded = load_manifest(path)
-    assert loaded.schema_version == 1
-    items, _ = work_items_from_manifest(loaded)
-    assert items[0].file is not None
-    assert items[0].origin is None
+    assert effective_remap_path(loaded, loaded.entries[0]) == entry_map.resolve()
+    assert effective_remap_path(loaded, loaded.entries[1]) == pack_map.resolve()
+    specs = entry_guid_maps_from_manifest(loaded)
+    assert specs[0] is not None
+    assert specs[0].mapping[src] == "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    assert specs[1] is not None
+    assert specs[1].mapping[src] == dst
+
+
+def test_pack_missing_remap_file_fails(tmp_path: Path) -> None:
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    built = DeploymentManifest(
+        kind=KIND_PACK,
+        remap=tmp_path / "missing.remap.json",
+        entries=(
+            ManifestEntry(
+                kind=KIND_NOTEBOOK,
+                workspace_id=WS,
+                item_id=ITEM,
+                file=nb,
+            ),
+        ),
+    )
+    path, _ = save_manifest(tmp_path / "pack", built)
+    loaded = load_manifest(path)
+    with pytest.raises(ManifestError, match="remap failed"):
+        entry_guid_maps_from_manifest(loaded)
+
+
+def test_group_pack_entries_orders_model_before_report() -> None:
+    entries = (
+        ManifestEntry(
+            kind=KIND_NOTEBOOK, workspace_id=WS, item_id=ITEM, file=Path("a")
+        ),
+        ManifestEntry(kind=KIND_REPORT, workspace_id=WS, item_id=ITEM, file=Path("b")),
+        ManifestEntry(
+            kind=KIND_SEMANTIC_MODEL, workspace_id=WS, item_id=ITEM, file=Path("c")
+        ),
+        ManifestEntry(
+            kind=KIND_ENVIRONMENT, workspace_id=WS, item_id=ITEM, file=Path("env")
+        ),
+        ManifestEntry(kind=KIND_ORG_APP, workspace_id=WS, item_id=ITEM, file=Path("d")),
+        ManifestEntry(
+            kind=KIND_VARIABLE_LIBRARY,
+            workspace_id=WS,
+            item_id=ITEM,
+            file=Path("vars"),
+        ),
+    )
+    groups = group_pack_entries_by_kind(entries)
+    assert [kind for kind, _ in groups] == [
+        KIND_SEMANTIC_MODEL,
+        KIND_REPORT,
+        KIND_VARIABLE_LIBRARY,
+        KIND_ENVIRONMENT,
+        KIND_NOTEBOOK,
+        KIND_ORG_APP,
+    ]
+    rev = group_pack_entries_by_kind(entries, reverse=True)
+    assert [kind for kind, _ in rev] == [
+        KIND_ORG_APP,
+        KIND_NOTEBOOK,
+        KIND_ENVIRONMENT,
+        KIND_VARIABLE_LIBRARY,
+        KIND_REPORT,
+        KIND_SEMANTIC_MODEL,
+    ]
+
+
+def test_mixed_pack_rejected_by_notebook_command(tmp_path: Path) -> None:
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    built = DeploymentManifest(
+        kind=KIND_PACK,
+        entries=(
+            ManifestEntry(
+                kind=KIND_NOTEBOOK,
+                workspace_id=WS,
+                item_id=ITEM,
+                file=nb,
+            ),
+            ManifestEntry(
+                kind=KIND_DATAFLOW,
+                workspace_id=WS,
+                item_id=ITEM2,
+                file=nb,
+            ),
+        ),
+    )
+    path, _ = save_manifest(tmp_path / "mixed", built)
+    loaded = load_manifest(path)
+    with pytest.raises(ManifestError, match="fabric-tools pack"):
+        work_items_from_manifest(loaded, expected_kind=KIND_NOTEBOOK)

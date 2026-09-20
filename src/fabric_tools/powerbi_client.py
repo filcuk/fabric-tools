@@ -8,7 +8,6 @@ from typing import Any
 import httpx
 
 from fabric_tools.auth import POWER_BI_SCOPE, TokenProvider, token_provider
-from fabric_tools.status import update as update_status
 
 DEFAULT_BASE_URL = "https://api.powerbi.com/v1.0/myorg"
 DEFAULT_RETRY_AFTER_SECONDS = 2
@@ -408,7 +407,6 @@ class PowerBiClient:
 
     def wait_for_import(self, group_id: str, import_id: str) -> dict[str, Any]:
         """Poll GET /groups/{groupId}/imports/{importId} until terminal state."""
-        update_status(f"Waiting for Power BI import ({import_id})...")
         retry_after = DEFAULT_RETRY_AFTER_SECONDS
 
         while True:

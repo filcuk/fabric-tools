@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 import typer
 from typer.core import TyperGroup
@@ -12,27 +12,30 @@ from typer.core import TyperGroup
 from fabric_tools import __version__
 from fabric_tools.auth import AuthError
 from fabric_tools.colours import (
-    FG_ERROR,
     FG_ID,
     FG_OK,
-    FG_WARN,
     STYLE_DIM,
     STYLE_ERROR,
     STYLE_OK,
     STYLE_WARN,
     apply_help_theme,
     print_banner,
+    print_error_panel,
+    print_warn_panel,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
     KIND_DATAFLOW_GEN1,
+    KIND_ENVIRONMENT,
     KIND_NOTEBOOK,
+    KIND_ORG_APP,
     KIND_PAGINATED_REPORT,
     KIND_PIPELINE,
     KIND_REPORT,
     KIND_SEMANTIC_MODEL,
     KIND_UDF,
+    KIND_VARIABLE_LIBRARY,
     ManifestError,
     delete_manifest_file,
     delete_targets_from_manifest,
@@ -82,34 +85,58 @@ _GUID_REMAP_HELP = (
 )
 
 
+def _exit_error(message: str, *, code: int = EXIT_USER) -> NoReturn:
+    """Print a shared Error panel and exit (never returns)."""
+    print_error_panel(message)
+    raise typer.Exit(code=code)
+
+
+def _exit_warn(message: str, *, code: int = EXIT_USER) -> NoReturn:
+    """Print a shared Warning panel and exit (never returns)."""
+    print_warn_panel(message)
+    raise typer.Exit(code=code)
+
+
 def _resolve_deploy_guid_maps(
     remap_values: list[str] | None,
     *,
     n_targets: int,
     has_targets: bool,
+    manifest: str | None = None,
+    expected_kind: str | None = None,
 ) -> list:
-    """Load and pair ``--remap`` / ``-r`` files for deploy / deploy dry-run.
+    """Load GUID maps for deploy / deploy dry-run.
 
-    When there are no targets (file-only dry-run), validates that each file
-    loads and returns an empty list of per-target specs.
+    Precedence: CLI ``--remap`` / ``-r`` wins when set; otherwise pack/entry
+    ``remap`` path refs from *manifest* (when *expected_kind* is set).
     """
     from fabric_tools.guid_map import GuidMapError, load_guid_map, resolve_guid_maps
+    from fabric_tools.manifest import entry_guid_maps_from_manifest
 
-    if not remap_values:
-        return []
-    try:
-        if has_targets and n_targets > 0:
-            return resolve_guid_maps(remap_values, n_targets)
-        # Validate maps load even when dry-run has no targets yet.
-        for raw in remap_values:
-            for piece in raw.split(","):
-                piece = piece.strip()
-                if piece:
-                    load_guid_map(piece)
-        return []
-    except GuidMapError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+    if remap_values:
+        try:
+            if has_targets and n_targets > 0:
+                return resolve_guid_maps(remap_values, n_targets)
+            # Validate maps load even when dry-run has no targets yet.
+            for raw in remap_values:
+                for piece in raw.split(","):
+                    piece = piece.strip()
+                    if piece:
+                        load_guid_map(piece)
+            return []
+        except GuidMapError as exc:
+            _exit_error(str(exc))
+
+    if manifest and expected_kind and has_targets and n_targets > 0:
+        try:
+            path = resolve_manifest_path(manifest)
+            if not path.is_file():
+                return []
+            loaded = load_manifest(path)
+            return entry_guid_maps_from_manifest(loaded, expected_kind=expected_kind)
+        except ManifestError as exc:
+            _exit_error(str(exc))
+    return []
 
 
 def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
@@ -117,8 +144,7 @@ def _enforce_readonly_command(mode: CommandMode, *, dry_run: bool) -> None:
     try:
         ensure_command_allowed(mode, dry_run=dry_run)
     except ReadOnlyError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
 
 def _enforce_readonly_setup(action: str) -> None:
@@ -126,15 +152,14 @@ def _enforce_readonly_setup(action: str) -> None:
     try:
         ensure_setup_mutation_allowed(action)
     except ReadOnlyError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
 
-def _fail_auth(exc: AuthError) -> None:
+def _fail_auth(exc: AuthError) -> NoReturn:
     """Print a short auth failure and exit (never returns)."""
-    color = FG_WARN if exc.canceled else FG_ERROR
-    typer.secho(str(exc), fg=color, err=True)
-    raise typer.Exit(code=EXIT_USER) from exc
+    if exc.canceled:
+        _exit_warn(str(exc))
+    _exit_error(str(exc))
 
 
 def _authenticate_client(client: object) -> None:
@@ -192,12 +217,15 @@ class _BannerGroup(TyperGroup):
         "inspect",
         "dataflow-gen1",
         "dataflow",
+        "environment",
         "notebook",
+        "org-app",
         "paginated-report",
         "pipeline",
         "report",
         "semantic-model",
         "udf",
+        "variable-library",
     )
 
     def list_commands(self, ctx) -> list[str]:
@@ -253,6 +281,30 @@ dataflow_app = typer.Typer(
     context_settings=_HELP_CONTEXT,
 )
 app.add_typer(dataflow_app, name="dataflow", rich_help_panel="Fabric")
+
+environment_app = typer.Typer(
+    name="environment",
+    help="Fabric Environment items.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(environment_app, name="environment", rich_help_panel="Fabric")
+
+org_app_app = typer.Typer(
+    name="org-app",
+    help="Fabric Org App items.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(org_app_app, name="org-app", rich_help_panel="Fabric")
+
+variable_library_app = typer.Typer(
+    name="variable-library",
+    help="Fabric Variable Library items.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(variable_library_app, name="variable-library", rich_help_panel="Fabric")
 
 semantic_model_app = typer.Typer(
     name="semantic-model",
@@ -356,6 +408,14 @@ manifest_app = typer.Typer(
 )
 app.add_typer(manifest_app, name="manifest", rich_help_panel="Local")
 
+pack_app = typer.Typer(
+    name="pack",
+    help="Multi-kind deployment packs (.ftdep schema v3).",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(pack_app, name="pack", rich_help_panel="Local")
+
 debug_app = typer.Typer(
     name="debug",
     help="Internal debug helpers.",
@@ -383,7 +443,7 @@ def _flush_update_notice(ctx: typer.Context) -> None:
 
     notice = consume_update_notice()
     if notice:
-        typer.secho(notice, fg=FG_WARN, err=True)
+        print_warn_panel(notice)
 
 
 def _start_bg_update_check(ctx: typer.Context) -> None:
@@ -419,8 +479,7 @@ def env_set(
     try:
         spec = set_user_env(name, value)
     except EnvError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(format_set_confirmation(spec, value), fg=FG_OK)
     raise typer.Exit(code=EXIT_OK)
@@ -443,8 +502,7 @@ def env_unset(
     try:
         spec = unset_user_env(name)
     except EnvError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(format_unset_confirmation(spec), fg=FG_OK)
     raise typer.Exit(code=EXIT_OK)
@@ -473,8 +531,7 @@ def manifest_inspect(
     try:
         target = resolve_inspect_target(manifest)
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if target.is_dir():
         _inspect_manifest_dir(target)
@@ -483,8 +540,7 @@ def manifest_inspect(
     try:
         loaded = load_manifest(target)
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     typer.echo(format_inspect(loaded, path=target))
     raise typer.Exit(code=EXIT_OK)
 
@@ -495,8 +551,7 @@ def manifest_list() -> None:
     try:
         paths = list_manifest_paths()
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if not paths:
         typer.echo("No .ftdep manifests in the current folder.")
@@ -538,11 +593,9 @@ def manifest_delete(
         )
         delete_manifest_file(path)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(f"Deleted local manifest file {path}", fg=FG_OK)
     raise typer.Exit(code=EXIT_OK)
@@ -588,17 +641,190 @@ def manifest_move(
         confirm_or_abort(message, silent=silent)
         move_manifest_file(source, dest)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(
         f"Moved local manifest file {source} to {dest}",
         fg=FG_OK,
     )
     raise typer.Exit(code=EXIT_OK)
+
+
+@pack_app.command("download")
+def pack_download(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate only; do not download.",
+    ),
+    include_schedules: bool = typer.Option(
+        False,
+        "--include-schedules",
+        "-i",
+        help="(optional) Include pipeline .schedules when present in the pack.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        help="(optional) Report-only (do not join semantic model).",
+    ),
+) -> None:
+    """Download all items in a multi-kind pack (ordered by kind)."""
+    from fabric_tools.pack_run import run_pack_command
+
+    run_pack_command(
+        CommandMode.DOWNLOAD,
+        manifest=manifest,
+        silent=silent,
+        dry_run=dry_run,
+        include_schedules=include_schedules,
+        independent=independent,
+    )
+
+
+@pack_app.command("deploy")
+def pack_deploy(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate only; do not deploy.",
+    ),
+    remap: list[str] | None = typer.Option(
+        None,
+        "--remap",
+        "-r",
+        help=_GUID_REMAP_HELP + " Overrides pack/entry remap path refs for this run.",
+    ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        "-p",
+        help="(optional) After dataflow create/update, run Apply Changes.",
+    ),
+    include_schedules: bool = typer.Option(
+        False,
+        "--include-schedules",
+        "-i",
+        help="(optional) Include pipeline .schedules when present in the pack.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        help="(optional) Report-only (do not join semantic model).",
+    ),
+) -> None:
+    """Deploy all items in a multi-kind pack (models before reports)."""
+    from fabric_tools.pack_run import run_pack_command
+
+    run_pack_command(
+        CommandMode.DEPLOY,
+        manifest=manifest,
+        silent=silent,
+        dry_run=dry_run,
+        remap_values=remap,
+        publish=publish,
+        include_schedules=include_schedules,
+        independent=independent,
+    )
+
+
+@pack_app.command("compare")
+def pack_compare(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate only; do not compare.",
+    ),
+    include_schedules: bool = typer.Option(
+        False,
+        "--include-schedules",
+        "-i",
+        help="(optional) Include pipeline .schedules when present in the pack.",
+    ),
+    independent: bool = typer.Option(
+        False,
+        "--independent",
+        help="(optional) Report-only (do not join semantic model).",
+    ),
+) -> None:
+    """Compare all items in a multi-kind pack."""
+    from fabric_tools.pack_run import run_pack_command
+
+    run_pack_command(
+        CommandMode.COMPARE,
+        manifest=manifest,
+        silent=True,
+        dry_run=dry_run,
+        include_schedules=include_schedules,
+        independent=independent,
+    )
+
+
+@pack_app.command("delete")
+def pack_delete(
+    manifest: str = typer.Option(
+        ...,
+        "--manifest",
+        "-m",
+        help="(required) Pack manifest stem or path (.ftdep schema v3).",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate only; do not delete.",
+    ),
+) -> None:
+    """Delete all items in a multi-kind pack (reports before models)."""
+    from fabric_tools.pack_run import run_pack_command
+
+    run_pack_command(
+        CommandMode.DELETE,
+        manifest=manifest,
+        silent=silent,
+        dry_run=dry_run,
+    )
 
 
 @inspect_workspace_app.command(
@@ -638,11 +864,9 @@ def inspect_workspace_list(
                 type_filter=item_type,
             )
     except InspectError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     if not rows:
         typer.echo("No workspaces matched.")
@@ -680,11 +904,9 @@ def inspect_workspace_get(
             _authenticate_client(client)
             row = get_workspace_detail(client, parsed)
     except InspectError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     print_workspace_detail(row)
     raise typer.Exit(code=EXIT_OK)
@@ -736,11 +958,9 @@ def inspect_item_list(
                 type_filter=item_type,
             )
     except InspectError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     if not rows:
         typer.echo("No items matched.")
@@ -778,11 +998,9 @@ def inspect_item_get(
             _authenticate_client(client)
             row = get_item_detail(client, parsed)
     except InspectError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except FabricApiError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     print_item_detail(row)
     raise typer.Exit(code=EXIT_OK)
@@ -793,8 +1011,7 @@ def _inspect_manifest_dir(directory: Path | None) -> None:
     try:
         paths = list_manifest_paths(directory)
     except ManifestError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if not paths:
         if directory is None:
@@ -807,7 +1024,7 @@ def _inspect_manifest_dir(directory: Path | None) -> None:
         try:
             loaded = load_manifest(path)
         except ManifestError as exc:
-            typer.secho(f"{path.name}  error: {exc}", fg=FG_WARN, err=True)
+            print_warn_panel(f"{path.name}  error: {exc}")
             continue
         typer.echo(format_inspect_line(loaded, path=path))
 
@@ -848,13 +1065,10 @@ def main(
     """
     if interactive:
         if ctx.invoked_subcommand is not None:
-            typer.secho(
+            _exit_error(
                 "Do not combine --interactive with a subcommand. "
-                "Use: fabric-tools --interactive",
-                fg=FG_ERROR,
-                err=True,
+                "Use: fabric-tools --interactive"
             )
-            raise typer.Exit(code=EXIT_USER)
         from fabric_tools.interactive import run_interactive_wizard
         from fabric_tools.update_check import start_background_update_check
 
@@ -918,8 +1132,7 @@ def setup_install() -> None:
     try:
         result = install_to_user_path()
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     typer.secho(f"Installed launcher: {result['launcher']}", fg=FG_OK)
     typer.echo(f"Install directory: {result['install_dir']}")
@@ -964,8 +1177,7 @@ def setup_uninstall(
     try:
         result = uninstall_from_user_path(delete_files=not keep_files)
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if result["removed_from_path"]:
         typer.secho("Removed install directory from your user PATH.", fg=FG_OK)
@@ -1001,8 +1213,7 @@ def setup_status_cmd() -> None:
     try:
         status = path_status()
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     # Same key/value layout as inspect get: dim right-aligned keys, no colon,
     # two-space gap, left-aligned values.
@@ -1173,8 +1384,7 @@ def setup_clean() -> None:
     try:
         result = clean_onefile_caches()
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if result["cleaned"]:
         typer.secho("Removed onefile extract cache.", fg=FG_OK)
@@ -1212,8 +1422,7 @@ def setup_update(
             with busy("Checking for updates..."):
                 result = check_for_update()
         except UpdateCheckError as exc:
-            typer.secho(str(exc), fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(str(exc), code=EXIT_API)
 
         typer.echo(f"Current version: {result.current}")
         latest_label = f"{result.latest} ({result.tag_name})"
@@ -1236,14 +1445,11 @@ def setup_update(
     try:
         result = perform_setup_update(silent=silent)
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except PathSetupError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
     except UpdateCheckError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
 
     if result.get("up_to_date"):
         typer.echo(f"Current version: {result.get('current', '')}")
@@ -1592,6 +1798,13 @@ def dataflow_deploy(
         "-r",
         help=_GUID_REMAP_HELP,
     ),
+    publish: bool = typer.Option(
+        False,
+        "--publish",
+        "-p",
+        help="(optional) After successful create/update, run Fabric Apply Changes "
+        "(prepare for refresh; same preparation as UI Save). User identity only.",
+    ),
 ) -> None:
     """Deploy Dataflow Gen2 item(s) from local folders or a Fabric origin."""
     run_dataflow_command(
@@ -1604,6 +1817,7 @@ def dataflow_deploy(
         names=name,
         manifest=manifest,
         remap_values=remap,
+        publish=publish,
     )
 
 
@@ -1689,6 +1903,559 @@ def dataflow_delete(
 ) -> None:
     """Soft-delete Dataflow Gen2 item(s) in Fabric."""
     run_dataflow_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@org_app_app.command("download")
+def org_app_download(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(optional) Local *.OrgApp folder. "
+        "Defaults to remote display name with .OrgApp in the current folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One folder may broadcast to all targets.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or files only; do not download.",
+    ),
+) -> None:
+    """Download Org App definition(s) from Fabric to local folders."""
+    run_org_app_command(
+        CommandMode.DOWNLOAD,
+        target_values=target,
+        file_values=file,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@org_app_app.command("deploy")
+def org_app_deploy(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated "
+        "(spaces after commas OK).",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.OrgApp folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One folder may broadcast to all targets. Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact source. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+    ),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="(optional, create only) Display name. Defaults to folder stem "
+        "or origin display name.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
+    ),
+) -> None:
+    """Deploy Org App item(s) from local folders or a Fabric origin."""
+    run_org_app_command(
+        CommandMode.DEPLOY,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=silent,
+        dry_run=dry_run,
+        names=name,
+        manifest=manifest,
+    )
+
+
+@org_app_app.command("compare")
+def org_app_compare(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "With --file: one workspace only. Must 1:1 match --file or --origin.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.OrgApp folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact to compare against "
+        "--target. Must 1:1 match --target (no broadcast). "
+        "Mutually exclusive with --file.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not compare.",
+    ),
+) -> None:
+    """Compare target Org App to a local folder or Fabric origin."""
+    run_org_app_command(
+        CommandMode.COMPARE,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=True,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@org_app_app.command("delete")
+def org_app_delete(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help="(optional) Load workspace:artifact targets from a .ftdep "
+        "(entries must have itemId). Not rewritten after delete.",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Soft-delete Org App item(s) in Fabric."""
+    run_org_app_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@variable_library_app.command("download")
+def variable_library_download(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated. One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(optional) Local *.VariableLibrary folder. Defaults to remote "
+        "display name with .VariableLibrary in the current folder. Repeatable "
+        "or comma-separated; one folder may broadcast to all targets.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    silent: bool = typer.Option(
+        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or files only; do not download.",
+    ),
+) -> None:
+    """Download Variable Library definition(s) to local folders."""
+    run_variable_library_command(
+        CommandMode.DOWNLOAD,
+        target_values=target,
+        file_values=file,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@variable_library_app.command("deploy")
+def variable_library_deploy(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.VariableLibrary folder. "
+        "Repeatable or comma-separated; one folder may broadcast to all targets. "
+        "Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact source. "
+        "Repeatable or comma-separated; one origin may broadcast to all targets. "
+        "Mutually exclusive with --file.",
+    ),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="(optional, create only) Display name. Defaults to folder stem "
+        "or origin display name.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    silent: bool = typer.Option(
+        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
+    ),
+) -> None:
+    """Deploy Variable Library item(s) from folders or a Fabric origin."""
+    run_variable_library_command(
+        CommandMode.DEPLOY,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=silent,
+        dry_run=dry_run,
+        names=name,
+        manifest=manifest,
+    )
+
+
+@variable_library_app.command("compare")
+def variable_library_compare(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Must 1:1 match --file or --origin.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.VariableLibrary folder. "
+        "Must 1:1 match --target. Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact source. "
+        "Must 1:1 match --target. Mutually exclusive with --file.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not compare.",
+    ),
+) -> None:
+    """Compare target Variable Library to a folder or Fabric origin."""
+    run_variable_library_command(
+        CommandMode.COMPARE,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=True,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@variable_library_app.command("delete")
+def variable_library_delete(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help="(optional) Load workspace:artifact targets from a .ftdep "
+        "(entries must have itemId). Not rewritten after delete.",
+    ),
+    silent: bool = typer.Option(
+        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Soft-delete Variable Library item(s) in Fabric."""
+    run_variable_library_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@environment_app.command("download")
+def environment_download(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(optional) Local *.Environment folder. Defaults to remote display "
+        "name with .Environment in the current folder. Repeatable or "
+        "comma-separated; one folder may broadcast to all targets.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    silent: bool = typer.Option(
+        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or files only; do not download.",
+    ),
+) -> None:
+    """Download Environment definition(s) from Fabric to local folders."""
+    run_environment_command(
+        CommandMode.DOWNLOAD,
+        target_values=target,
+        file_values=file,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@environment_app.command("deploy")
+def environment_deploy(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.Environment folder. "
+        "Repeatable or comma-separated; one folder may broadcast to all targets. "
+        "Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact source. "
+        "Repeatable or comma-separated; one origin may broadcast to all targets.",
+    ),
+    name: list[str] | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="(optional, create only) Display name. Defaults to folder stem "
+        "or origin display name.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    silent: bool = typer.Option(
+        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
+    ),
+) -> None:
+    """Deploy Environment item(s) from local folders or a Fabric origin."""
+    run_environment_command(
+        CommandMode.DEPLOY,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=silent,
+        dry_run=dry_run,
+        names=name,
+        manifest=manifest,
+    )
+
+
+@environment_app.command("compare")
+def environment_compare(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Must 1:1 match --file or --origin.",
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local *.Environment folder. "
+        "Must 1:1 match --target. Mutually exclusive with --origin.",
+    ),
+    origin: list[str] | None = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact to compare "
+        "against --target. Must 1:1 match --target.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help=_MANIFEST_HELP),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not compare.",
+    ),
+) -> None:
+    """Compare target Environment to a local folder or Fabric origin."""
+    run_environment_command(
+        CommandMode.COMPARE,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=True,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@environment_app.command("delete")
+def environment_delete(
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated.",
+    ),
+    manifest: str | None = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help="(optional) Load workspace:artifact targets from a .ftdep "
+        "(entries must have itemId). Not rewritten after delete.",
+    ),
+    silent: bool = typer.Option(
+        False, "--silent", "-s", help="(optional) Skip confirmation prompts."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Soft-delete Environment item(s) in Fabric."""
+    run_environment_command(
         CommandMode.DELETE,
         target_values=target,
         file_values=None,
@@ -2064,7 +2831,7 @@ def report_compare(
         False,
         "--independent",
         "-i",
-        help="(optional) Compare the report definition only (skip joined-model notes).",
+        help="(optional) Compare the report definition only (skip joined semantic model).",
     ),
 ) -> None:
     """Compare target report to a local *.Report folder or Fabric origin."""
@@ -2987,6 +3754,7 @@ def run_notebook_command(
     ignore_outputs: bool = False,
     manifest: str | None = None,
     remap_values: list[str] | None = None,
+    guid_maps_override: list[dict[str, str] | None] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry used by CLI commands and the interactive wizard.
@@ -3020,8 +3788,7 @@ def run_notebook_command(
     from fabric_tools.validate import run_dry_run
 
     if remap_values and mode is not CommandMode.DEPLOY:
-        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error("--remap / -r is only valid with deploy")
 
     try:
         cell_indices = parse_cell_indices(cells)
@@ -3038,20 +3805,35 @@ def run_notebook_command(
         )
         validate_cells_usage(mode, items, cell_indices, dry_run=dry_run)
     except (ParseError, ManifestError, CellSelectionError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     guid_map_specs = (
-        _resolve_deploy_guid_maps(
-            remap_values,
-            n_targets=len(items),
-            has_targets=has_targets,
+        []
+        if guid_maps_override is not None
+        else (
+            _resolve_deploy_guid_maps(
+                remap_values,
+                n_targets=len(items),
+                has_targets=has_targets,
+                manifest=manifest,
+                expected_kind=KIND_NOTEBOOK,
+            )
+            if mode is CommandMode.DEPLOY
+            else []
         )
-        if mode is CommandMode.DEPLOY
-        else []
     )
-    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
-    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
+    guid_maps = (
+        list(guid_maps_override)
+        if guid_maps_override is not None
+        else [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    )
+    map_line = (
+        None
+        if guid_maps_override is not None
+        else (guid_map_confirm_line(guid_map_specs) if guid_map_specs else None)
+    )
+    if guid_maps_override is not None and any(guid_maps_override):
+        map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
         client: FabricClient | None = None
@@ -3073,19 +3855,19 @@ def run_notebook_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001 - surface auth/client failures cleanly
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
-        if remap_values and not failed:
+        if (remap_values or map_line) and not failed:
             if map_line:
                 typer.secho(f"remap ok: {map_line}", fg=FG_OK)
             else:
@@ -3098,8 +3880,7 @@ def run_notebook_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -3120,8 +3901,7 @@ def run_notebook_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -3225,18 +4005,15 @@ def run_notebook_command(
             )
             _exit_from_op_results(op_results)
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -3252,6 +4029,8 @@ def run_dataflow_command(
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
     remap_values: list[str] | None = None,
+    publish: bool = False,
+    guid_maps_override: list[dict[str, str] | None] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for dataflow (Gen2) CLI commands and the interactive wizard."""
@@ -3279,8 +4058,9 @@ def run_dataflow_command(
     from fabric_tools.validate import run_dry_run_dataflow
 
     if remap_values and mode is not CommandMode.DEPLOY:
-        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error("--remap / -r is only valid with deploy")
+    if publish and mode is not CommandMode.DEPLOY:
+        _exit_error("--publish / -p is only valid with deploy")
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -3295,20 +4075,35 @@ def run_dataflow_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     guid_map_specs = (
-        _resolve_deploy_guid_maps(
-            remap_values,
-            n_targets=len(items),
-            has_targets=has_targets,
+        []
+        if guid_maps_override is not None
+        else (
+            _resolve_deploy_guid_maps(
+                remap_values,
+                n_targets=len(items),
+                has_targets=has_targets,
+                manifest=manifest,
+                expected_kind=KIND_DATAFLOW,
+            )
+            if mode is CommandMode.DEPLOY
+            else []
         )
-        if mode is CommandMode.DEPLOY
-        else []
     )
-    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
-    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
+    guid_maps = (
+        list(guid_maps_override)
+        if guid_maps_override is not None
+        else [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    )
+    map_line = (
+        None
+        if guid_maps_override is not None
+        else (guid_map_confirm_line(guid_map_specs) if guid_map_specs else None)
+    )
+    if guid_maps_override is not None and any(guid_maps_override):
+        map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
         client: FabricClient | None = None
@@ -3329,23 +4124,28 @@ def run_dataflow_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
-        if remap_values and not failed:
+        if (remap_values or map_line) and not failed:
             if map_line:
                 typer.secho(f"remap ok: {map_line}", fg=FG_OK)
             else:
                 typer.secho("remap ok: GUID remap file(s) valid", fg=FG_OK)
+        if publish and not failed:
+            typer.secho(
+                "publish: would run Apply Changes after each successful deploy",
+                fg=FG_OK,
+            )
         if not failed and has_targets and (has_files or has_origins):
             try:
                 display_names = (
@@ -3354,8 +4154,7 @@ def run_dataflow_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -3376,8 +4175,7 @@ def run_dataflow_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -3410,6 +4208,7 @@ def run_dataflow_command(
                 silent=silent,
                 display_names=display_names,
                 guid_map_line=map_line,
+                publish=publish,
             )
             with busy("Deploying..."):
                 op_results = run_df_deploy(
@@ -3417,6 +4216,7 @@ def run_dataflow_command(
                     items,
                     display_names=display_names,
                     guid_maps=guid_maps or None,
+                    publish=publish,
                 )
             _print_op_results(op_results)  # type: ignore[arg-type]
             for result in op_results:
@@ -3475,18 +4275,644 @@ def run_dataflow_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
+    finally:
+        client.close()
+
+
+def run_org_app_command(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    origin_values: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
+    manifest: str | None = None,
+    on_success: Callable[..., None] | None = None,
+) -> None:
+    """Shared entry for Org App CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_org_app,
+        confirm_deploy_actions_org_app,
+        confirm_download_overwrites_org_app,
+        resolve_org_app_download_files,
+    )
+    from fabric_tools.org_app.compare import run_compare_batch as run_org_compare
+    from fabric_tools.org_app.ops import run_delete_batch as run_org_delete
+    from fabric_tools.org_app.ops import run_deploy_batch as run_org_deploy
+    from fabric_tools.org_app.ops import run_download_batch as run_org_download
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run_org_app
+
+    try:
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_org_app_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
+        )
+    except (ParseError, ManifestError) as exc:
+        _exit_error(str(exc))
+
+    if dry_run:
+        client: FabricClient | None = None
+        try:
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    _authenticate_client(client)
+            with busy("Checking..."):
+                results = run_dry_run_org_app(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                )
+        except AuthError as exc:
+            _fail_auth(exc)
+        except Exception as exc:  # noqa: BLE001
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
+        finally:
+            if client is not None:
+                client.close()
+
+        failed = False
+        for result in results:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
+                failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_org_app_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except ParseError as exc:
+                _exit_error(str(exc))
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_ORG_APP,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+            )
+        raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
+
+    try:
+        display_names = (
+            _resolve_org_app_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
+            else None
+        )
+    except ParseError as exc:
+        _exit_error(str(exc))
+
+    with busy("Authenticating..."):
+        client = FabricClient()
+        _authenticate_client(client)
+    try:
+        if mode is CommandMode.DOWNLOAD:
+            items = resolve_org_app_download_files(client, items)
+            confirm_download_overwrites_org_app(client, items, silent=silent)
+            with busy("Downloading..."):
+                op_results = run_org_download(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_ORG_APP,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_actions_org_app(
+                client,
+                items,
+                silent=silent,
+                display_names=display_names,
+            )
+            with busy("Deploying..."):
+                op_results = run_org_deploy(
+                    client,
+                    items,
+                    display_names=display_names,
+                )
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            for result in op_results:
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}",
+                        fg=FG_ID,
+                    )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_ORG_APP,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.COMPARE:
+            with busy("Comparing..."):
+                compare_results = run_org_compare(client, items)
+            _print_compare_results(compare_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+                kind=KIND_ORG_APP,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+            )
+            _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DELETE:
+            confirm_delete_org_app(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_org_delete(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        else:
+            _exit_error(f"Unknown mode: {mode}")
+    except ConfirmationAborted as exc:
+        _exit_warn(str(exc))
+    except typer.Exit:
+        raise
+    except AuthError as exc:
+        _fail_auth(exc)
+    except Exception as exc:  # noqa: BLE001
+        _exit_error(str(exc), code=EXIT_API)
+    finally:
+        client.close()
+
+
+def run_variable_library_command(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    origin_values: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
+    manifest: str | None = None,
+    on_success: Callable[..., None] | None = None,
+) -> None:
+    """Shared entry for Variable Library commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_variable_library,
+        confirm_deploy_actions_variable_library,
+        confirm_download_overwrites_variable_library,
+        resolve_variable_library_download_files,
+    )
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run_variable_library
+    from fabric_tools.variable_library.compare import (
+        run_compare_batch as run_variable_library_compare,
+    )
+    from fabric_tools.variable_library.ops import (
+        run_delete_batch as run_variable_library_delete,
+    )
+    from fabric_tools.variable_library.ops import (
+        run_deploy_batch as run_variable_library_deploy,
+    )
+    from fabric_tools.variable_library.ops import (
+        run_download_batch as run_variable_library_download,
+    )
+
+    try:
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_variable_library_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
+        )
+    except (ParseError, ManifestError) as exc:
+        _exit_error(str(exc))
+
+    if dry_run:
+        client: FabricClient | None = None
+        try:
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    _authenticate_client(client)
+            with busy("Checking..."):
+                results = run_dry_run_variable_library(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                )
+        except AuthError as exc:
+            _fail_auth(exc)
+        except Exception as exc:  # noqa: BLE001
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
+        finally:
+            if client is not None:
+                client.close()
+        failed = False
+        for result in results:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
+                failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_variable_library_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except ParseError as exc:
+                _exit_error(str(exc))
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_VARIABLE_LIBRARY,
+            )
+            _notify_success(on_success, items, display_names=display_names)
+        raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
+
+    try:
+        display_names = (
+            _resolve_variable_library_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
+            else None
+        )
+    except ParseError as exc:
+        _exit_error(str(exc))
+
+    with busy("Authenticating..."):
+        client = FabricClient()
+        _authenticate_client(client)
+    try:
+        if mode is CommandMode.DOWNLOAD:
+            items = resolve_variable_library_download_files(client, items)
+            confirm_download_overwrites_variable_library(client, items, silent=silent)
+            with busy("Downloading..."):
+                op_results = run_variable_library_download(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_VARIABLE_LIBRARY,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_actions_variable_library(
+                client, items, silent=silent, display_names=display_names
+            )
+            with busy("Deploying..."):
+                op_results = run_variable_library_deploy(
+                    client, items, display_names=display_names
+                )
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            for result in op_results:
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}", fg=FG_ID
+                    )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_VARIABLE_LIBRARY,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.COMPARE:
+            with busy("Comparing..."):
+                compare_results = run_variable_library_compare(client, items)
+            _print_compare_results(compare_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+                kind=KIND_VARIABLE_LIBRARY,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+            )
+            _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DELETE:
+            confirm_delete_variable_library(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_variable_library_delete(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        else:
+            _exit_error(f"Unknown mode: {mode}")
+    except ConfirmationAborted as exc:
+        _exit_warn(str(exc))
+    except typer.Exit:
+        raise
+    except AuthError as exc:
+        _fail_auth(exc)
+    except Exception as exc:  # noqa: BLE001
+        _exit_error(str(exc), code=EXIT_API)
+    finally:
+        client.close()
+
+
+def run_environment_command(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    origin_values: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
+    manifest: str | None = None,
+    on_success: Callable[..., None] | None = None,
+) -> None:
+    """Shared entry for Environment CLI commands and the interactive wizard."""
+    _enforce_readonly_command(mode, dry_run=dry_run)
+    from fabric_tools.client import FabricClient
+    from fabric_tools.confirm import (
+        ConfirmationAborted,
+        confirm_delete_environment,
+        confirm_deploy_actions_environment,
+        confirm_download_overwrites_environment,
+        resolve_environment_download_files,
+    )
+    from fabric_tools.environment.compare import (
+        run_compare_batch as run_environment_compare,
+    )
+    from fabric_tools.environment.ops import run_delete_batch as run_environment_delete
+    from fabric_tools.environment.ops import run_deploy_batch as run_environment_deploy
+    from fabric_tools.environment.ops import (
+        run_download_batch as run_environment_download,
+    )
+    from fabric_tools.status import busy
+    from fabric_tools.validate import run_dry_run_environment
+
+    try:
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_environment_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
+        )
+    except (ParseError, ManifestError) as exc:
+        _exit_error(str(exc))
+
+    if dry_run:
+        client: FabricClient | None = None
+        try:
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    _authenticate_client(client)
+            with busy("Checking..."):
+                results = run_dry_run_environment(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                )
+        except AuthError as exc:
+            _fail_auth(exc)
+        except Exception as exc:  # noqa: BLE001
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
+        finally:
+            if client is not None:
+                client.close()
+        failed = False
+        for result in results:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
+                failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_environment_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except ParseError as exc:
+                _exit_error(str(exc))
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_ENVIRONMENT,
+            )
+            _notify_success(on_success, items, display_names=display_names)
+        raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
+
+    try:
+        display_names = (
+            _resolve_environment_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
+            else None
+        )
+    except ParseError as exc:
+        _exit_error(str(exc))
+
+    with busy("Authenticating..."):
+        client = FabricClient()
+        _authenticate_client(client)
+    try:
+        if mode is CommandMode.DOWNLOAD:
+            items = resolve_environment_download_files(client, items)
+            confirm_download_overwrites_environment(client, items, silent=silent)
+            with busy("Downloading..."):
+                op_results = run_environment_download(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_ENVIRONMENT,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_actions_environment(
+                client, items, silent=silent, display_names=display_names
+            )
+            with busy("Deploying..."):
+                op_results = run_environment_deploy(
+                    client, items, display_names=display_names
+                )
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            for result in op_results:
+                if (
+                    result.ok
+                    and result.workspace_id
+                    and result.item_id
+                    and "created" in result.message
+                ):
+                    typer.secho(
+                        f"GUID: {result.workspace_id}:{result.item_id}", fg=FG_ID
+                    )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_ENVIRONMENT,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.COMPARE:
+            with busy("Comparing..."):
+                compare_results = run_environment_compare(client, items)
+            _print_compare_results(compare_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+                kind=KIND_ENVIRONMENT,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+            )
+            _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DELETE:
+            confirm_delete_environment(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_environment_delete(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        else:
+            _exit_error(f"Unknown mode: {mode}")
+    except ConfirmationAborted as exc:
+        _exit_warn(str(exc))
+    except typer.Exit:
+        raise
+    except AuthError as exc:
+        _fail_auth(exc)
+    except Exception as exc:  # noqa: BLE001
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -3530,13 +4956,10 @@ def run_semantic_model_command(
     from fabric_tools.validate import run_dry_run_semantic_model
 
     if independent and mode is not CommandMode.DEPLOY:
-        typer.secho(
+        _exit_error(
             "--independent / -i is only valid on semantic-model deploy "
-            "(delete always follows service cascade).",
-            fg=FG_ERROR,
-            err=True,
+            "(delete always follows service cascade)."
         )
-        raise typer.Exit(code=EXIT_USER)
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -3551,20 +4974,16 @@ def run_semantic_model_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if mode is CommandMode.DEPLOY and any(
         item.file is not None and item.file.suffix.lower() == ".pbix" for item in items
     ):
-        typer.secho(
+        _exit_error(
             "semantic-model deploy from .pbix is not supported yet "
             "(folder *.SemanticModel only; PBIX skipReport via --independent "
-            "comes with report support).",
-            fg=FG_ERROR,
-            err=True,
+            "comes with report support)."
         )
-        raise typer.Exit(code=EXIT_USER)
 
     # Folder/origin deploy is already model-only; --independent is reserved for
     # thick .pbix (skipReport) once PBIX import is wired.
@@ -3589,17 +5008,17 @@ def run_semantic_model_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if not failed and has_targets and (has_files or has_origins):
             try:
@@ -3609,8 +5028,7 @@ def run_semantic_model_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -3631,8 +5049,7 @@ def run_semantic_model_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -3728,18 +5145,15 @@ def run_semantic_model_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -3790,13 +5204,10 @@ def run_report_command(
     from fabric_tools.validate import run_dry_run_report
 
     if independent and mode is CommandMode.DELETE:
-        typer.secho(
+        _exit_error(
             "--independent / -i is not used on report delete "
-            "(delete always removes the report only).",
-            fg=FG_ERROR,
-            err=True,
+            "(delete always removes the report only)."
         )
-        raise typer.Exit(code=EXIT_USER)
 
     try:
         items, resolved_names, has_targets, has_files, has_origins, sm_ids = (
@@ -3811,8 +5222,7 @@ def run_report_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if dry_run:
         client: FabricClient | None = None
@@ -3833,17 +5243,17 @@ def run_report_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if not failed and has_targets and (has_files or has_origins):
             try:
@@ -3853,8 +5263,7 @@ def run_report_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -3876,8 +5285,7 @@ def run_report_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -3994,18 +5402,15 @@ def run_report_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -4061,8 +5466,7 @@ def run_dataflow_gen1_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if dry_run:
         client: PowerBiClient | None = None
@@ -4083,17 +5487,17 @@ def run_dataflow_gen1_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if not failed and has_targets and (has_files or has_origins):
             try:
@@ -4103,8 +5507,7 @@ def run_dataflow_gen1_command(
                     else None
                 )
             except (ParseError, DataflowDefinitionError) as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -4125,8 +5528,7 @@ def run_dataflow_gen1_command(
             else None
         )
     except (ParseError, DataflowDefinitionError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = PowerBiClient()
@@ -4222,18 +5624,15 @@ def run_dataflow_gen1_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -4291,8 +5690,7 @@ def run_paginated_report_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if dry_run:
         client: PowerBiClient | None = None
@@ -4313,17 +5711,17 @@ def run_paginated_report_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
         if not failed and has_targets and (has_files or has_origins):
             try:
@@ -4333,8 +5731,7 @@ def run_paginated_report_command(
                     else None
                 )
             except (ParseError, PaginatedReportDefinitionError) as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -4355,8 +5752,7 @@ def run_paginated_report_command(
             else None
         )
     except (ParseError, PaginatedReportDefinitionError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = PowerBiClient()
@@ -4452,18 +5848,15 @@ def run_paginated_report_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -4480,6 +5873,7 @@ def run_pipeline_command(
     manifest: str | None = None,
     include_schedules: bool = False,
     remap_values: list[str] | None = None,
+    guid_maps_override: list[dict[str, str] | None] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for pipeline CLI commands and the interactive wizard."""
@@ -4507,8 +5901,7 @@ def run_pipeline_command(
     from fabric_tools.validate import run_dry_run_pipeline
 
     if remap_values and mode is not CommandMode.DEPLOY:
-        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error("--remap / -r is only valid with deploy")
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -4523,20 +5916,35 @@ def run_pipeline_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     guid_map_specs = (
-        _resolve_deploy_guid_maps(
-            remap_values,
-            n_targets=len(items),
-            has_targets=has_targets,
+        []
+        if guid_maps_override is not None
+        else (
+            _resolve_deploy_guid_maps(
+                remap_values,
+                n_targets=len(items),
+                has_targets=has_targets,
+                manifest=manifest,
+                expected_kind=KIND_PIPELINE,
+            )
+            if mode is CommandMode.DEPLOY
+            else []
         )
-        if mode is CommandMode.DEPLOY
-        else []
     )
-    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
-    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
+    guid_maps = (
+        list(guid_maps_override)
+        if guid_maps_override is not None
+        else [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    )
+    map_line = (
+        None
+        if guid_maps_override is not None
+        else (guid_map_confirm_line(guid_map_specs) if guid_map_specs else None)
+    )
+    if guid_maps_override is not None and any(guid_maps_override):
+        map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
         client: FabricClient | None = None
@@ -4557,19 +5965,19 @@ def run_pipeline_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
-        if remap_values and not failed:
+        if (remap_values or map_line) and not failed:
             if map_line:
                 typer.secho(f"remap ok: {map_line}", fg=FG_OK)
             else:
@@ -4582,8 +5990,7 @@ def run_pipeline_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -4604,8 +6011,7 @@ def run_pipeline_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -4709,18 +6115,15 @@ def run_pipeline_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -4736,6 +6139,7 @@ def run_udf_command(
     names: list[str | None] | list[str] | None = None,
     manifest: str | None = None,
     remap_values: list[str] | None = None,
+    guid_maps_override: list[dict[str, str] | None] | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry for User Data Function CLI commands and the interactive wizard."""
@@ -4769,12 +6173,10 @@ def run_udf_command(
     try:
         check_udf_user_auth()
     except UdfAuthError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     if remap_values and mode is not CommandMode.DEPLOY:
-        typer.secho("--remap / -r is only valid with deploy", fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error("--remap / -r is only valid with deploy")
 
     try:
         items, resolved_names, has_targets, has_files, has_origins = (
@@ -4789,20 +6191,35 @@ def run_udf_command(
             )
         )
     except (ParseError, ManifestError) as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     guid_map_specs = (
-        _resolve_deploy_guid_maps(
-            remap_values,
-            n_targets=len(items),
-            has_targets=has_targets,
+        []
+        if guid_maps_override is not None
+        else (
+            _resolve_deploy_guid_maps(
+                remap_values,
+                n_targets=len(items),
+                has_targets=has_targets,
+                manifest=manifest,
+                expected_kind=KIND_UDF,
+            )
+            if mode is CommandMode.DEPLOY
+            else []
         )
-        if mode is CommandMode.DEPLOY
-        else []
     )
-    guid_maps = [spec.mapping if spec is not None else None for spec in guid_map_specs]
-    map_line = guid_map_confirm_line(guid_map_specs) if guid_map_specs else None
+    guid_maps = (
+        list(guid_maps_override)
+        if guid_maps_override is not None
+        else [spec.mapping if spec is not None else None for spec in guid_map_specs]
+    )
+    map_line = (
+        None
+        if guid_maps_override is not None
+        else (guid_map_confirm_line(guid_map_specs) if guid_map_specs else None)
+    )
+    if guid_maps_override is not None and any(guid_maps_override):
+        map_line = "Will apply GUID remap map(s) from pack orchestration."
 
     if dry_run:
         client: FabricClient | None = None
@@ -4823,19 +6240,19 @@ def run_udf_command(
         except AuthError as exc:
             _fail_auth(exc)
         except Exception as exc:  # noqa: BLE001
-            typer.secho(f"dry-run failed: {exc}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_API) from exc
+            _exit_error(f"dry-run failed: {exc}", code=EXIT_API)
         finally:
             if client is not None:
                 client.close()
 
         failed = False
         for result in results:
-            color = FG_OK if result.ok else FG_ERROR
-            typer.secho(result.message, fg=color)
-            if not result.ok:
+            if result.ok:
+                typer.secho(result.message, fg=FG_OK)
+            else:
+                print_error_panel(result.message)
                 failed = True
-        if remap_values and not failed:
+        if (remap_values or map_line) and not failed:
             if map_line:
                 typer.secho(f"remap ok: {map_line}", fg=FG_OK)
             else:
@@ -4848,8 +6265,7 @@ def run_udf_command(
                     else None
                 )
             except ParseError as exc:
-                typer.secho(str(exc), fg=FG_ERROR, err=True)
-                raise typer.Exit(code=EXIT_USER) from exc
+                _exit_error(str(exc))
             _write_manifest_after_success(
                 manifest,
                 items,
@@ -4870,8 +6286,7 @@ def run_udf_command(
             else None
         )
     except ParseError as exc:
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_error(str(exc))
 
     with busy("Authenticating..."):
         client = FabricClient()
@@ -4969,18 +6384,15 @@ def run_udf_command(
             )
             _exit_from_op_results(op_results)  # type: ignore[arg-type]
         else:
-            typer.secho(f"Unknown mode: {mode}", fg=FG_ERROR, err=True)
-            raise typer.Exit(code=EXIT_USER)
+            _exit_error(f"Unknown mode: {mode}")
     except ConfirmationAborted as exc:
-        typer.secho(str(exc), fg=FG_WARN, err=True)
-        raise typer.Exit(code=EXIT_USER) from exc
+        _exit_warn(str(exc))
     except typer.Exit:
         raise
     except AuthError as exc:
         _fail_auth(exc)
     except Exception as exc:  # noqa: BLE001
-        typer.secho(str(exc), fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_API) from exc
+        _exit_error(str(exc), code=EXIT_API)
     finally:
         client.close()
 
@@ -5066,6 +6478,309 @@ def _resolve_dataflow_deploy_names(
     names: list[str | None] | list[str] | None,
 ) -> list[str]:
     from fabric_tools.dataflow.definition import display_name_from_path
+
+    if names and len(names) not in {1, len(items)}:
+        raise ParseError(
+            f"--name count must be 1 or match target count ({len(items)}); "
+            f"got {len(names)}"
+        )
+    resolved: list[str] = []
+    for index, item in enumerate(items):
+        chosen: str | None = None
+        if names:
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
+        elif item.file is not None:
+            resolved.append(display_name_from_path(item.file))
+        else:
+            resolved.append("")
+    return resolved
+
+
+def _resolve_org_app_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve Org App targets/files/origins from CLI and/or a manifest."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
+    manifest_names: list[str | None] | None = None
+
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(loaded, expected_kind=KIND_ORG_APP)
+            return items, None, True, False, False
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False
+
+    if cli_targets or cli_files or cli_origins:
+        targets = cli_targets
+        files = cli_files
+        origins = cli_origins
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_ORG_APP
+        )
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
+            )
+    else:
+        targets = []
+        files = []
+        origins = []
+
+    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files), bool(origins)
+
+
+def _resolve_org_app_deploy_names(
+    items: list[WorkItem],
+    names: list[str | None] | list[str] | None,
+) -> list[str]:
+    from fabric_tools.org_app.definition import display_name_from_path
+
+    if names and len(names) not in {1, len(items)}:
+        raise ParseError(
+            f"--name count must be 1 or match target count ({len(items)}); "
+            f"got {len(names)}"
+        )
+    resolved: list[str] = []
+    for index, item in enumerate(items):
+        chosen: str | None = None
+        if names:
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
+        elif item.file is not None:
+            resolved.append(display_name_from_path(item.file))
+        else:
+            resolved.append("")
+    return resolved
+
+
+def _resolve_variable_library_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve Variable Library CLI and/or manifest inputs."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
+    manifest_names: list[str | None] | None = None
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(
+                loaded, expected_kind=KIND_VARIABLE_LIBRARY
+            )
+            return items, None, True, False, False
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False
+
+    if cli_targets or cli_files or cli_origins:
+        targets = cli_targets
+        files = cli_files
+        origins = cli_origins
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_VARIABLE_LIBRARY
+        )
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
+            )
+    else:
+        targets = []
+        files = []
+        origins = []
+    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files), bool(origins)
+
+
+def _resolve_variable_library_deploy_names(
+    items: list[WorkItem],
+    names: list[str | None] | list[str] | None,
+) -> list[str]:
+    from fabric_tools.variable_library.definition import display_name_from_path
+
+    if names and len(names) not in {1, len(items)}:
+        raise ParseError(
+            f"--name count must be 1 or match target count ({len(items)}); "
+            f"got {len(names)}"
+        )
+    resolved: list[str] = []
+    for index, item in enumerate(items):
+        chosen: str | None = None
+        if names:
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
+        elif item.file is not None:
+            resolved.append(display_name_from_path(item.file))
+        else:
+            resolved.append("")
+    return resolved
+
+
+def _resolve_environment_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve Environment targets/files/origins from CLI and/or a manifest."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
+    manifest_names: list[str | None] | None = None
+
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(loaded, expected_kind=KIND_ENVIRONMENT)
+            return items, None, True, False, False
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False
+
+    if cli_targets or cli_files or cli_origins:
+        targets = cli_targets
+        files = cli_files
+        origins = cli_origins
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_ENVIRONMENT
+        )
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
+            )
+    else:
+        targets = []
+        files = []
+        origins = []
+
+    items = build_work_items(mode, targets, files, origins=origins, dry_run=dry_run)
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files), bool(origins)
+
+
+def _resolve_environment_deploy_names(
+    items: list[WorkItem],
+    names: list[str | None] | list[str] | None,
+) -> list[str]:
+    from fabric_tools.environment.definition import display_name_from_path
 
     if names and len(names) not in {1, len(items)}:
         raise ParseError(
@@ -5831,7 +7546,10 @@ def _write_manifest_after_success(
     kind: str = KIND_NOTEBOOK,
     semantic_model_ids: list[str | None] | None = None,
 ) -> None:
-    """Rewrite ``.ftdep`` when ``-m`` is set and the operation or dry-run succeeded."""
+    """Rewrite ``.ftdep`` when ``-m`` is set and the operation or dry-run succeeded.
+
+    Skips the write (and the “Wrote manifest” line) when content is unchanged.
+    """
     if not manifest:
         return
     if op_results is not None and not all(result.ok for result in op_results):
@@ -5855,17 +7573,20 @@ def _write_manifest_after_success(
             item_id_overrides=overrides,
             semantic_model_id_overrides=sm_overrides,
         )
-        path = save_manifest(manifest, built)
+        path, written = save_manifest(manifest, built)
     except ManifestError as exc:
-        typer.secho(f"manifest not written: {exc}", fg=FG_WARN, err=True)
+        print_warn_panel(f"manifest not written: {exc}")
         return
-    typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
+    if written:
+        typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
 
 
 def _print_op_results(results: list[OpResult]) -> None:
     for result in results:
-        color = FG_OK if result.ok else FG_ERROR
-        typer.secho(result.message, fg=color, err=not result.ok)
+        if result.ok:
+            typer.secho(result.message, fg=FG_OK)
+        else:
+            print_error_panel(result.message)
 
 
 def _exit_from_op_results(results: list[OpResult]) -> None:
@@ -5875,21 +7596,9 @@ def _exit_from_op_results(results: list[OpResult]) -> None:
 
 
 def _print_compare_results(results: list[CompareResult]) -> None:
-    for result in results:
-        typer.secho(result.header, fg=FG_ID, bold=True)
-        if result.error:
-            typer.secho(result.error, fg=FG_ERROR, err=True)
-            continue
-        if result.identical:
-            typer.secho("identical", fg=FG_OK)
-        else:
-            typer.secho("differences found", fg=FG_WARN)
-            if result.diff_text:
-                typer.echo(result.diff_text.rstrip())
-        messages = getattr(result, "messages", None) or []
-        for message in messages:
-            typer.secho(message, fg=FG_WARN)
-        typer.echo("")
+    from fabric_tools.compare_print import print_compare_results
+
+    print_compare_results(results)
 
 
 def _exit_from_compare_results(results: list[CompareResult]) -> None:
@@ -5945,7 +7654,6 @@ def run() -> None:
 
     orphan = format_nuitka_orphan_exe_error()
     if orphan:
-        typer.secho(orphan, fg=FG_ERROR, err=True)
-        raise typer.Exit(code=EXIT_USER)
+        _exit_error(orphan)
 
     app(prog_name="fabric-tools")
