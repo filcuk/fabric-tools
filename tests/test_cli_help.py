@@ -228,6 +228,42 @@ def test_pack_download_help_uses_required_marker() -> None:
     assert "--manifest" in result.stdout
     assert "[required]" in result.stdout
     assert "(required)" not in result.stdout
+    assert "(optional)" not in result.stdout
+
+
+def test_option_help_builders() -> None:
+    from fabric_tools.cli.options import conditional_required_help, option_help
+
+    assert option_help("Skip confirmation prompts.") == "Skip confirmation prompts."
+    assert (
+        option_help("JSON remap file.", when="deploy only")
+        == "(deploy only) JSON remap file."
+    )
+    assert (
+        conditional_required_help("Remote workspace:artifact.")
+        == "(required without -m or -d) Remote workspace:artifact."
+    )
+    assert (
+        conditional_required_help("Origin path.", without="-m/-o or -d")
+        == "(required without -m/-o or -d) Origin path."
+    )
+
+
+def test_org_app_download_help_omits_optional_prefix() -> None:
+    result = CliRunner().invoke(app, ["org-app", "download", "--help"])
+    assert result.exit_code == 0
+    assert "(optional)" not in result.stdout
+    assert "(required without -m or -d)" in result.stdout
+    assert "Skip confirmation prompts." in result.stdout
+
+
+def test_semantic_model_role_member_add_help_omits_optional_prefix() -> None:
+    result = CliRunner().invoke(
+        app, ["semantic-model", "role", "member", "add", "--help"]
+    )
+    assert result.exit_code == 0
+    assert "(optional)" not in result.stdout
+    assert "[required]" in result.stdout
 
 
 def test_semantic_model_deploy_help_lists_independent() -> None:
