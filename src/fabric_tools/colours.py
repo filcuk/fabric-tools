@@ -229,7 +229,7 @@ def print_warn_panel(message: str) -> None:
     from fabric_tools.status import clear
 
     clear()
-    text = (message or "").strip() or "Cancelled."
+    text = (message or "").strip() or "Aborted by user."
     Console(stderr=True).print(
         Panel(
             text,

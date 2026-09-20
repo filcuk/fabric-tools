@@ -125,10 +125,11 @@ can also run the same command in Windows Terminal. To drop a bad cached login:
 
 ### Corrupted credential
 
-Remove bad cached auth record:
+Clear cached sign-in (auth record + MSAL token cache):
 
 ```powershell
 Remove-Item "$env:LOCALAPPDATA\fabric-tools\msal-auth-record.json" -ErrorAction SilentlyContinue
+Remove-Item "$env:LOCALAPPDATA\.IdentityService\fabric-tools.nocae" -ErrorAction SilentlyContinue
 ```
 
 ## Exit codes

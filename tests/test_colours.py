@@ -73,10 +73,17 @@ def test_print_error_panel_uses_error_title(capsys) -> None:
 
 
 def test_print_warn_panel_uses_warning_title(capsys) -> None:
-    colours.print_warn_panel("Cancelled.")
+    colours.print_warn_panel("Aborted by user.")
     err = capsys.readouterr().err
     assert "Warning" in err
-    assert "Cancelled." in err
+    assert "Aborted by user." in err
+
+
+def test_print_warn_panel_empty_defaults_to_aborted(capsys) -> None:
+    colours.print_warn_panel("  ")
+    err = capsys.readouterr().err
+    assert "Warning" in err
+    assert "Aborted by user." in err
 
 
 def test_print_compare_results_prints_note_messages(capsys) -> None:

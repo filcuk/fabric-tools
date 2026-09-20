@@ -438,7 +438,7 @@ def test_run_xmla_script_cancelled(
         "fabric_tools.xmla_roles._kill_process_tree",
         lambda proc: killed.append("tree") or proc.kill(),
     )
-    with pytest.raises(XmlaRolesError, match="Cancelled") as exc_info:
+    with pytest.raises(XmlaRolesError, match="Aborted by user") as exc_info:
         _run_xmla_script(
             exe="powershell.exe",
             script=script,
