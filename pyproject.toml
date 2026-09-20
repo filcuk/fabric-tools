@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fabric-tools"
-version = "0.1.0"
+dynamic = ["version"]
 description = "CLI for working with Microsoft Fabric artifacts"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,6 +34,9 @@ build = [
 
 [project.scripts]
 fabric-tools = "fabric_tools.cli:run"
+
+[tool.hatch.version]
+path = "src/fabric_tools/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fabric_tools"]
