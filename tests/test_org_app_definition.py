@@ -43,6 +43,7 @@ def test_detect_suffix_and_bare_folder(tmp_path: Path) -> None:
     assert detect_org_app_path(bare) == bare
     assert display_name_from_path(suffixed) == "Sales"
     assert display_name_from_path(tmp_path / "sales.orgapp") == "sales"
+    assert detect_org_app_path(tmp_path / "myApp") == tmp_path / "myApp.OrgApp"
 
 
 def test_validate_rejects_missing_or_invalid_elements(tmp_path: Path) -> None:

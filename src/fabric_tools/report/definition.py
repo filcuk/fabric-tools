@@ -19,6 +19,7 @@ from fabric_tools.definition_parts import (
 from fabric_tools.definition_parts import (
     unpack_definition as unpack_folder_definition,
 )
+from fabric_tools.parsing import ensure_kind_path_suffix
 from fabric_tools.semantic_model.definition import (
     DefinitionError as SemanticModelDefinitionError,
 )
@@ -80,20 +81,25 @@ def is_pbix_path(path: Path | str) -> bool:
 
 
 def detect_report_path(path: Path | str) -> Path:
-    """Resolve *path* as a report folder path (does not fully validate)."""
+    """Resolve *path* as a report folder path (does not fully validate).
+
+    Bare stems (e.g. ``Sales``) become ``Sales.Report``. Existing folders that
+    already contain ``definition.pbir`` are left unchanged. ``.pbix`` paths are
+    rejected here (PBIX uses import/export ops).
+    """
     p = Path(path)
     if is_pbix_path(p):
         raise DefinitionError(
             f"Unsupported report folder path '{p}' (.pbix is not a Fabric definition "
             "folder; use PBIX import/export ops instead)."
         )
-    if is_report_folder_name(p.name):
-        return p
-    if p.is_dir() and (p / PBIR_PART).is_file():
-        return p
-    raise DefinitionError(
-        f"Unsupported report path '{p}'. Expected a *.Report folder "
-        f"(with {PBIR_PART} and PBIR definition/ or PBIR-Legacy {REPORT_JSON_PART})."
+    return ensure_kind_path_suffix(
+        p,
+        canonical_suffix=".Report",
+        accepted_suffixes=(".Report", ".report"),
+        bare_content_ok=lambda folder: (
+            folder.is_dir() and (folder / PBIR_PART).is_file()
+        ),
     )
 
 

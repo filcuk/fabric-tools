@@ -9,8 +9,10 @@ from fabric_tools.confirm import (
     resolve_dataflow_download_files,
     resolve_dataflow_gen1_download_files,
     resolve_notebook_download_files,
+    resolve_org_app_download_files,
     resolve_paginated_report_download_files,
     resolve_pipeline_download_files,
+    resolve_report_download_files,
 )
 from fabric_tools.parsing import Target, WorkItem
 
@@ -117,3 +119,60 @@ def test_resolve_pipeline_download_files_defaults() -> None:
         items,
     )
     assert resolved[0].file == Path("My Pipe.DataPipeline")
+
+
+class FakeOrgAppFabricClient:
+    def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
+        return {
+            "id": item_id,
+            "workspaceId": workspace_id,
+            "displayName": "Reporting",
+            "type": "OrgApp",
+        }
+
+
+class FakeReportFabricClient:
+    def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
+        return {
+            "id": item_id,
+            "workspaceId": workspace_id,
+            "displayName": "Sales",
+            "type": "Report",
+        }
+
+
+def test_resolve_org_app_download_files_appends_stem() -> None:
+    items = [WorkItem(Target(WS, A), Path("myApp"))]
+    resolved = resolve_org_app_download_files(
+        FakeOrgAppFabricClient(),  # type: ignore[arg-type]
+        items,
+    )
+    assert resolved[0].file == Path("myApp.OrgApp")
+
+
+def test_resolve_dataflow_download_files_appends_stem() -> None:
+    items = [WorkItem(Target(WS, A), Path("Ingest"))]
+    resolved = resolve_dataflow_download_files(
+        FakeDataflowFabricClient(),  # type: ignore[arg-type]
+        items,
+    )
+    assert resolved[0].file == Path("Ingest.Dataflow")
+
+
+def test_resolve_report_download_files_appends_stem() -> None:
+    items = [WorkItem(Target(WS, A), Path("Sales"))]
+    resolved = resolve_report_download_files(
+        FakeReportFabricClient(),  # type: ignore[arg-type]
+        items,
+    )
+    assert resolved[0].file == Path("Sales.Report")
+
+
+def test_resolve_report_download_files_keeps_pbix() -> None:
+    dest = Path("Sales.pbix")
+    items = [WorkItem(Target(WS, A), dest)]
+    resolved = resolve_report_download_files(
+        FakeReportFabricClient(),  # type: ignore[arg-type]
+        items,
+    )
+    assert resolved[0].file == dest

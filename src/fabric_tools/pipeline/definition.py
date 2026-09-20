@@ -8,6 +8,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from fabric_tools.parsing import ensure_kind_path_suffix
+
 CONTENT_PART = "pipeline-content.json"
 PLATFORM_PART = ".platform"
 SCHEDULES_PART = ".schedules"
@@ -28,15 +30,16 @@ def is_pipeline_folder_name(name: str) -> bool:
 
 
 def detect_pipeline_path(path: Path | str) -> Path:
-    """Resolve *path* as a DataPipeline folder path (does not check contents)."""
-    p = Path(path)
-    if is_pipeline_folder_name(p.name):
-        return p
-    if p.is_dir() and (p / CONTENT_PART).is_file():
-        return p
-    raise DefinitionError(
-        f"Unsupported pipeline path '{p}'. Expected a *.DataPipeline folder "
-        f"(with {CONTENT_PART})."
+    """Resolve *path* as a DataPipeline folder path (does not check contents).
+
+    Bare stems (e.g. ``Nightly``) become ``Nightly.DataPipeline``. Existing
+    folders that already contain ``pipeline-content.json`` are left unchanged.
+    """
+    return ensure_kind_path_suffix(
+        path,
+        canonical_suffix=".DataPipeline",
+        accepted_suffixes=(".DataPipeline", ".datapipeline"),
+        bare_content_ok=lambda p: p.is_dir() and (p / CONTENT_PART).is_file(),
     )
 
 

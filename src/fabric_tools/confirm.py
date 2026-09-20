@@ -2,21 +2,38 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
 
 from fabric_tools.client import FabricApiError, FabricClient
-from fabric_tools.dataflow.definition import display_name_from_path
+from fabric_tools.dataflow.definition import (
+    detect_dataflow_path,
+    display_name_from_path,
+)
+from fabric_tools.environment.definition import (
+    detect_environment_path,
+)
 from fabric_tools.environment.definition import (
     display_name_from_path as environment_name_from_path,
+)
+from fabric_tools.org_app.definition import (
+    detect_org_app_path,
 )
 from fabric_tools.org_app.definition import (
     display_name_from_path as org_app_name_from_path,
 )
 from fabric_tools.parsing import Target, WorkItem, default_download_paths
+from fabric_tools.pipeline.definition import detect_pipeline_path
 from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
+from fabric_tools.report.definition import detect_report_path, is_pbix_path
+from fabric_tools.semantic_model.definition import detect_semantic_model_path
 from fabric_tools.status import busy, status_detail
+from fabric_tools.udf.definition import detect_udf_folder
+from fabric_tools.variable_library.definition import (
+    detect_variable_library_path,
+)
 from fabric_tools.variable_library.definition import (
     display_name_from_path as variable_library_name_from_path,
 )
@@ -24,6 +41,28 @@ from fabric_tools.variable_library.definition import (
 
 class ConfirmationAborted(Exception):
     """Raised when the user declines a confirmation prompt."""
+
+
+def _normalize_explicit_download_files(
+    items: list[WorkItem],
+    normalize: Callable[[Path], Path],
+) -> list[WorkItem]:
+    """Apply *normalize* to each explicit local download path."""
+    return [
+        WorkItem(
+            item.target,
+            normalize(item.file) if item.file is not None else None,
+            origin=item.origin,
+        )
+        for item in items
+    ]
+
+
+def _normalize_report_download_path(path: Path) -> Path:
+    """Keep ``.pbix``; otherwise ensure a ``*.Report`` folder path."""
+    if is_pbix_path(path):
+        return path
+    return detect_report_path(path)
 
 
 def confirm_or_abort(message: str, *, silent: bool) -> None:
@@ -254,8 +293,10 @@ def resolve_dataflow_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote display names (``.Dataflow``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, detect_dataflow_path)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
@@ -280,8 +321,10 @@ def resolve_org_app_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote names (``.OrgApp``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, detect_org_app_path)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
@@ -306,8 +349,10 @@ def resolve_variable_library_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote names."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, detect_variable_library_path)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
@@ -331,8 +376,10 @@ def resolve_environment_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote names (``.Environment``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, detect_environment_path)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
@@ -1069,8 +1116,10 @@ def resolve_semantic_model_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote names (``.SemanticModel``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, detect_semantic_model_path)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
@@ -1299,8 +1348,12 @@ def resolve_report_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote names (``.Report``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(
+            items, _normalize_report_download_path
+        )
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
@@ -1532,8 +1585,10 @@ def resolve_pipeline_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote names (``.DataPipeline``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, detect_pipeline_path)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"
@@ -1705,8 +1760,10 @@ def resolve_udf_download_files(
     items: list[WorkItem],
 ) -> list[WorkItem]:
     """Fill missing download destinations from remote names (``*.UserDataFunction``)."""
-    if not items or all(item.file is not None for item in items):
+    if not items:
         return items
+    if all(item.file is not None for item in items):
+        return _normalize_explicit_download_files(items, detect_udf_folder)
     if any(item.file is not None for item in items):
         raise ValueError(
             "download work items must all omit --target path or all provide it"

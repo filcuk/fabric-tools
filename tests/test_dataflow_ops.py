@@ -250,13 +250,14 @@ def test_delete_requires_item_id() -> None:
     assert not result.ok
 
 
-def test_download_rejects_bad_destination(tmp_path: Path) -> None:
+def test_download_appends_kind_suffix_for_stem_destination(tmp_path: Path) -> None:
     client = FakeClient()
     dest = tmp_path / "out.json"
     item = WorkItem(Target(WS, DF), dest)
+    # ops still call detect; stem destinations are normalized by detect.
     result = download_dataflow(client, item)  # type: ignore[arg-type]
-    assert not result.ok
-    assert "Unsupported dataflow path" in result.message
+    assert result.ok
+    assert (tmp_path / "out.json.Dataflow" / "queryMetadata.json").is_file()
 
 
 def test_deploy_create_applies_guid_map_to_mashup(tmp_path: Path) -> None:

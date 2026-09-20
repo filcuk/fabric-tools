@@ -89,7 +89,7 @@ def download_report(
         progress.advance(status_detail("report", "downloading", target.item_id))
 
     try:
-        detect_report_path(dest)
+        dest = detect_report_path(dest)
         definition = get_report_definition(client, target.workspace_id, target.item_id)
         written = unpack_definition(definition, dest)
     except (FabricApiError, DefinitionError, OSError) as exc:

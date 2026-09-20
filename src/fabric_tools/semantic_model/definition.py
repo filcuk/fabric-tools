@@ -17,6 +17,7 @@ from fabric_tools.definition_parts import (
 from fabric_tools.definition_parts import (
     unpack_definition as unpack_folder_definition,
 )
+from fabric_tools.parsing import ensure_kind_path_suffix
 
 PBISM_PART = "definition.pbism"
 BIM_PART = "model.bim"
@@ -39,15 +40,16 @@ def is_semantic_model_folder_name(name: str) -> bool:
 
 
 def detect_semantic_model_path(path: Path | str) -> Path:
-    """Resolve *path* as a semantic model folder path (does not fully validate)."""
-    p = Path(path)
-    if is_semantic_model_folder_name(p.name):
-        return p
-    if p.is_dir() and (p / PBISM_PART).is_file():
-        return p
-    raise DefinitionError(
-        f"Unsupported semantic model path '{p}'. Expected a *.SemanticModel folder "
-        f"(with {PBISM_PART} and TMDL definition/ or {BIM_PART})."
+    """Resolve *path* as a semantic model folder path (does not fully validate).
+
+    Bare stems (e.g. ``SalesModel``) become ``SalesModel.SemanticModel``.
+    Existing folders that already contain ``definition.pbism`` are left unchanged.
+    """
+    return ensure_kind_path_suffix(
+        path,
+        canonical_suffix=".SemanticModel",
+        accepted_suffixes=(".SemanticModel", ".semanticmodel"),
+        bare_content_ok=lambda p: p.is_dir() and (p / PBISM_PART).is_file(),
     )
 
 

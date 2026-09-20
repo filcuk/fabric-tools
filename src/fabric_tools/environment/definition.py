@@ -13,6 +13,7 @@ from fabric_tools.definition_parts import (
     pack_folder,
     unpack_parts,
 )
+from fabric_tools.parsing import ensure_kind_path_suffix
 
 PLATFORM_PART = ".platform"
 SPARK_COMPUTE_PART = "Setting/Sparkcompute.yml"
@@ -24,20 +25,32 @@ class DefinitionError(ValueError):
     """Invalid local Environment path or definition payload."""
 
 
-def detect_environment_path(path: Path | str) -> Path:
-    """Resolve *path* as an Environment folder path."""
-    folder = Path(path)
-    if folder.name.lower().endswith(".environment"):
-        return folder
-    if folder.is_dir() and (
+def _is_environment_folder_name(name: str) -> bool:
+    return name.lower().endswith(".environment")
+
+
+def _environment_bare_content_ok(folder: Path) -> bool:
+    return folder.is_dir() and (
         (folder / SPARK_COMPUTE_PART).is_file()
         or (folder / "Libraries").is_dir()
         or (folder / PLATFORM_PART).is_file()
-    ):
+    )
+
+
+def detect_environment_path(path: Path | str) -> Path:
+    """Resolve *path* as an Environment folder path.
+
+    Bare stems (e.g. ``SparkDev``) become ``SparkDev.Environment``. Existing
+    folders that already look like an Environment unpack are left unchanged.
+    """
+    folder = Path(path)
+    if _is_environment_folder_name(folder.name):
         return folder
-    raise DefinitionError(
-        f"Unsupported Environment path '{folder}'. Expected a *.Environment folder "
-        f"or a folder containing {SPARK_COMPUTE_PART}, Libraries/, or {PLATFORM_PART}."
+    return ensure_kind_path_suffix(
+        folder,
+        canonical_suffix=".Environment",
+        accepted_suffixes=(".Environment", ".environment"),
+        bare_content_ok=_environment_bare_content_ok,
     )
 
 

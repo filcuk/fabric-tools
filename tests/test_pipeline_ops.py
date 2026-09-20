@@ -247,13 +247,13 @@ def test_delete_requires_item_id() -> None:
     assert not result.ok
 
 
-def test_download_rejects_bad_destination(tmp_path: Path) -> None:
+def test_download_appends_kind_suffix_for_stem_destination(tmp_path: Path) -> None:
     client = FakeClient()
     dest = tmp_path / "out.json"
     item = WorkItem(Target(WS, PL), dest)
     result = download_pipeline(client, item)  # type: ignore[arg-type]
-    assert not result.ok
-    assert "Unsupported pipeline path" in result.message
+    assert result.ok
+    assert (tmp_path / "out.json.DataPipeline" / "pipeline-content.json").is_file()
 
 
 def test_download_default_omits_schedules(tmp_path: Path) -> None:

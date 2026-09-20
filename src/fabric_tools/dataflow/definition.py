@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from fabric_tools.parsing import ensure_kind_path_suffix
+
 QUERY_METADATA_PART = "queryMetadata.json"
 MASHUP_PART = "mashup.pq"
 PLATFORM_PART = ".platform"
@@ -25,19 +27,20 @@ def is_dataflow_folder_name(name: str) -> bool:
 
 
 def detect_dataflow_path(path: Path | str) -> Path:
-    """Resolve *path* as a Dataflow Gen2 folder path (does not check contents)."""
-    p = Path(path)
-    if is_dataflow_folder_name(p.name):
-        return p
-    if (
-        p.is_dir()
-        and (p / QUERY_METADATA_PART).is_file()
-        and (p / MASHUP_PART).is_file()
-    ):
-        return p
-    raise DefinitionError(
-        f"Unsupported dataflow path '{p}'. Expected a *.Dataflow folder "
-        f"(with {QUERY_METADATA_PART} and {MASHUP_PART})."
+    """Resolve *path* as a Dataflow Gen2 folder path (does not check contents).
+
+    Bare stems (e.g. ``Ingest``) become ``Ingest.Dataflow``. Existing folders
+    that already contain the required parts are left unchanged.
+    """
+    return ensure_kind_path_suffix(
+        path,
+        canonical_suffix=".Dataflow",
+        accepted_suffixes=(".Dataflow", ".dataflow"),
+        bare_content_ok=lambda p: (
+            p.is_dir()
+            and (p / QUERY_METADATA_PART).is_file()
+            and (p / MASHUP_PART).is_file()
+        ),
     )
 
 

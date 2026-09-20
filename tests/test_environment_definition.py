@@ -41,6 +41,10 @@ def test_detect_suffix_and_bare_folder(tmp_path: Path) -> None:
     assert detect_environment_path(bare) == bare
     assert display_name_from_path(suffixed) == "Dev"
     assert display_name_from_path(tmp_path / "dev.environment") == "dev"
+    assert (
+        detect_environment_path(tmp_path / "SparkDev")
+        == tmp_path / "SparkDev.Environment"
+    )
 
 
 def test_validate_rejects_empty_folder(tmp_path: Path) -> None:

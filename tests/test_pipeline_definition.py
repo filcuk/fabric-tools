@@ -77,11 +77,16 @@ def test_detect_folder_with_content_without_suffix(tmp_path: Path) -> None:
     assert validate_local_pipeline(folder) == folder
 
 
-def test_rejects_unsupported_path(tmp_path: Path) -> None:
+def test_detect_appends_stem_suffix(tmp_path: Path) -> None:
     path = tmp_path / "notes.txt"
     path.write_text("nope", encoding="utf-8")
-    with pytest.raises(DefinitionError, match="Unsupported pipeline path"):
-        detect_pipeline_path(path)
+    assert detect_pipeline_path(path) == tmp_path / "notes.txt.DataPipeline"
+
+
+def test_detect_appends_missing_stem(tmp_path: Path) -> None:
+    assert (
+        detect_pipeline_path(tmp_path / "Nightly") == tmp_path / "Nightly.DataPipeline"
+    )
 
 
 def test_validate_requires_pipeline_content(tmp_path: Path) -> None:
