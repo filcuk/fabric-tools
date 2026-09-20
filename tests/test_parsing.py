@@ -161,6 +161,82 @@ def test_compare_rejects_broadcast() -> None:
         )
 
 
+def test_compare_accepts_download_shaped_flags() -> None:
+    """Same -o remote / -t local layout as download must work for compare."""
+    items = build_work_items_from_cli(
+        CommandMode.COMPARE,
+        origin_values=[f"{WS}:{A}"],
+        target_values=["one.ipynb"],
+        dry_run=False,
+    )
+    assert len(items) == 1
+    assert items[0].file == Path("one.ipynb")
+    assert items[0].origin is None
+    assert items[0].target is not None
+    assert items[0].target.item_id == A
+
+
+def test_deploy_accepts_download_shaped_flags() -> None:
+    """Same -o remote / -t local layout as download must work for deploy."""
+    items = build_work_items_from_cli(
+        CommandMode.DEPLOY,
+        origin_values=[f"{WS}:{A}"],
+        target_values=["one.ipynb"],
+        dry_run=False,
+    )
+    assert len(items) == 1
+    assert items[0].file == Path("one.ipynb")
+    assert items[0].origin is None
+    assert items[0].target is not None
+    assert items[0].target.item_id == A
+
+
+def test_deploy_create_accepts_remote_on_origin_local_on_target() -> None:
+    items = build_work_items_from_cli(
+        CommandMode.DEPLOY,
+        origin_values=[WS],
+        target_values=["one.ipynb"],
+        dry_run=False,
+    )
+    assert len(items) == 1
+    assert items[0].file == Path("one.ipynb")
+    assert items[0].target is not None
+    assert items[0].target.is_create
+    assert items[0].target.workspace_id == WS
+
+
+def test_deploy_compare_reject_local_both_sides() -> None:
+    with pytest.raises(ParseError, match="both --origin and --target"):
+        build_work_items_from_cli(
+            CommandMode.COMPARE,
+            origin_values=["a.ipynb"],
+            target_values=["b.ipynb"],
+            dry_run=False,
+        )
+
+
+def test_deploy_remote_origin_requires_artifact() -> None:
+    with pytest.raises(ParseError, match="remote --origin requires workspace:artifact"):
+        build_work_items_from_cli(
+            CommandMode.DEPLOY,
+            origin_values=[WS],
+            target_values=[f"{WS2}:{B}"],
+            dry_run=False,
+        )
+
+
+def test_dry_run_target_path_only() -> None:
+    items = build_work_items_from_cli(
+        CommandMode.DEPLOY,
+        origin_values=None,
+        target_values=["a.ipynb"],
+        dry_run=True,
+    )
+    assert len(items) == 1
+    assert items[0].target is None
+    assert items[0].file == Path("a.ipynb")
+
+
 def test_download_rejects_multiple_workspaces() -> None:
     with pytest.raises(ParseError, match="one workspace"):
         build_work_items_from_cli(

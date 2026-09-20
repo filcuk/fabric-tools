@@ -102,14 +102,17 @@ TARGET_DOWNLOAD_HELP = option_help(
 )
 
 TARGET_DEPLOY_HELP = conditional_required_help(
-    f"{_MV_WS_GUID} (create) or "
-    f"{_MV_WS_ARTIFACT} (overwrite). Repeatable or comma-separated "
-    "(spaces after commas OK)."
+    f"Remote {_MV_WS_GUID} (create) / {_MV_WS_ARTIFACT} (overwrite), "
+    "or a local path when --origin is remote. "
+    "Local+remote: roles inferred from type. "
+    "Repeatable or comma-separated (spaces after commas OK)."
 )
 ORIGIN_DEPLOY_HELP = conditional_required_help(
-    f"Local path or remote {_MV_WS_ARTIFACT} source. "
+    f"Local path or remote {_MV_WS_ARTIFACT} "
+    "(either flag may hold the local path). "
+    "Local+remote: roles inferred from type; remote-to-remote is origin → target. "
     "Repeatable or comma-separated (spaces after commas OK). "
-    "One origin may broadcast to all targets."
+    "One source may broadcast to all remotes."
 )
 NAME_DEPLOY_HELP = option_help(
     "Display name. Defaults to file/folder stem or origin display name.",
@@ -117,11 +120,16 @@ NAME_DEPLOY_HELP = option_help(
 )
 
 TARGET_COMPARE_HELP = conditional_required_help(
-    f"{_MV_WS_ARTIFACT} GUID. Repeatable or comma-separated (spaces after commas OK)."
+    f"Remote {_MV_WS_ARTIFACT}, or a local path when --origin is remote. "
+    "Local+remote: roles inferred from type. "
+    "Must 1:1 match the other side (no broadcast). "
+    "Repeatable or comma-separated (spaces after commas OK)."
 )
 ORIGIN_COMPARE_HELP = conditional_required_help(
-    f"Local path or remote {_MV_WS_ARTIFACT} to compare "
-    "against --target. Must 1:1 match --target (no broadcast)."
+    f"Local path or remote {_MV_WS_ARTIFACT} "
+    "(either flag may hold the local path). "
+    "Local+remote: roles inferred from type; remote-to-remote is origin → target. "
+    "Must 1:1 match the other side (no broadcast)."
 )
 
 TARGET_DELETE_HELP = conditional_required_help(
