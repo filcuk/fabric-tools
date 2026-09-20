@@ -15,6 +15,7 @@ dependencies = [
     "rich>=13",
     "httpx>=0.27",
     "azure-identity>=1.17",
+    "azure-identity-broker>=1.1",
     "nbdime>=4",
     "nbformat>=5",
     "questionary>=2",
@@ -31,7 +32,7 @@ build = [
 ]
 
 [project.scripts]
-fabric-tools = "fabric_tools.cli:app"
+fabric-tools = "fabric_tools.cli:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fabric_tools"]

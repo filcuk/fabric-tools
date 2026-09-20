@@ -102,3 +102,32 @@ def test_http_error_raises() -> None:
             client.get_item("ws", "item")
     assert exc_info.value.error_code == "ItemNotFound"
     assert exc_info.value.request_id == "req-1"
+
+
+def test_lro_updates_activity_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "fabric_tools.client.update_status",
+        lambda msg: messages.append(msg),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(
+                202,
+                headers={
+                    "Location": "https://api.fabric.microsoft.com/v1/operations/op-1",
+                    "x-ms-operation-id": "op-1",
+                    "Retry-After": "1",
+                },
+            )
+        if request.url.path.endswith("/operations/op-1"):
+            return httpx.Response(200, json={"status": "Succeeded"})
+        if request.url.path.endswith("/operations/op-1/result"):
+            return httpx.Response(200, json={"ok": True})
+        return httpx.Response(404)
+
+    with _client(httpx.MockTransport(handler)) as client:
+        client.request("POST", "/workspaces/ws/notebooks/nb/getDefinition")
+
+    assert messages == ["Waiting for Fabric operation (op-1)..."]

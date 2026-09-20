@@ -5,19 +5,29 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 import typer
+from typer.core import TyperGroup
 
 from fabric_tools import __version__
 from fabric_tools.client import FabricClient
 from fabric_tools.confirm import (
     ConfirmationAborted,
+    confirm_delete_actions,
+    confirm_delete_dataflow_gen1,
+    confirm_deploy_actions,
+    confirm_deploy_create_dataflow_gen1,
     confirm_download_overwrites,
-    confirm_upload_actions,
+    confirm_download_overwrites_dataflow_gen1,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
+    KIND_DATAFLOW_GEN1,
+    KIND_NOTEBOOK,
     ManifestError,
+    delete_targets_from_manifest,
     format_inspect,
+    format_inspect_line,
     item_id_overrides_from_results,
+    list_manifest_paths,
     load_manifest,
     manifest_from_work_items,
     resolve_manifest_path,
@@ -31,54 +41,147 @@ from fabric_tools.notebook.cells import (
     validate_cells_usage,
 )
 from fabric_tools.notebook.definition import display_name_from_path
-from fabric_tools.notebook.ops import OpResult, run_download_batch, run_upload_batch
+from fabric_tools.notebook.ops import (
+    OpResult,
+    run_delete_batch,
+    run_deploy_batch,
+    run_download_batch,
+)
 from fabric_tools.parsing import (
     CommandMode,
     ParseError,
     WorkItem,
     build_work_items,
     parse_file_values,
+    parse_origin_values,
     parse_target_values,
+    rejoin_spaced_csv_argv,
 )
-from fabric_tools.validate import run_dry_run
+from fabric_tools.powerbi_client import PowerBiClient
+from fabric_tools.status import busy
+from fabric_tools.update_check import UpdateCheckError, check_for_update
+from fabric_tools.validate import run_dry_run, run_dry_run_dataflow_gen1
 
 _MANIFEST_HELP = (
     "(optional) Deployment manifest stem or path (.ftdep). "
-    "Alone: load targets/files. With a successful run: write/update the manifest."
+    "Alone: load targets/files/origins. With a successful run or dry-run: write/update the manifest."
 )
+
+_BANNER = r"""
+ _____     _       _         _____         _     
+|   __|___| |_ ___|_|___ ___|_   _|___ ___| |___ 
+|   __| .'| . |  _| |  _|___| | | | . | . | |_ -|
+|__|  |__,|___|_| |_|___|     |_| |___|___|_|___|
+"""
+
+
+class _BannerGroup(TyperGroup):
+    """Root help: banner, then subtitle, then Usage / options."""
+
+    def format_help(self, ctx, formatter) -> None:
+        typer.echo(_BANNER)
+        subtitle = (self.help or "").strip()
+        if subtitle:
+            typer.echo(subtitle)
+            typer.echo()
+        saved_help = self.help
+        self.help = None
+        try:
+            super().format_help(ctx, formatter)
+        finally:
+            self.help = saved_help
+
+
+_HELP_CONTEXT = {"help_option_names": ["--help", "-h"]}
 
 app = typer.Typer(
     name="fabric-tools",
     help="CLI for working with Microsoft Fabric artifacts.",
     no_args_is_help=False,
     invoke_without_command=True,
+    cls=_BannerGroup,
+    context_settings=_HELP_CONTEXT,
 )
 
 notebook_app = typer.Typer(
     name="notebook",
-    help="Download, upload, and compare Fabric notebooks.",
+    help="Download, deploy, compare, and delete Fabric notebooks.",
     no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
 )
 app.add_typer(notebook_app, name="notebook")
+
+dataflow_gen1_app = typer.Typer(
+    name="dataflow-gen1",
+    help="Download, create, compare, and delete Power BI Dataflow Gen1 items.",
+    no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
+)
+app.add_typer(dataflow_gen1_app, name="dataflow-gen1")
 
 path_app = typer.Typer(
     name="path",
     help="Register fabric-tools on your user PATH so you can run it as 'fabric-tools'.",
     no_args_is_help=True,
+    context_settings=_HELP_CONTEXT,
 )
 app.add_typer(path_app, name="path")
 
 
-@app.command("inspect")
-def inspect_manifest(
-    manifest: str = typer.Option(
-        ...,
-        "--manifest",
-        "-m",
-        help="(required) Deployment manifest stem or path (.ftdep).",
+@app.command("update")
+def update_cmd(
+    check: bool = typer.Option(
+        False,
+        "--check",
+        "-c",
+        help="Check GitHub Releases for a newer fabric-tools version.",
     ),
 ) -> None:
-    """Show the contents of a deployment manifest (no Fabric API calls)."""
+    """Check for updates from GitHub Releases."""
+    if not check:
+        typer.secho(
+            "Specify --check / -c to check for a newer release.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USER)
+
+    try:
+        with busy("Checking for updates..."):
+            result = check_for_update()
+    except UpdateCheckError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+
+    typer.echo(f"Current version: {result.current}")
+    latest_label = f"{result.latest} ({result.tag_name})"
+    if result.prerelease:
+        latest_label += " [pre-release]"
+    typer.echo(f"Latest release:  {latest_label}")
+    if result.update_available:
+        typer.secho("A newer release is available.", fg=typer.colors.GREEN)
+        if result.release_url:
+            typer.echo(result.release_url)
+        raise typer.Exit(code=EXIT_USER)
+
+    typer.echo("You are up to date.")
+    raise typer.Exit(code=EXIT_OK)
+
+
+@app.command("inspect")
+def inspect_manifest(
+    manifest: Optional[str] = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help="Deployment manifest stem or path (.ftdep). Omit to list all manifests in the current folder.",
+    ),
+) -> None:
+    """Show deployment manifest contents, or list manifests in the current folder."""
+    if not manifest:
+        _inspect_list_cwd()
+        raise typer.Exit(code=EXIT_OK)
+
     try:
         path = resolve_manifest_path(manifest)
         loaded = load_manifest(path)
@@ -87,6 +190,27 @@ def inspect_manifest(
         raise typer.Exit(code=EXIT_USER) from exc
     typer.echo(format_inspect(loaded, path=path))
     raise typer.Exit(code=EXIT_OK)
+
+
+def _inspect_list_cwd() -> None:
+    """Print one-line summaries for each ``.ftdep`` in the current directory."""
+    try:
+        paths = list_manifest_paths()
+    except ManifestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    if not paths:
+        typer.echo("No .ftdep manifests in the current folder.")
+        return
+
+    for path in paths:
+        try:
+            loaded = load_manifest(path)
+        except ManifestError as exc:
+            typer.secho(f"{path.name}  error: {exc}", fg=typer.colors.YELLOW, err=True)
+            continue
+        typer.echo(format_inspect_line(loaded, path=path))
 
 
 def _version_callback(value: bool) -> None:
@@ -239,15 +363,16 @@ def notebook_download(
         None,
         "--target",
         "-t",
-        help="(required unless --manifest or --dry-run files-only) workspace:artifact GUID. "
-        "Repeatable or comma-separated. One workspace only.",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required unless --manifest or --dry-run targets-only) Local .ipynb or *.Notebook folder. "
-        "Repeatable or comma-separated. One file may broadcast to all targets.",
+        help="(required without -m or -d) Local .ipynb or *.Notebook folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One file may broadcast to all targets.",
     ),
     manifest: Optional[str] = typer.Option(
         None,
@@ -279,34 +404,46 @@ def notebook_download(
     )
 
 
-@notebook_app.command("upload")
-def notebook_upload(
+@notebook_app.command("deploy")
+def notebook_deploy(
     target: Optional[list[str]] = typer.Option(
         None,
         "--target",
         "-t",
-        help="(required unless --manifest or --dry-run files-only) workspace GUID (create) or "
-        "workspace:artifact (overwrite). Repeatable or comma-separated.",
+        help="(required without -m or -d) workspace GUID (create) or "
+        "workspace:artifact (overwrite). Repeatable or comma-separated "
+        "(spaces after commas OK).",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required unless --manifest or --dry-run targets-only) Local .ipynb or *.Notebook folder. "
-        "Repeatable or comma-separated. One file may broadcast to all targets.",
+        help="(required without -m/-o or -d) Local .ipynb or *.Notebook folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One file may broadcast to all targets. Mutually exclusive with --origin.",
+    ),
+    origin: Optional[list[str]] = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact source. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One origin may broadcast to all targets. Mutually exclusive with --file.",
     ),
     name: Optional[list[str]] = typer.Option(
         None,
         "--name",
         "-n",
-        help="(optional, create only) Display name. Defaults to file/folder stem.",
+        help="(optional, create only) Display name. Defaults to file/folder stem "
+        "or origin display name.",
     ),
     cells: Optional[list[str]] = typer.Option(
         None,
         "--cells",
         "-c",
         help="(optional, overwrite .ipynb only) 1-based cell indices to replace "
-        "(e.g. 1,3,5). Single notebook only; whole cells including outputs.",
+        "(e.g. 1,3,5 or 1, 3, 5). Single notebook only; whole cells including outputs. "
+        "Not valid with --origin.",
     ),
     manifest: Optional[str] = typer.Option(
         None,
@@ -324,14 +461,15 @@ def notebook_upload(
         False,
         "--dry-run",
         "-d",
-        help="(optional) Validate targets and/or files only; do not upload.",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
     ),
 ) -> None:
-    """Upload notebook(s) from local files to Fabric (create or overwrite)."""
+    """Deploy notebook(s) from local files or a Fabric origin (create or overwrite)."""
     run_notebook_command(
-        CommandMode.UPLOAD,
+        CommandMode.DEPLOY,
         target_values=target,
         file_values=file,
+        origin_values=origin,
         silent=silent,
         dry_run=dry_run,
         names=name,
@@ -346,15 +484,25 @@ def notebook_compare(
         None,
         "--target",
         "-t",
-        help="(required unless --manifest or --dry-run files-only) workspace:artifact GUID. "
-        "Repeatable or comma-separated. One workspace only. Must 1:1 match --file.",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "With --file: one workspace only. Must 1:1 match --file or --origin.",
     ),
     file: Optional[list[str]] = typer.Option(
         None,
         "--file",
         "-f",
-        help="(required unless --manifest or --dry-run targets-only) Local .ipynb or *.Notebook folder. "
-        "Must 1:1 match --target (no broadcast).",
+        help="(required without -m/-o or -d) Local .ipynb or *.Notebook folder. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+    ),
+    origin: Optional[list[str]] = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Fabric workspace:artifact to compare against "
+        "--target. Must 1:1 match --target (no broadcast). "
+        "Mutually exclusive with --file.",
     ),
     manifest: Optional[str] = typer.Option(
         None,
@@ -366,22 +514,267 @@ def notebook_compare(
         False,
         "--dry-run",
         "-d",
-        help="(optional) Validate targets and/or files only; do not compare.",
+        help="(optional) Validate targets and/or sources only; do not compare.",
     ),
-    ignore_outputs: bool = typer.Option(
+    include_outputs: bool = typer.Option(
         True,
-        "--ignore-outputs/--include-outputs",
-        help="(optional) For .ipynb diffs, ignore cell outputs (default: ignore).",
+        "--include-outputs",
+        "-i",
+        help="(optional) For .ipynb diffs, include cell outputs.",
     ),
 ) -> None:
-    """Compare remote notebook(s) to local files (nbdime for .ipynb)."""
+    """Compare target notebook to a local file or Fabric origin (nbdime for .ipynb)."""
     run_notebook_command(
         CommandMode.COMPARE,
         target_values=target,
         file_values=file,
+        origin_values=origin,
         silent=True,
         dry_run=dry_run,
-        ignore_outputs=ignore_outputs,
+        ignore_outputs=not include_outputs,
+        manifest=manifest,
+    )
+
+
+@notebook_app.command("delete")
+def notebook_delete(
+    target: Optional[list[str]] = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    manifest: Optional[str] = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help="(optional) Load workspace:artifact targets from a .ftdep "
+        "(entries must have itemId). Not rewritten after delete.",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Soft-delete notebook(s) in Fabric."""
+    run_notebook_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@dataflow_gen1_app.command("download")
+def dataflow_gen1_download(
+    target: Optional[list[str]] = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). One workspace only.",
+    ),
+    file: Optional[list[str]] = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m or -d) Local model.json path. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One file may broadcast to all targets.",
+    ),
+    manifest: Optional[str] = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or files only; do not download.",
+    ),
+) -> None:
+    """Download Dataflow Gen1 model.json from Power BI to local files."""
+    run_dataflow_gen1_command(
+        CommandMode.DOWNLOAD,
+        target_values=target,
+        file_values=file,
+        silent=silent,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@dataflow_gen1_app.command("deploy")
+def dataflow_gen1_deploy(
+    target: Optional[list[str]] = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace GUID (create only). "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "Overwrite (workspace:artifact) is not supported.",
+    ),
+    file: Optional[list[str]] = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local model.json path. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One file may broadcast to all targets. Mutually exclusive with --origin.",
+    ),
+    origin: Optional[list[str]] = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Power BI workspace:artifact source. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "One origin may broadcast to all targets. Mutually exclusive with --file.",
+    ),
+    name: Optional[list[str]] = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="(optional) Display name written into model.json before import. "
+        "Defaults to the model name (or origin name).",
+    ),
+    manifest: Optional[str] = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not deploy.",
+    ),
+) -> None:
+    """Create Dataflow Gen1 item(s) from local model.json or a remote origin."""
+    run_dataflow_gen1_command(
+        CommandMode.DEPLOY,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=silent,
+        dry_run=dry_run,
+        names=name,
+        manifest=manifest,
+    )
+
+
+@dataflow_gen1_app.command("compare")
+def dataflow_gen1_compare(
+    target: Optional[list[str]] = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "With --file: one workspace only. Must 1:1 match --file or --origin.",
+    ),
+    file: Optional[list[str]] = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="(required without -m/-o or -d) Local model.json path. "
+        "Repeatable or comma-separated (spaces after commas OK). "
+        "Must 1:1 match --target (no broadcast). Mutually exclusive with --origin.",
+    ),
+    origin: Optional[list[str]] = typer.Option(
+        None,
+        "--origin",
+        "-o",
+        help="(alternative to --file) Power BI workspace:artifact to compare against "
+        "--target. Must 1:1 match --target (no broadcast). "
+        "Mutually exclusive with --file.",
+    ),
+    manifest: Optional[str] = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help=_MANIFEST_HELP,
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets and/or sources only; do not compare.",
+    ),
+) -> None:
+    """Compare target Dataflow Gen1 to a local model.json or remote origin."""
+    run_dataflow_gen1_command(
+        CommandMode.COMPARE,
+        target_values=target,
+        file_values=file,
+        origin_values=origin,
+        silent=True,
+        dry_run=dry_run,
+        manifest=manifest,
+    )
+
+
+@dataflow_gen1_app.command("delete")
+def dataflow_gen1_delete(
+    target: Optional[list[str]] = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="(required without -m or -d) workspace:artifact GUID. "
+        "Repeatable or comma-separated (spaces after commas OK).",
+    ),
+    manifest: Optional[str] = typer.Option(
+        None,
+        "--manifest",
+        "-m",
+        help="(optional) Load workspace:artifact targets from a .ftdep "
+        "(entries must have itemId). Not rewritten after delete.",
+    ),
+    silent: bool = typer.Option(
+        False,
+        "--silent",
+        "-s",
+        help="(optional) Skip confirmation prompts.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="(optional) Validate targets only; do not delete.",
+    ),
+) -> None:
+    """Delete Dataflow Gen1 item(s) via the Power BI API."""
+    run_dataflow_gen1_command(
+        CommandMode.DELETE,
+        target_values=target,
+        file_values=None,
+        silent=silent,
+        dry_run=dry_run,
         manifest=manifest,
     )
 
@@ -393,27 +786,31 @@ def run_notebook_command(
     file_values: list[str] | None,
     silent: bool,
     dry_run: bool,
+    origin_values: list[str] | None = None,
     names: list[str | None] | list[str] | None = None,
     cells: list[str] | None = None,
-    ignore_outputs: bool = True,
+    ignore_outputs: bool = False,
     manifest: str | None = None,
     on_success: Callable[..., None] | None = None,
 ) -> None:
     """Shared entry used by CLI commands and the interactive wizard.
 
-    *on_success* is called after a completed successful operation (all op/compare
-    results ok), before the process exit code is raised — used by interactive
-    mode to offer saving a deployment manifest.
+    *on_success* is called after a completed successful operation or dry-run (all
+    checks/ops/compare results ok), before the process exit code is raised — used
+    by interactive mode to offer saving a deployment manifest.
     """
     try:
         cell_indices = parse_cell_indices(cells)
-        items, resolved_names, has_targets, has_files = _resolve_notebook_inputs(
-            mode,
-            target_values=target_values,
-            file_values=file_values,
-            dry_run=dry_run,
-            names=names,
-            manifest=manifest,
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_notebook_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
         )
         validate_cells_usage(mode, items, cell_indices, dry_run=dry_run)
     except (ParseError, ManifestError, CellSelectionError) as exc:
@@ -423,16 +820,20 @@ def run_notebook_command(
     if dry_run:
         client: FabricClient | None = None
         try:
-            if has_targets:
-                client = FabricClient()
-            results = run_dry_run(
-                mode,
-                items,
-                client=client,
-                has_targets=has_targets,
-                has_files=has_files,
-                cell_indices=cell_indices,
-            )
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = FabricClient()
+                    client.ensure_authenticated()
+            with busy("Checking..."):
+                results = run_dry_run(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                    cell_indices=cell_indices,
+                )
         except Exception as exc:  # noqa: BLE001 - surface auth/client failures cleanly
             typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_API) from exc
@@ -446,29 +847,54 @@ def run_notebook_command(
             typer.secho(result.message, fg=color)
             if not result.ok:
                 failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except ParseError as exc:
+                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=EXIT_USER) from exc
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_NOTEBOOK,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+            )
         raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
 
     try:
         display_names = (
-            _resolve_upload_names(items, resolved_names)
-            if mode is CommandMode.UPLOAD
+            _resolve_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
             else None
         )
     except ParseError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=EXIT_USER) from exc
 
-    client = FabricClient()
+    with busy("Authenticating..."):
+        client = FabricClient()
+        client.ensure_authenticated()
     try:
         if mode is CommandMode.DOWNLOAD:
             confirm_download_overwrites(client, items, silent=silent)
-            op_results = run_download_batch(client, items)
+            with busy("Downloading..."):
+                op_results = run_download_batch(client, items)
             _print_op_results(op_results)
             _write_manifest_after_success(
                 manifest,
                 items,
                 display_names=None,
                 op_results=op_results,
+                kind=KIND_NOTEBOOK,
             )
             _notify_success(
                 on_success,
@@ -477,20 +903,21 @@ def run_notebook_command(
                 op_results=op_results,
             )
             _exit_from_op_results(op_results)
-        elif mode is CommandMode.UPLOAD:
-            confirm_upload_actions(
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_actions(
                 client,
                 items,
                 silent=silent,
                 display_names=display_names,
                 cell_indices=cell_indices,
             )
-            op_results = run_upload_batch(
-                client,
-                items,
-                display_names=display_names,
-                cell_indices=cell_indices,
-            )
+            with busy("Deploying..."):
+                op_results = run_deploy_batch(
+                    client,
+                    items,
+                    display_names=display_names,
+                    cell_indices=cell_indices,
+                )
             _print_op_results(op_results)
             for result in op_results:
                 if result.ok and result.workspace_id and result.item_id:
@@ -504,6 +931,7 @@ def run_notebook_command(
                 items,
                 display_names=display_names,
                 op_results=op_results,
+                kind=KIND_NOTEBOOK,
             )
             _notify_success(
                 on_success,
@@ -513,17 +941,19 @@ def run_notebook_command(
             )
             _exit_from_op_results(op_results)
         elif mode is CommandMode.COMPARE:
-            compare_results = run_compare_batch(
-                client,
-                items,
-                ignore_outputs=ignore_outputs,
-            )
+            with busy("Comparing..."):
+                compare_results = run_compare_batch(
+                    client,
+                    items,
+                    ignore_outputs=ignore_outputs,
+                )
             _print_compare_results(compare_results)
             _write_manifest_after_success(
                 manifest,
                 items,
                 display_names=None,
                 compare_results=compare_results,
+                kind=KIND_NOTEBOOK,
             )
             _notify_success(
                 on_success,
@@ -532,6 +962,18 @@ def run_notebook_command(
                 compare_results=compare_results,
             )
             _exit_from_compare_results(compare_results)
+        elif mode is CommandMode.DELETE:
+            confirm_delete_actions(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_delete_batch(client, items)
+            _print_op_results(op_results)
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,
+            )
+            _exit_from_op_results(op_results)
         else:
             typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=EXIT_USER)
@@ -545,6 +987,327 @@ def run_notebook_command(
         raise typer.Exit(code=EXIT_API) from exc
     finally:
         client.close()
+
+
+def run_dataflow_gen1_command(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    silent: bool,
+    dry_run: bool,
+    origin_values: list[str] | None = None,
+    names: list[str | None] | list[str] | None = None,
+    manifest: str | None = None,
+    on_success: Callable[..., None] | None = None,
+) -> None:
+    """Shared entry for dataflow-gen1 CLI commands and the interactive wizard."""
+    from fabric_tools.dataflow_gen1.compare import run_compare_batch as run_df_compare
+    from fabric_tools.dataflow_gen1.definition import (
+        DefinitionError as DataflowDefinitionError,
+    )
+    from fabric_tools.dataflow_gen1.ops import (
+        run_delete_batch as run_df_delete,
+    )
+    from fabric_tools.dataflow_gen1.ops import (
+        run_deploy_batch as run_df_deploy,
+    )
+    from fabric_tools.dataflow_gen1.ops import (
+        run_download_batch as run_df_download,
+    )
+
+    try:
+        items, resolved_names, has_targets, has_files, has_origins = (
+            _resolve_dataflow_gen1_inputs(
+                mode,
+                target_values=target_values,
+                file_values=file_values,
+                origin_values=origin_values,
+                dry_run=dry_run,
+                names=names,
+                manifest=manifest,
+            )
+        )
+    except (ParseError, ManifestError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    if dry_run:
+        client: PowerBiClient | None = None
+        try:
+            if has_targets or has_origins:
+                with busy("Authenticating..."):
+                    client = PowerBiClient()
+                    client.ensure_authenticated()
+            with busy("Checking..."):
+                results = run_dry_run_dataflow_gen1(
+                    mode,
+                    items,
+                    client=client,
+                    has_targets=has_targets,
+                    has_files=has_files,
+                    has_origins=has_origins,
+                )
+        except Exception as exc:  # noqa: BLE001
+            typer.secho(f"dry-run failed: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=EXIT_API) from exc
+        finally:
+            if client is not None:
+                client.close()
+
+        failed = False
+        for result in results:
+            color = typer.colors.GREEN if result.ok else typer.colors.RED
+            typer.secho(result.message, fg=color)
+            if not result.ok:
+                failed = True
+        if not failed and has_targets and (has_files or has_origins):
+            try:
+                display_names = (
+                    _resolve_dataflow_gen1_deploy_names(items, resolved_names)
+                    if mode is CommandMode.DEPLOY
+                    else None
+                )
+            except (ParseError, DataflowDefinitionError) as exc:
+                typer.secho(str(exc), fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=EXIT_USER) from exc
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                kind=KIND_DATAFLOW_GEN1,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+            )
+        raise typer.Exit(code=EXIT_USER if failed else EXIT_OK)
+
+    try:
+        display_names = (
+            _resolve_dataflow_gen1_deploy_names(items, resolved_names)
+            if mode is CommandMode.DEPLOY
+            else None
+        )
+    except (ParseError, DataflowDefinitionError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+
+    with busy("Authenticating..."):
+        client = PowerBiClient()
+        client.ensure_authenticated()
+    try:
+        if mode is CommandMode.DOWNLOAD:
+            confirm_download_overwrites_dataflow_gen1(client, items, silent=silent)
+            with busy("Downloading..."):
+                op_results = run_df_download(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_DATAFLOW_GEN1,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DEPLOY:
+            confirm_deploy_create_dataflow_gen1(
+                client,
+                items,
+                silent=silent,
+                display_names=display_names,
+            )
+            with busy("Deploying..."):
+                op_results = run_df_deploy(
+                    client,
+                    items,
+                    display_names=display_names,
+                )
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            for result in op_results:
+                if result.ok and result.workspace_id and result.item_id:
+                    if "created" in result.message:
+                        typer.secho(
+                            f"GUID: {result.workspace_id}:{result.item_id}",
+                            fg=typer.colors.CYAN,
+                        )
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+                kind=KIND_DATAFLOW_GEN1,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=display_names,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.COMPARE:
+            with busy("Comparing..."):
+                compare_results = run_df_compare(client, items)
+            _print_compare_results(compare_results)  # type: ignore[arg-type]
+            _write_manifest_after_success(
+                manifest,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+                kind=KIND_DATAFLOW_GEN1,
+            )
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                compare_results=compare_results,  # type: ignore[arg-type]
+            )
+            _exit_from_compare_results(compare_results)  # type: ignore[arg-type]
+        elif mode is CommandMode.DELETE:
+            confirm_delete_dataflow_gen1(client, items, silent=silent)
+            with busy("Deleting..."):
+                op_results = run_df_delete(client, items)
+            _print_op_results(op_results)  # type: ignore[arg-type]
+            _notify_success(
+                on_success,
+                items,
+                display_names=None,
+                op_results=op_results,  # type: ignore[arg-type]
+            )
+            _exit_from_op_results(op_results)  # type: ignore[arg-type]
+        else:
+            typer.secho(f"Unknown mode: {mode}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=EXIT_USER)
+    except ConfirmationAborted as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=EXIT_USER) from exc
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=EXIT_API) from exc
+    finally:
+        client.close()
+
+
+def _resolve_dataflow_gen1_inputs(
+    mode: CommandMode,
+    *,
+    target_values: list[str] | None,
+    file_values: list[str] | None,
+    origin_values: list[str] | None,
+    dry_run: bool,
+    names: list[str | None] | list[str] | None,
+    manifest: str | None,
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve Gen1 targets/files/origins from CLI and/or a deployment manifest."""
+    cli_targets = parse_target_values(target_values)
+    cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
+    manifest_names: list[str | None] | None = None
+
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(
+                loaded, expected_kind=KIND_DATAFLOW_GEN1
+            )
+            return items, None, True, False, False
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False
+
+    if cli_targets or cli_files or cli_origins:
+        targets = cli_targets
+        files = cli_files
+        origins = cli_origins
+    elif manifest:
+        path = resolve_manifest_path(manifest)
+        loaded = load_manifest(path)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_DATAFLOW_GEN1
+        )
+        targets = [item.target for item in loaded_items if item.target is not None]
+        files = [item.file for item in loaded_items if item.file is not None]
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
+            )
+    else:
+        targets = []
+        files = []
+        origins = []
+
+    items = build_work_items(
+        mode,
+        targets,
+        files,
+        origins=origins,
+        dry_run=dry_run,
+        deploy_create_only=True,
+    )
+    effective_names: list[str | None] | list[str] | None = (
+        names if names else manifest_names
+    )
+    return items, effective_names, bool(targets), bool(files), bool(origins)
+
+
+def _resolve_dataflow_gen1_deploy_names(
+    items: list[WorkItem],
+    names: list[str | None] | list[str] | None,
+) -> list[str]:
+    from fabric_tools.dataflow_gen1.definition import (
+        display_name_from_model,
+        load_model,
+    )
+
+    if names and len(names) not in {1, len(items)}:
+        raise ParseError(
+            f"--name count must be 1 or match target count ({len(items)}); "
+            f"got {len(names)}"
+        )
+    resolved: list[str] = []
+    for index, item in enumerate(items):
+        chosen: str | None = None
+        if names:
+            chosen = names[0] if len(names) == 1 else names[index]
+        if chosen:
+            resolved.append(chosen)
+        elif item.file is not None:
+            resolved.append(display_name_from_model(load_model(item.file)))
+        else:
+            resolved.append("")
+    return resolved
 
 
 def _notify_success(
@@ -573,37 +1336,77 @@ def _resolve_notebook_inputs(
     *,
     target_values: list[str] | None,
     file_values: list[str] | None,
+    origin_values: list[str] | None,
     dry_run: bool,
     names: list[str | None] | list[str] | None,
     manifest: str | None,
-) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool]:
-    """Resolve targets/files from CLI and/or a deployment manifest."""
+) -> tuple[list[WorkItem], list[str | None] | list[str] | None, bool, bool, bool]:
+    """Resolve targets/files/origins from CLI and/or a deployment manifest."""
     cli_targets = parse_target_values(target_values)
     cli_files = parse_file_values(file_values)
+    cli_origins = parse_origin_values(origin_values)
     manifest_names: list[str | None] | None = None
 
-    if cli_targets or cli_files:
+    if mode is CommandMode.DELETE:
+        if cli_files or cli_origins:
+            raise ParseError("delete does not support --file or --origin")
+        if cli_targets:
+            targets = cli_targets
+        elif manifest:
+            path = resolve_manifest_path(manifest)
+            loaded = load_manifest(path)
+            items = delete_targets_from_manifest(loaded, expected_kind=KIND_NOTEBOOK)
+            return items, None, True, False, False
+        else:
+            targets = []
+        items = build_work_items(mode, targets, [], dry_run=dry_run)
+        return items, None, bool(targets), False, False
+
+    if cli_targets or cli_files or cli_origins:
         targets = cli_targets
         files = cli_files
+        origins = cli_origins
     elif manifest:
         path = resolve_manifest_path(manifest)
         loaded = load_manifest(path)
-        loaded_items, manifest_names = work_items_from_manifest(loaded)
+        loaded_items, manifest_names = work_items_from_manifest(
+            loaded, expected_kind=KIND_NOTEBOOK
+        )
         targets = [item.target for item in loaded_items if item.target is not None]
         files = [item.file for item in loaded_items if item.file is not None]
-        if len(targets) != len(loaded_items) or len(files) != len(loaded_items):
+        origins = [item.origin for item in loaded_items if item.origin is not None]
+        if len(targets) != len(loaded_items):
             raise ManifestError(
-                f"manifest {path} has incomplete entries (need workspace and file on each)"
+                f"manifest {path} has incomplete entries (need workspace on each)"
+            )
+        if files and origins:
+            raise ManifestError(
+                f"manifest {path} mixes file and origin entries in one load"
+            )
+        if not files and not origins:
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file or origin on each)"
+            )
+        if files and len(files) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need file on each)"
+            )
+        if origins and len(origins) != len(loaded_items):
+            raise ManifestError(
+                f"manifest {path} has incomplete entries (need origin on each)"
             )
     else:
         targets = []
         files = []
+        origins = []
 
-    items = build_work_items(mode, targets, files, dry_run=dry_run)
+    items = build_work_items(
+        mode, targets, files, origins=origins, dry_run=dry_run
+    )
     effective_names: list[str | None] | list[str] | None = (
         names if names else manifest_names
     )
-    return items, effective_names, bool(targets), bool(files)
+    return items, effective_names, bool(targets), bool(files), bool(origins)
 
 
 def _write_manifest_after_success(
@@ -613,8 +1416,9 @@ def _write_manifest_after_success(
     display_names: list[str] | None,
     op_results: list[OpResult] | None = None,
     compare_results: list[CompareResult] | None = None,
+    kind: str = KIND_NOTEBOOK,
 ) -> None:
-    """Rewrite ``.ftdep`` when ``-m`` is set and the operation succeeded."""
+    """Rewrite ``.ftdep`` when ``-m`` is set and the operation or dry-run succeeded."""
     if not manifest:
         return
     if op_results is not None and not all(result.ok for result in op_results):
@@ -628,6 +1432,7 @@ def _write_manifest_after_success(
     try:
         built = manifest_from_work_items(
             items,
+            kind=kind,
             display_names=display_names,
             item_id_overrides=overrides,
         )
@@ -673,7 +1478,7 @@ def _exit_from_compare_results(results: list[CompareResult]) -> None:
     raise typer.Exit(code=EXIT_OK)
 
 
-def _resolve_upload_names(
+def _resolve_deploy_names(
     items: list,
     names: list[str | None] | list[str] | None,
 ) -> list[str]:
@@ -691,5 +1496,24 @@ def _resolve_upload_names(
         elif item.file is not None:
             resolved.append(display_name_from_path(item.file))
         else:
-            resolved.append("Notebook")
+            # Origin create resolves display name at deploy time via get_item.
+            resolved.append("")
     return resolved
+
+
+def run() -> None:
+    """Console / exe entrypoint with a stable Usage name (not ``*.exe``)."""
+    import sys
+    import warnings
+
+    # MSAL emits this library-policy hint on interactive auth; not actionable for users.
+    warnings.filterwarnings(
+        "ignore",
+        message=r"response_mode='form_post' is recommended for better security\..*",
+        category=UserWarning,
+        module=r"msal\.oauth2cli\.oauth2",
+    )
+
+    # Unquoted ``-t a, b, c`` is shell-split; rejoin before Typer/Click parses.
+    sys.argv = [sys.argv[0], *rejoin_spaced_csv_argv(sys.argv[1:])]
+    app(prog_name="fabric-tools")
