@@ -133,6 +133,8 @@ setup: checking for updates…
 
 Build lines with `status_detail(module, action, name=None)` (and `progress_message` for `n of m ·` prefixes). Do not put only a name after the module (e.g. `XMLA: Harvest…`); the action is required.
 
+While a Fabric long-running operation (HTTP 202) is polled, a numeric `percentComplete` is appended after the trailing `…` (e.g. `1 of 4 · notebook: downloading (Sales)… 40%`) via `status.set_percent`. It is display-only (`current_message` is unchanged), omitted when Fabric returns `null`, cleared when polling ends, and never printed on non-TTY.
+
 The dots spinner glyph is **green**; the status text stays primary (default). Do not append long hints onto the spinner line (auth stays `auth: authenticating (Windows)…` — device-code URI/user code print as a separate stderr line).
 
 Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error/Warning panels so they are not printed mid-line. For **non-blocking** notices that must stay visible while work continues, use `status.set_aside(renderable)` / `status.warn_aside(message)` — these draw under the live spinner without stopping it (replacing any prior aside). `status.clear_aside()` removes the aside. Outside `busy`, `set_aside` / `warn_aside` print once to stderr.

@@ -111,6 +111,25 @@ def test_busy_nested_restores_parent_message() -> None:
     assert outer.messages == ["Inner...", "Outer..."]
 
 
+def test_set_percent_suffixes_message_without_changing_it() -> None:
+    handle = MagicMock()
+    token = status._active.set(handle)
+    msg_token = status._message.set("notebook: downloading (Sales)…")
+    try:
+        status.set_percent(42)
+        handle.update.assert_called_with("notebook: downloading (Sales)… 42%")
+        assert status.current_message() == "notebook: downloading (Sales)…"
+        status.set_percent(None)
+        handle.update.assert_called_with("notebook: downloading (Sales)…")
+    finally:
+        status._message.reset(msg_token)
+        status._active.reset(token)
+
+
+def test_set_percent_outside_busy_is_noop() -> None:
+    status.set_percent(50)
+
+
 def test_set_aside_under_busy_handle() -> None:
     asides: list[object] = []
 

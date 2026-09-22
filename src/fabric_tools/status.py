@@ -219,6 +219,22 @@ def update(message: str) -> None:
         _message.set(message)
 
 
+def set_percent(percent: int | None) -> None:
+    """Show ``percent`` after the active spinner message (``None`` removes it).
+
+    Display-only: ``current_message`` is unchanged, and the next ``update``
+    replaces the suffix. No-op without a live spinner (non-TTY prints nothing).
+    """
+    handle = _active.get()
+    message = _message.get()
+    if handle is None or message is None:
+        return
+    if percent is None:
+        handle.update(message)
+        return
+    handle.update(f"{message} {percent}%")
+
+
 def set_aside(renderable: RenderableType | None) -> None:
     """Attach persistent content beneath the active spinner (or clear with ``None``).
 

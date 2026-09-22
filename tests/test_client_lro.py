@@ -135,6 +135,66 @@ def test_lro_does_not_overwrite_activity_status(
     assert messages == []
 
 
+def test_lro_reports_percent_complete_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    percents: list[int | None] = []
+    monkeypatch.setattr(
+        "fabric_tools.client.set_percent",
+        lambda value: percents.append(value),
+    )
+    states = iter(
+        [
+            {"status": "Running", "percentComplete": None},
+            {"status": "Running", "percentComplete": 40},
+            {"status": "Running", "percentComplete": 150},
+            {"status": "Succeeded", "percentComplete": 100},
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(
+                202,
+                headers={"x-ms-operation-id": "op-1", "Retry-After": "1"},
+            )
+        if request.url.path.endswith("/operations/op-1"):
+            return httpx.Response(200, json=next(states))
+        if request.url.path.endswith("/operations/op-1/result"):
+            return httpx.Response(200, json={"ok": True})
+        return httpx.Response(404)
+
+    with _client(httpx.MockTransport(handler)) as client:
+        client.request("POST", "/workspaces/ws/notebooks/nb/getDefinition")
+
+    assert percents == [40, 100, None]
+
+
+def test_lro_failure_clears_percent(monkeypatch: pytest.MonkeyPatch) -> None:
+    percents: list[int | None] = []
+    monkeypatch.setattr(
+        "fabric_tools.client.set_percent",
+        lambda value: percents.append(value),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(
+                202,
+                headers={"x-ms-operation-id": "op-1", "Retry-After": "1"},
+            )
+        return httpx.Response(
+            200,
+            json={"status": "Failed", "error": {"message": "nope"}},
+        )
+
+    with _client(httpx.MockTransport(handler)) as client:
+        with pytest.raises(FabricApiError):
+            client.request("POST", "/workspaces/ws/notebooks/nb/getDefinition")
+
+    assert percents == [None]
+
+
 def test_run_dataflow_apply_changes_polls_job_instance() -> None:
     calls: list[str] = []
 
