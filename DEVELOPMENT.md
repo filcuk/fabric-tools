@@ -88,6 +88,23 @@ Notes:
 - Unsigned binaries may trigger SmartScreen warnings
 - Auth from the exe uses Windows WAM (when available), browser/device-code, or `AZURE_*` service principal env vars; tokens persist under `%LOCALAPPDATA%\fabric-tools`
 
+## Point the `latest` tag
+
+The install docs use a fixed download URL keyed by the `latest` git tag (`…/releases/download/latest/fabric-tools.exe`). After publishing a version tag (for example `v0.6.0`), repoint `latest` to the same commit and force-push the tag:
+
+```powershell
+git tag -f latest v0.6.0
+git push origin refs/tags/latest --force
+```
+
+Verify both refs match:
+
+```powershell
+git rev-parse latest v0.6.0
+```
+
+Anyone who already fetched the old `latest` should re-fetch with `git fetch --tags --force`.
+
 ## XMLA role membership (SqlServer / PowerShell Gallery)
 
 Product commands: `fabric-tools semantic-model role list|member add|member remove`.
