@@ -36,6 +36,8 @@ Command-level failure and warning messages use a Rich `Panel` on stderr, matchin
 - **Error** — red border, title `Error`, left-aligned (`fabric_tools.colours.print_error_panel` / `cli._exit_error`). Also used for per-item compare failure detail after the summary table.
 - **Warning** — yellow border, title `Warning`, left-aligned (`print_warn_panel` / `_exit_warn`) for cancel, soft abort, update notices, and other command-level soft fails.
 
+**Usage errors** (unknown command/option, missing required args, …) print `Usage:` (same highlighting as `--help`) then the Error panel. Do **not** print Typer’s default `Try '… --help' for help.` line — it is suppressed in `apply_help_theme` (`rich_format_error`). The Error panel already carries the useful hint (e.g. Did you mean … / No such option).
+
 Do not invent a different boxed style. Success / identifier lines (GUIDs, remap ok) stay unboxed `secho`. Inline value colours in tables (setup status, env list, compare STATUS) stay Rich styles, not panels. Diff body text stays primary (uncoloured). Compare advisories (e.g. joined-model notes) print as **dim** lines after the summary table — not Warning panels.
 
 ### Success / op result lines
@@ -98,6 +100,8 @@ At CLI startup, Typer Rich help styles are set so **long options** (`--target`) 
 Do **not** auto-colour bare ALL-CAPS words in help prose (`GUID`, `OK`, `XMLA`, `RLS`, …). To yellow a prose token intentionally, wrap it with `help_metavar(...)` from `fabric_tools.cli.options` (emits Rich `[metavar]…[/metavar]`); use this for selector shapes such as `workspace:artifact`, `workspace:*`, and `workspaceId:itemId`. Unmarked prose stays primary.
 
 **Usage** lines are highlighted the same way: dim `Usage:` label, cyan command path (`fabric-tools notebook …`) and `COMMAND` placeholder, magenta `[OPTIONS]` / `--flags`, bright yellow argument placeholders (`[ARGS]...`, `<…>`).
+
+Usage-error output reuses that Usage line, then the Error panel only — Typer’s `Try '… --help' for help.` hint is omitted (see Error and warning panels).
 
 In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is bright yellow (`fabric-tools` is left alone). Do not grow an acronym highlighter list for other product terms.
 

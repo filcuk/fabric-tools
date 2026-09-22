@@ -208,6 +208,30 @@ def apply_help_theme() -> None:
             rich_utils.STYLE_COMMANDS_PANEL_BORDER = previous
 
     rich_utils._print_commands_panel = _print_commands_panel  # type: ignore[assignment]
+
+    # Drop Typer's ``Try '… --help' for help.`` line on usage errors. Usage +
+    # the Error panel (which already carries Did-you-mean / option hints) are
+    # enough; the Try line is redundant and mismatched our colour contract.
+    def _rich_format_error(self) -> None:
+        from rich.panel import Panel
+
+        if self.__class__.__name__ == "NoArgsIsHelpError":
+            return
+
+        console = rich_utils._get_rich_console(stderr=True)
+        ctx = getattr(self, "ctx", None)
+        if ctx is not None:
+            console.print(ctx.get_usage())
+        console.print(
+            Panel(
+                rich_utils.highlighter(self.format_message()),
+                border_style=rich_utils.STYLE_ERRORS_PANEL_BORDER,
+                title=rich_utils.ERRORS_PANEL_TITLE,
+                title_align=rich_utils.ALIGN_ERRORS_PANEL,
+            )
+        )
+
+    rich_utils.rich_format_error = _rich_format_error  # type: ignore[assignment]
     rich_utils._fabric_tools_help_theme_patched = True
 
 
