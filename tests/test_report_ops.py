@@ -226,6 +226,12 @@ def test_download_report_joined(tmp_path: Path) -> None:
     assert (dest / "definition" / "report.json").is_file()
     assert (tmp_path / "Sales.SemanticModel" / "definition" / "model.tmdl").is_file()
     assert result.semantic_model_id == MODEL
+    lines = result.message.splitlines()
+    assert len(lines) >= 3
+    assert lines[0].startswith("downloaded report ")
+    assert "downloaded joined semantic model " in lines[1]
+    assert lines[2].startswith("wrote Power BI Desktop shortcut ")
+    assert "; " not in result.message
     pbir = json.loads((dest / "definition.pbir").read_text(encoding="utf-8"))
     assert pbir["datasetReference"] == {"byPath": {"path": "../Sales.SemanticModel"}}
     pbip = json.loads((tmp_path / "Sales.pbip").read_text(encoding="utf-8"))

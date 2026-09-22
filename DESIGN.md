@@ -38,6 +38,22 @@ Command-level failure and warning messages use a Rich `Panel` on stderr, matchin
 
 Do not invent a different boxed style. Success / identifier lines (GUIDs, remap ok) stay unboxed `secho`. Inline value colours in tables (setup status, env list, compare STATUS) stay Rich styles, not panels. Diff body text stays primary (uncoloured). Compare advisories (e.g. joined-model notes) print as **dim** lines after the summary table — not Warning panels.
 
+### Success / op result lines
+
+Successful download / deploy / delete ops print via `_print_op_results` as unboxed green `secho` of `OpResult.message` (one `OpResult` per work item).
+
+When one op produces **multiple distinct outcomes** (joined report + model, `.pbip` shortcut, deploy model then report, publish follow-up failure after a successful create, …), put **one outcome per line** in `message` (join with `"\n"`, not `"; "`). Parenthetical qualifiers on a single outcome stay on the same line (e.g. `… (published)`, `… (IncludeModel — report + semantic model)`).
+
+Example (joined report download):
+
+```text
+downloaded report <ws>:<id> -> temp\Projects.Report
+downloaded joined semantic model <ws>:<id> -> temp\Projects.SemanticModel
+wrote Power BI Desktop shortcut temp\Projects.pbip
+```
+
+Do not glue those into one semicolon-separated line. Error panels may also be multi-line when a partial success is followed by a distinct failure (same newline rule).
+
 ### Aligned key / value and table layout
 
 Shared formatting rules for multi-column / key-value CLI output:

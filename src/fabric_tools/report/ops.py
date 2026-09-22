@@ -291,7 +291,7 @@ def download_report(
 
     return OpResult(
         True,
-        "; ".join(messages),
+        "\n".join(messages),
         target.workspace_id,
         target.item_id,
         semantic_model_id=model_id,
@@ -809,7 +809,7 @@ def _deploy_joined_folder(
             )
             return OpResult(
                 True,
-                "; ".join(messages),
+                "\n".join(messages),
                 target.workspace_id,
                 report_id or None,
                 semantic_model_id=model_id,
@@ -828,7 +828,7 @@ def _deploy_joined_folder(
         )
         return OpResult(
             True,
-            "; ".join(messages),
+            "\n".join(messages),
             target.workspace_id,
             target.item_id,
             semantic_model_id=model_id,

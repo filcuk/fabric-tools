@@ -312,6 +312,8 @@ def test_deploy_publish_failure_keeps_definition_applied(tmp_path: Path) -> None
     assert not result.ok
     assert "updated" in result.message
     assert "publish (Apply Changes) failed" in result.message
+    assert "\n" in result.message
+    assert "; " not in result.message
     assert client.last_update_definition is not None
     assert client.apply_changes == [(WS, DF)]
 
