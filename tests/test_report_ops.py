@@ -156,6 +156,8 @@ class FakeClient:
 
     def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
         del workspace_id
+        if item_id == MODEL:
+            return {"id": item_id, "displayName": "Sales", "type": "SemanticModel"}
         return {"id": item_id, "displayName": "FromOrigin", "type": "Report"}
 
 
@@ -217,12 +219,67 @@ def test_download_report_joined(tmp_path: Path) -> None:
         client,
         WorkItem(Target(WS, REPORT), dest),  # type: ignore[arg-type]
         independent=False,
+        silent=True,
         powerbi_client=FakePowerBi(),
     )
     assert result.ok
     assert (dest / "definition" / "report.json").is_file()
     assert (tmp_path / "Sales.SemanticModel" / "definition" / "model.tmdl").is_file()
     assert result.semantic_model_id == MODEL
+
+
+def test_download_report_joined_warns_under_spinner(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    dest = tmp_path / "Sales.Report"
+    warnings: list[str] = []
+
+    def capture_warn(message: Any) -> None:
+        plain = message.plain if hasattr(message, "plain") else str(message)
+        warnings.append(plain)
+
+    monkeypatch.setattr(
+        "fabric_tools.report.ops.warn_aside",
+        capture_warn,
+    )
+
+    result = download_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), dest),  # type: ignore[arg-type]
+        independent=False,
+        silent=False,
+        powerbi_client=FakePowerBi(),
+    )
+    assert result.ok
+    assert len(warnings) == 2
+    assert "If this report is connected" in warnings[0]
+    assert "Also downloading connected semantic model" in warnings[1]
+    assert MODEL in warnings[1]
+    assert "--independent" in warnings[1]
+
+    warnings.clear()
+    dest2 = tmp_path / "Other.Report"
+    result2 = download_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), dest2),  # type: ignore[arg-type]
+        independent=False,
+        silent=True,
+        powerbi_client=FakePowerBi(),
+    )
+    assert result2.ok
+    assert warnings == []
+
+    warnings.clear()
+    dest3 = tmp_path / "Indep.Report"
+    result3 = download_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), dest3),  # type: ignore[arg-type]
+        independent=True,
+        silent=False,
+        powerbi_client=FakePowerBi(),
+    )
+    assert result3.ok
+    assert warnings == []
 
 
 def test_deploy_create_report_only(tmp_path: Path) -> None:
@@ -373,11 +430,12 @@ def test_run_download_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> N
             WorkItem(Target(WS, REPORT), dest_a),  # type: ignore[arg-type]
             WorkItem(Target(WS, report_b), dest_b),  # type: ignore[arg-type]
         ],
+        silent=True,
         powerbi_client=FakePowerBi(),
     )
     assert messages == [
         "1 of 4 · report: downloading (FromOrigin)…",
-        "2 of 4 · semantic-model: downloading (FromOrigin)…",
+        "2 of 4 · semantic-model: downloading (Sales)…",
         "3 of 4 · report: downloading (FromOrigin)…",
         "4 of 4 · semantic-model: downloading (FromOrigin)…",
     ]
@@ -442,7 +500,7 @@ def test_run_deploy_batch_status_joined_overwrite(
         semantic_model_ids=[MODEL],
     )
     assert messages == [
-        "1 of 2 · semantic-model: deploying (FromOrigin)…",
+        "1 of 2 · semantic-model: deploying (Sales)…",
         "2 of 2 · report: deploying (FromOrigin)…",
     ]
 

@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rich.text import Text
+
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.colours import STYLE_ID
 from fabric_tools.confirm import status_item_label, status_item_label_for_id
 from fabric_tools.definition_parts import encode_part
 from fabric_tools.parsing import WorkItem
@@ -45,7 +48,7 @@ from fabric_tools.semantic_model.ops import (
 from fabric_tools.semantic_model.ops import (
     unpack_definition as unpack_semantic_model_definition,
 )
-from fabric_tools.status import BatchProgress, status_detail
+from fabric_tools.status import BatchProgress, clear_aside, status_detail, warn_aside
 
 ITEM_TYPE = "Report"
 
@@ -64,6 +67,7 @@ def download_report(
     item: WorkItem,
     *,
     independent: bool = False,
+    silent: bool = False,
     powerbi_client: Any | None = None,
     progress: BatchProgress | None = None,
 ) -> OpResult:
@@ -101,6 +105,11 @@ def download_report(
             )
         )
 
+    # Immediate under-spinner notice (no extra auth). Refined with the model
+    # id after the Fabric definition is parsed; cleared if unbound.
+    if not independent and not silent:
+        warn_aside(_connected_model_download_warn())
+
     try:
         dest = detect_report_path(dest)
         definition = get_report_definition(client, target.workspace_id, target.item_id)
@@ -127,6 +136,8 @@ def download_report(
             powerbi_client=powerbi_client,
         )
         if model_id:
+            if not silent:
+                _warn_connected_model_download(client, target.workspace_id, model_id)
             if progress is not None:
                 progress.advance(
                     status_detail(
@@ -152,6 +163,8 @@ def download_report(
                 )
                 model_id = None
         else:
+            if not silent:
+                clear_aside()
             messages.append(
                 "report downloaded; semantic model not included "
                 "(thin/live-connect or unbound — use semantic-model download if needed)"
@@ -358,6 +371,7 @@ def run_download_batch(
     items: list[WorkItem],
     *,
     independent: bool = False,
+    silent: bool = False,
     powerbi_client: Any | None = None,
 ) -> list[OpResult]:
     progress = BatchProgress(
@@ -370,6 +384,7 @@ def run_download_batch(
                 client,
                 item,
                 independent=independent,
+                silent=silent,
                 powerbi_client=powerbi_client,
                 progress=progress,
             )
@@ -707,6 +722,51 @@ def _deploy_joined_folder(
             target.item_id,
             semantic_model_id=model_id,
         )
+
+
+def _independent_opt_hint() -> Text:
+    """Cyan ``--independent / -i`` hint (command-hint role; see DESIGN.md)."""
+    text = Text()
+    text.append("--independent", style=STYLE_ID)
+    text.append(" / ")
+    text.append("-i", style=STYLE_ID)
+    return text
+
+
+def _connected_model_download_warn(*, detail: str | None = None) -> Text:
+    """Warning body for joined report download (optional connected-model detail)."""
+    text = Text()
+    if detail:
+        text.append(detail)
+        if not detail.endswith((".", "!", "?")):
+            text.append(".")
+        text.append(" ")
+    else:
+        text.append(
+            "If this report is connected to a semantic model, that model will "
+            "also be downloaded. "
+        )
+    text.append("Use ")
+    text.append_text(_independent_opt_hint())
+    text.append(" for report only.")
+    return text
+
+
+def _warn_connected_model_download(
+    client: FabricClient,
+    workspace_id: str,
+    model_id: str,
+) -> None:
+    """Non-blocking notice under the download spinner (see ``status.warn_aside``)."""
+    label = status_item_label_for_id(client, workspace_id, model_id)
+    warn_aside(
+        _connected_model_download_warn(
+            detail=(
+                f"Also downloading connected semantic model '{label}' "
+                f"({workspace_id}:{model_id})"
+            )
+        )
+    )
 
 
 def _download_pbix(

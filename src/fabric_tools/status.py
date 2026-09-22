@@ -8,8 +8,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
-from rich.console import Console
+from rich.console import Console, Group, RenderableType
 from rich.live import Live
+from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.text import Text
 
@@ -34,13 +35,30 @@ _SPINNER_STYLE = "green"
 
 @dataclass
 class _BusyHandle:
-    """Spinner + Live pair; ``stop`` clears the line without advancing."""
+    """Spinner + Live pair; optional aside renderable drawn under the spinner."""
 
     live: Live
     spinner: Spinner
+    aside: RenderableType | None = None
+
+    def _body(self) -> RenderableType:
+        if self.aside is None:
+            return self.spinner
+        return Group(self.spinner, self.aside)
+
+    def refresh(self) -> None:
+        """Push spinner (+ aside) to Live when the display is still running."""
+        if not self.live._started:
+            return
+        self.live.update(self._body())
 
     def update(self, message: str) -> None:
         self.spinner.update(text=Text(message))
+        self.refresh()
+
+    def set_aside(self, renderable: RenderableType | None) -> None:
+        self.aside = renderable
+        self.refresh()
 
     def stop(self) -> None:
         """End live rendering without Rich's trailing ``console.line()``.
@@ -196,6 +214,53 @@ def update(message: str) -> None:
         _message.set(message)
 
 
+def set_aside(renderable: RenderableType | None) -> None:
+    """Attach persistent content beneath the active spinner (or clear with ``None``).
+
+    Does **not** stop Live — use this for non-blocking notices that should stay
+    visible under the spinner while work continues. Replaces any prior aside.
+
+    When no ``busy`` Live is active (including non-TTY ``busy``), prints
+    *renderable* once when non-``None``.
+    """
+    handle = _active.get()
+    if handle is not None:
+        handle.set_aside(renderable)
+        return
+    if renderable is not None:
+        _console.print(renderable)
+
+
+def warn_aside(message: str | Text) -> None:
+    """Show a Warning panel under the active spinner without stopping Live.
+
+    Same yellow Warning panel styling as ``print_warn_panel``, but stays under
+    the spinner via ``set_aside``. *message* may be plain text or a Rich
+    ``Text`` (e.g. cyan command hints). Outside ``busy``, prints the panel once.
+    """
+    from fabric_tools.colours import STYLE_WARN
+
+    if isinstance(message, Text):
+        body: str | Text = message
+    else:
+        body = (message or "").strip() or "Warning."
+    set_aside(
+        Panel(
+            body,
+            border_style=STYLE_WARN,
+            title="Warning",
+            title_align="left",
+        )
+    )
+
+
+def clear_aside() -> None:
+    """Remove any aside under the active spinner (no-op if none / no busy)."""
+    handle = _active.get()
+    if handle is not None:
+        handle.set_aside(None)
+
+
 def clear() -> None:
     """Stop the active spinner so following stderr output is not mid-line.
 
@@ -211,3 +276,11 @@ def clear() -> None:
 def current_message() -> str | None:
     """Return the active status message, if any."""
     return _message.get()
+
+
+def current_aside() -> RenderableType | None:
+    """Return the active aside renderable, if any (for tests / introspection)."""
+    handle = _active.get()
+    if handle is None:
+        return None
+    return handle.aside

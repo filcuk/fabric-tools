@@ -87,8 +87,8 @@ def run_report_command(
                 join_model_paths.append(None)
         req.extras["join_model_paths"] = join_model_paths
 
-    def download_kwargs(_req: SyncRequest) -> dict:
-        return {"independent": independent}
+    def download_kwargs(req: SyncRequest) -> dict:
+        return {"independent": independent, "silent": req.silent}
 
     def deploy_confirm_kwargs(req: SyncRequest) -> dict:
         return {
