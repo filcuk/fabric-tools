@@ -143,11 +143,20 @@ class PowerBiClient:
         ]
 
     def get_report(self, group_id: str, report_id: str) -> dict[str, Any]:
-        """GET /groups/{groupId}/reports/{reportId}."""
+        """GET /groups/{groupId}/reports/{reportId}.
+
+        Personal (My) workspaces reject group APIs with ``GroupNotAccessible``;
+        those fall back to ``GET /reports/{reportId}``.
+        """
         response = self._client.get(
             f"{self.base_url}/groups/{group_id}/reports/{report_id}",
             headers=self._json_headers(),
         )
+        if response.status_code != 200 and "GroupNotAccessible" in response.text:
+            response = self._client.get(
+                f"{self.base_url}/reports/{report_id}",
+                headers=self._json_headers(),
+            )
         if response.status_code != 200:
             self._raise_api_error(response)
         result = self._json_or_none(response)

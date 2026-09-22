@@ -13,7 +13,11 @@ from fabric_tools.colours import (
     FG_OK,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
-from fabric_tools.sync.common import _enforce_readonly_setup, _exit_error, _exit_warn
+from fabric_tools.sync.common import (
+    _enforce_readonly_setup,
+    _exit_error,
+    _exit_user_abort,
+)
 
 setup_app = typer.Typer(
     name="setup",
@@ -181,7 +185,9 @@ def setup_update(
     try:
         result = perform_setup_update(silent=silent)
     except ConfirmationAborted as exc:
-        _exit_warn(str(exc))
+        _exit_user_abort(exc)
+    except typer.Abort as exc:
+        _exit_user_abort(exc)
     except PathSetupError as exc:
         _exit_error(str(exc))
     except UpdateCheckError as exc:

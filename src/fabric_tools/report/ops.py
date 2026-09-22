@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rich.text import Text
+
+from fabric_tools import status as status_mod
 from fabric_tools.client import FabricApiError, FabricClient
+from fabric_tools.colours import STYLE_ID
 from fabric_tools.confirm import status_item_label, status_item_label_for_id
 from fabric_tools.definition_parts import encode_part
 from fabric_tools.parsing import WorkItem
@@ -25,8 +29,11 @@ from fabric_tools.report.definition import (
     part_payloads,
     resolve_local_join,
     rewrite_pbir_to_by_connection,
+    rewrite_pbir_to_by_path,
     unpack_definition,
     validate_local_report,
+    write_pbip,
+    write_pbir,
 )
 from fabric_tools.semantic_model.definition import (
     definition_has_platform as sm_has_platform,
@@ -45,7 +52,7 @@ from fabric_tools.semantic_model.ops import (
 from fabric_tools.semantic_model.ops import (
     unpack_definition as unpack_semantic_model_definition,
 )
-from fabric_tools.status import BatchProgress, status_detail
+from fabric_tools.status import BatchProgress, clear_aside, status_detail, warn_aside
 
 ITEM_TYPE = "Report"
 
@@ -59,13 +66,83 @@ class OpResult:
     semantic_model_id: str | None = None
 
 
+def _report_definition_cache_key(workspace_id: str, report_id: str) -> str:
+    return f"{workspace_id}:{report_id}"
+
+
+def get_cached_report_definition(
+    client: FabricClient,
+    workspace_id: str,
+    report_id: str,
+    cache: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    key = _report_definition_cache_key(workspace_id, report_id)
+    if key not in cache:
+        cache[key] = get_report_definition(client, workspace_id, report_id)
+    return cache[key]
+
+
+def preflight_bound_model_id(
+    client: FabricClient,
+    workspace_id: str,
+    report_id: str,
+    *,
+    independent: bool,
+    powerbi_client: Any | None,
+    definition_cache: dict[str, dict[str, Any]],
+) -> str | None:
+    """Return bound semantic model id while the spinner still says ``checking``.
+
+    Order: cached definition → Power BI ``datasetId`` → Fabric ``getDefinition``
+    (cached for the later download/compare). Never updates the download/compare
+    progress line — callers do that only after this returns.
+    """
+    if independent:
+        return None
+    key = _report_definition_cache_key(workspace_id, report_id)
+    if key in definition_cache:
+        return resolve_bound_model_id(
+            client,
+            workspace_id,
+            report_id,
+            definition=definition_cache[key],
+            powerbi_client=powerbi_client,
+        )
+
+    early = resolve_bound_model_id(
+        client,
+        workspace_id,
+        report_id,
+        definition=None,
+        powerbi_client=powerbi_client,
+    )
+    if early:
+        return early
+
+    try:
+        definition = get_cached_report_definition(
+            client, workspace_id, report_id, definition_cache
+        )
+    except (FabricApiError, DefinitionError):
+        return None
+    return resolve_bound_model_id(
+        client,
+        workspace_id,
+        report_id,
+        definition=definition,
+        powerbi_client=powerbi_client,
+    )
+
+
 def download_report(
     client: FabricClient,
     item: WorkItem,
     *,
     independent: bool = False,
+    silent: bool = False,
     powerbi_client: Any | None = None,
     progress: BatchProgress | None = None,
+    definition_cache: dict[str, dict[str, Any]] | None = None,
 ) -> OpResult:
     """Download one remote report (folder or ``.pbix``); join model when packable."""
     if item.target is None or item.target.item_id is None:
@@ -75,7 +152,7 @@ def download_report(
 
     target = item.target
     dest = item.file
-    plans_model = _plans_download_model_step(item, independent=independent)
+    cache = definition_cache if definition_cache is not None else {}
 
     if is_pbix_path(dest):
         if progress is not None:
@@ -92,21 +169,41 @@ def download_report(
             powerbi_client=powerbi_client,
         )
 
-    if progress is not None:
-        progress.advance(
-            status_detail(
-                "report",
-                "downloading",
-                status_item_label(client, target),
-            )
+    report_label = status_item_label(client, target)
+    model_id: str | None = None
+    planned_model_step = False
+
+    # 1) Check bind while spinner still says ``checking`` (orchestrator / batch).
+    # 2) Only then show download status — ``1 of 2`` + warning when joined.
+    if not independent:
+        if progress is not None:
+            status_mod.update(status_detail("report", "checking", report_label))
+        model_id = preflight_bound_model_id(
+            client,
+            target.workspace_id,
+            target.item_id,
+            independent=False,
+            powerbi_client=powerbi_client,
+            definition_cache=cache,
         )
+        if model_id:
+            planned_model_step = True
+            if progress is not None:
+                progress.plan_extra(1)
+            if not silent:
+                _warn_connected_model_download(client, target.workspace_id, model_id)
+
+    if progress is not None:
+        progress.advance(status_detail("report", "downloading", report_label))
 
     try:
         dest = detect_report_path(dest)
-        definition = get_report_definition(client, target.workspace_id, target.item_id)
+        definition = get_cached_report_definition(
+            client, target.workspace_id, target.item_id, cache
+        )
         written = unpack_definition(definition, dest)
     except (FabricApiError, DefinitionError, OSError) as exc:
-        if plans_model and progress is not None:
+        if planned_model_step and progress is not None:
             progress.skip_planned()
         return OpResult(
             False,
@@ -116,16 +213,39 @@ def download_report(
         )
 
     messages = [f"downloaded report {target.label()} -> {written}"]
-    model_id: str | None = None
 
     if not independent:
-        model_id = resolve_bound_model_id(
+        # Definition is authoritative once fetched (byPath → no model download).
+        resolved_id = resolve_bound_model_id(
             client,
             target.workspace_id,
             target.item_id,
             definition=definition,
             powerbi_client=powerbi_client,
         )
+        if resolved_id and not model_id:
+            model_id = resolved_id
+            planned_model_step = True
+            if progress is not None:
+                progress.plan_extra(1)
+            if not silent:
+                _warn_connected_model_download(client, target.workspace_id, model_id)
+        elif resolved_id and model_id != resolved_id:
+            model_id = resolved_id
+            if not silent:
+                _warn_connected_model_download(client, target.workspace_id, model_id)
+        elif not resolved_id:
+            if planned_model_step and progress is not None:
+                progress.skip_planned()
+            planned_model_step = False
+            model_id = None
+            if not silent:
+                clear_aside()
+            messages.append(
+                "report downloaded; semantic model not included "
+                "(thin/live-connect or unbound — use semantic-model download if needed)"
+            )
+
         if model_id:
             if progress is not None:
                 progress.advance(
@@ -151,17 +271,27 @@ def download_report(
                     f"({target.workspace_id}:{model_id}): {exc}"
                 )
                 model_id = None
-        else:
-            messages.append(
-                "report downloaded; semantic model not included "
-                "(thin/live-connect or unbound — use semantic-model download if needed)"
-            )
-            if plans_model and progress is not None:
-                progress.skip_planned()
+            else:
+                try:
+                    write_pbir(
+                        written,
+                        rewrite_pbir_to_by_path(
+                            load_pbir(written), f"../{Path(sm_written).name}"
+                        ),
+                    )
+                except (DefinitionError, OSError) as exc:
+                    messages.append(
+                        f"definition.pbir not rebound to local model (byPath): {exc}"
+                    )
+
+    try:
+        messages.append(f"wrote Power BI Desktop shortcut {write_pbip(written)}")
+    except OSError as exc:
+        messages.append(f"Power BI Desktop shortcut not written: {exc}")
 
     return OpResult(
         True,
-        "; ".join(messages),
+        "\n".join(messages),
         target.workspace_id,
         target.item_id,
         semantic_model_id=model_id,
@@ -358,22 +488,37 @@ def run_download_batch(
     items: list[WorkItem],
     *,
     independent: bool = False,
+    silent: bool = False,
     powerbi_client: Any | None = None,
 ) -> list[OpResult]:
-    progress = BatchProgress(
-        total=_estimate_download_steps(items, independent=independent)
-    )
+    # Base total = report steps only (no network). Each item may ``plan_extra``
+    # a model step after bind check so ``1 of 2`` is accurate immediately.
+    from fabric_tools.powerbi_client import PowerBiClient
+
+    definition_cache: dict[str, dict[str, Any]] = {}
+    progress = BatchProgress(total=_estimate_download_steps(items))
+    owns_pbi = powerbi_client is None and not independent
+    pbi = powerbi_client
+    if owns_pbi:
+        pbi = PowerBiClient()
+        pbi.ensure_authenticated()
     results: list[OpResult] = []
-    for item in items:
-        results.append(
-            download_report(
-                client,
-                item,
-                independent=independent,
-                powerbi_client=powerbi_client,
-                progress=progress,
+    try:
+        for item in items:
+            results.append(
+                download_report(
+                    client,
+                    item,
+                    independent=independent,
+                    silent=silent,
+                    powerbi_client=pbi,
+                    progress=progress,
+                    definition_cache=definition_cache,
+                )
             )
-        )
+    finally:
+        if owns_pbi and pbi is not None:
+            pbi.close()
     return results
 
 
@@ -428,21 +573,14 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     return results
 
 
-def _estimate_download_steps(items: list[WorkItem], *, independent: bool) -> int:
+def _estimate_download_steps(items: list[WorkItem]) -> int:
+    """Count report-only steps (no network). Model steps are planned per item."""
     total = 0
     for item in items:
         if item.target is None or item.target.item_id is None or item.file is None:
             continue
         total += 1
-        if _plans_download_model_step(item, independent=independent):
-            total += 1
     return total
-
-
-def _plans_download_model_step(item: WorkItem, *, independent: bool) -> bool:
-    if independent or item.file is None:
-        return False
-    return not is_pbix_path(item.file)
 
 
 def _estimate_deploy_steps(items: list[WorkItem], *, independent: bool) -> int:
@@ -671,7 +809,7 @@ def _deploy_joined_folder(
             )
             return OpResult(
                 True,
-                "; ".join(messages),
+                "\n".join(messages),
                 target.workspace_id,
                 report_id or None,
                 semantic_model_id=model_id,
@@ -690,7 +828,7 @@ def _deploy_joined_folder(
         )
         return OpResult(
             True,
-            "; ".join(messages),
+            "\n".join(messages),
             target.workspace_id,
             target.item_id,
             semantic_model_id=model_id,
@@ -707,6 +845,58 @@ def _deploy_joined_folder(
             target.item_id,
             semantic_model_id=model_id,
         )
+
+
+def _independent_opt_hint() -> Text:
+    """Cyan ``--independent / -i`` hint (command-hint role; see DESIGN.md)."""
+    text = Text()
+    text.append("--independent", style=STYLE_ID)
+    text.append(" / ")
+    text.append("-i", style=STYLE_ID)
+    return text
+
+
+def joined_model_aside_text(
+    *,
+    provisional: str | None = None,
+    detail: str | None = None,
+) -> Text:
+    """Warning body for joined report ops (download/compare).
+
+    Pass *provisional* for the early notice, or *detail* (without trailing
+    period) once a connected model id is known.
+    """
+    text = Text()
+    if detail:
+        text.append(detail)
+        if not detail.endswith((".", "!", "?")):
+            text.append(".")
+        text.append(" ")
+    elif provisional:
+        text.append(provisional)
+        if not provisional.endswith(" "):
+            text.append(" ")
+    text.append("Use ")
+    text.append_text(_independent_opt_hint())
+    text.append(" for report only.")
+    return text
+
+
+def _warn_connected_model_download(
+    client: FabricClient,
+    workspace_id: str,
+    model_id: str,
+) -> None:
+    """Non-blocking notice under the download spinner (see ``status.warn_aside``)."""
+    label = status_item_label_for_id(client, workspace_id, model_id)
+    warn_aside(
+        joined_model_aside_text(
+            detail=(
+                f"Also downloading connected semantic model '{label}' "
+                f"({workspace_id}:{model_id})"
+            )
+        )
+    )
 
 
 def _download_pbix(

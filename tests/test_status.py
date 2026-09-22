@@ -48,6 +48,21 @@ def test_batch_progress_advance_and_skip(monkeypatch: object) -> None:
     ]
 
 
+def test_batch_progress_plan_extra(monkeypatch: object) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(status, "update", lambda msg: messages.append(msg))
+    progress = status.BatchProgress(total=1)
+    progress.plan_extra(1)
+    progress.advance("report: downloading (Sales)…")
+    progress.advance("semantic-model: downloading (Sales)…")
+    assert progress.current == 2
+    assert progress.total == 2
+    assert messages == [
+        "1 of 2 · report: downloading (Sales)…",
+        "2 of 2 · semantic-model: downloading (Sales)…",
+    ]
+
+
 def test_update_outside_busy_is_noop() -> None:
     status.update("should not raise")
 
@@ -94,6 +109,96 @@ def test_busy_nested_restores_parent_message() -> None:
         status._active.reset(token)
 
     assert outer.messages == ["Inner...", "Outer..."]
+
+
+def test_set_percent_suffixes_message_without_changing_it() -> None:
+    handle = MagicMock()
+    token = status._active.set(handle)
+    msg_token = status._message.set("notebook: downloading (Sales)…")
+    try:
+        status.set_percent(42)
+        handle.update.assert_called_with("notebook: downloading (Sales)… 42%")
+        assert status.current_message() == "notebook: downloading (Sales)…"
+        status.set_percent(None)
+        handle.update.assert_called_with("notebook: downloading (Sales)…")
+    finally:
+        status._message.reset(msg_token)
+        status._active.reset(token)
+
+
+def test_set_percent_outside_busy_is_noop() -> None:
+    status.set_percent(50)
+
+
+def test_set_aside_under_busy_handle() -> None:
+    asides: list[object] = []
+
+    class FakeHandle:
+        def __init__(self) -> None:
+            self.aside = None
+
+        def update(self, message: str) -> None:
+            del message
+
+        def set_aside(self, renderable: object) -> None:
+            self.aside = renderable
+            asides.append(renderable)
+
+        def stop(self) -> None:
+            return None
+
+    handle = FakeHandle()
+    token = status._active.set(handle)  # type: ignore[arg-type]
+    try:
+        status.set_aside("note")
+        assert handle.aside == "note"
+        status.warn_aside("careful")
+        assert handle.aside is not None
+        assert status.current_aside() is handle.aside
+        status.clear_aside()
+        assert handle.aside is None
+    finally:
+        status._active.reset(token)
+
+    assert asides[0] == "note"
+    assert asides[-1] is None
+
+
+def test_warn_aside_accepts_rich_text() -> None:
+    from rich.text import Text
+
+    asides: list[object] = []
+
+    class FakeHandle:
+        aside = None
+
+        def set_aside(self, renderable: object) -> None:
+            self.aside = renderable
+            asides.append(renderable)
+
+    handle = FakeHandle()
+    token = status._active.set(handle)  # type: ignore[arg-type]
+    try:
+        body = Text("Use ")
+        body.append("--independent", style="cyan")
+        status.warn_aside(body)
+        assert handle.aside is not None
+    finally:
+        status._active.reset(token)
+
+    assert asides
+
+
+def test_set_aside_outside_busy_prints() -> None:
+    printed: list[object] = []
+    console = MagicMock()
+    console.is_terminal = True
+    console.print = lambda msg, **_kwargs: printed.append(msg)
+
+    with patch.object(status, "_console", console):
+        status.set_aside("alone")
+        status.clear_aside()  # no-op outside busy
+    assert printed == ["alone"]
 
 
 def test_clear_stops_active_status() -> None:

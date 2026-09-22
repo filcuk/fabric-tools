@@ -156,6 +156,8 @@ class FakeClient:
 
     def get_item(self, workspace_id: str, item_id: str) -> dict[str, Any]:
         del workspace_id
+        if item_id == MODEL:
+            return {"id": item_id, "displayName": "Sales", "type": "SemanticModel"}
         return {"id": item_id, "displayName": "FromOrigin", "type": "Report"}
 
 
@@ -217,12 +219,107 @@ def test_download_report_joined(tmp_path: Path) -> None:
         client,
         WorkItem(Target(WS, REPORT), dest),  # type: ignore[arg-type]
         independent=False,
+        silent=True,
         powerbi_client=FakePowerBi(),
     )
     assert result.ok
     assert (dest / "definition" / "report.json").is_file()
     assert (tmp_path / "Sales.SemanticModel" / "definition" / "model.tmdl").is_file()
     assert result.semantic_model_id == MODEL
+    lines = result.message.splitlines()
+    assert len(lines) >= 3
+    assert lines[0].startswith("downloaded report ")
+    assert "downloaded joined semantic model " in lines[1]
+    assert lines[2].startswith("wrote Power BI Desktop shortcut ")
+    assert "; " not in result.message
+    pbir = json.loads((dest / "definition.pbir").read_text(encoding="utf-8"))
+    assert pbir["datasetReference"] == {"byPath": {"path": "../Sales.SemanticModel"}}
+    pbip = json.loads((tmp_path / "Sales.pbip").read_text(encoding="utf-8"))
+    assert pbip["artifacts"] == [{"report": {"path": "Sales.Report"}}]
+    assert pbip["version"] == "1.0"
+    assert "pbipProperties" in pbip["$schema"]
+
+
+def test_download_report_independent_keeps_connection_and_writes_pbip(
+    tmp_path: Path,
+) -> None:
+    dest = tmp_path / "Sales.Report"
+    result = download_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), dest),  # type: ignore[arg-type]
+        independent=True,
+        powerbi_client=FakePowerBi(),
+    )
+    assert result.ok
+    pbir = json.loads((dest / "definition.pbir").read_text(encoding="utf-8"))
+    assert "byConnection" in pbir["datasetReference"]
+    assert (tmp_path / "Sales.pbip").is_file()
+
+
+def test_download_report_joined_warns_before_model_step(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Warn + ``1 of 2`` must land before the semantic-model advance."""
+    dest = tmp_path / "Sales.Report"
+    events: list[str] = []
+
+    def capture_warn(message: Any) -> None:
+        plain = message.plain if hasattr(message, "plain") else str(message)
+        events.append(f"warn:{plain}")
+
+    def capture_update(msg: str) -> None:
+        events.append(f"status:{msg}")
+
+    monkeypatch.setattr("fabric_tools.report.ops.warn_aside", capture_warn)
+    monkeypatch.setattr("fabric_tools.status.update", capture_update)
+
+    from fabric_tools.status import BatchProgress
+
+    progress = BatchProgress(total=1)
+    result = download_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), dest),  # type: ignore[arg-type]
+        independent=False,
+        silent=False,
+        powerbi_client=FakePowerBi(),
+        progress=progress,
+    )
+    assert result.ok
+    warn_idx = next(i for i, e in enumerate(events) if e.startswith("warn:"))
+    report_idx = next(
+        i for i, e in enumerate(events) if "1 of 2 · report: downloading" in e
+    )
+    model_idx = next(
+        i for i, e in enumerate(events) if "2 of 2 · semantic-model: downloading" in e
+    )
+    assert warn_idx < report_idx < model_idx
+    assert "Also downloading connected semantic model" in events[warn_idx]
+    assert MODEL in events[warn_idx]
+    assert "--independent" in events[warn_idx]
+
+    events.clear()
+    dest2 = tmp_path / "Other.Report"
+    result2 = download_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), dest2),  # type: ignore[arg-type]
+        independent=False,
+        silent=True,
+        powerbi_client=FakePowerBi(),
+    )
+    assert result2.ok
+    assert not any(e.startswith("warn:") for e in events)
+
+    events.clear()
+    dest3 = tmp_path / "Indep.Report"
+    result3 = download_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), dest3),  # type: ignore[arg-type]
+        independent=True,
+        silent=False,
+        powerbi_client=FakePowerBi(),
+    )
+    assert result3.ok
+    assert not any(e.startswith("warn:") for e in events)
 
 
 def test_deploy_create_report_only(tmp_path: Path) -> None:
@@ -373,11 +470,14 @@ def test_run_download_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> N
             WorkItem(Target(WS, REPORT), dest_a),  # type: ignore[arg-type]
             WorkItem(Target(WS, report_b), dest_b),  # type: ignore[arg-type]
         ],
+        silent=True,
         powerbi_client=FakePowerBi(),
     )
     assert messages == [
-        "1 of 4 · report: downloading (FromOrigin)…",
-        "2 of 4 · semantic-model: downloading (FromOrigin)…",
+        "report: checking (FromOrigin)…",
+        "1 of 3 · report: downloading (FromOrigin)…",
+        "2 of 3 · semantic-model: downloading (Sales)…",
+        "report: checking (FromOrigin)…",
         "3 of 4 · report: downloading (FromOrigin)…",
         "4 of 4 · semantic-model: downloading (FromOrigin)…",
     ]
@@ -442,7 +542,7 @@ def test_run_deploy_batch_status_joined_overwrite(
         semantic_model_ids=[MODEL],
     )
     assert messages == [
-        "1 of 2 · semantic-model: deploying (FromOrigin)…",
+        "1 of 2 · semantic-model: deploying (Sales)…",
         "2 of 2 · report: deploying (FromOrigin)…",
     ]
 

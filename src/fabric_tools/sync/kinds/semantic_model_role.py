@@ -18,6 +18,7 @@ from fabric_tools.sync.common import (
     _cli_needs_wildcard_expand,
     _enforce_readonly_mutation,
     _exit_error,
+    _exit_user_abort,
     _exit_warn,
     _fail_auth,
     _list_items_fn_for_kind,
@@ -42,6 +43,7 @@ def run_semantic_model_role_command(
     from fabric_tools.auth import POWER_BI_SCOPE, create_credential, get_access_token
     from fabric_tools.client import FabricApiError, FabricClient
     from fabric_tools.confirm import (
+        CONFIRM_ABORT_MESSAGE,
         ConfirmationAborted,
         confirm_semantic_model_role_member_changes,
         resolve_workspace_name,
@@ -222,7 +224,9 @@ def run_semantic_model_role_command(
                     silent=silent,
                 )
             except ConfirmationAborted as exc:
-                _exit_warn(str(exc))
+                _exit_user_abort(exc)
+            except typer.Abort as exc:
+                _exit_user_abort(exc)
 
         try:
             with busy(status_detail("semantic-model", "acquiring token")):
@@ -272,19 +276,19 @@ def run_semantic_model_role_command(
             _fail_auth(exc)
         except XmlaRolesError as exc:
             if exc.code == "cancelled":
-                _exit_warn(str(exc) or "Aborted by user.")
+                _exit_warn(str(exc) or CONFIRM_ABORT_MESSAGE)
             stage = f" (stage={exc.stage})" if exc.stage else ""
             detail = f"\n{exc.detail}" if exc.detail else ""
             code = f" [{exc.code}]" if exc.code else ""
             _exit_error(f"{exc}{stage}{code}{detail}", code=EXIT_API)
         except KeyboardInterrupt:
-            _exit_warn("Aborted by user.")
+            _exit_warn(CONFIRM_ABORT_MESSAGE)
 
         failed = False
         for model_name, model_id, ws_label, outcome in outcomes:
             if isinstance(outcome, XmlaRolesError):
                 if outcome.code == "cancelled":
-                    _exit_warn(str(outcome) or "Aborted by user.")
+                    _exit_warn(str(outcome) or CONFIRM_ABORT_MESSAGE)
                 stage = f" (stage={outcome.stage})" if outcome.stage else ""
                 detail = f"\n{outcome.detail}" if outcome.detail else ""
                 code = f" [{outcome.code}]" if outcome.code else ""

@@ -39,6 +39,34 @@ def test_apply_help_theme_sets_option_and_switch_styles() -> None:
     assert colours.HELP_STYLE_REQUIRED_LONG == "dim red"
 
 
+def test_usage_error_omits_try_help_hint() -> None:
+    """Unknown-command errors keep Usage + Error panel; no Try … --help line."""
+    result = CliRunner().invoke(app, ["report", "dowload"])
+    assert result.exit_code != EXIT_OK
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "Usage:" in combined
+    assert "No such command" in combined
+    assert "Did you mean" in combined
+    assert "Try " not in combined
+    assert "for help." not in combined
+
+    root = CliRunner().invoke(app, ["not-a-command"])
+    assert root.exit_code != EXIT_OK
+    root_text = (root.stdout or "") + (root.stderr or "")
+    assert "Usage:" in root_text
+    assert "No such command" in root_text
+    assert "Try " not in root_text
+    assert "for help." not in root_text
+
+    option = CliRunner().invoke(app, ["notebook", "deploy", "--bogus"])
+    assert option.exit_code != EXIT_OK
+    option_text = (option.stdout or "") + (option.stderr or "")
+    assert "Usage:" in option_text
+    assert "No such option" in option_text
+    assert "Try " not in option_text
+    assert "for help." not in option_text
+
+
 def _span_styles_covering(text, start: int, end: int) -> set[str]:
     """Return Rich style names covering ``text.plain[start:end]``."""
     styles: set[str] = set()

@@ -32,6 +32,30 @@ def test_get_group_ok() -> None:
     assert data["name"] == "Dev"
 
 
+def test_get_report_personal_workspace_falls_back_to_my_workspace() -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if "/groups/" in request.url.path:
+            return httpx.Response(
+                401,
+                json={
+                    "error": {
+                        "code": "GroupNotAccessible",
+                        "message": "Calling group APIs not permitted for personal workspace",
+                    }
+                },
+            )
+        return httpx.Response(200, json={"id": "r-1", "datasetId": "m-1"})
+
+    with _client(httpx.MockTransport(handler)) as client:
+        report = client.get_report("ws-1", "r-1")
+    assert report["datasetId"] == "m-1"
+    assert paths[0].endswith("/groups/ws-1/reports/r-1")
+    assert paths[1].endswith("/reports/r-1") and "/groups/" not in paths[1]
+
+
 def test_list_and_get_dataflow() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/groups/ws-1/dataflows")

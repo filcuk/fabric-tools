@@ -568,8 +568,9 @@ def ensure_sqlserver_module(
 ) -> None:
     """Ensure SqlServer is installed; optionally offer a confirmed Gallery install.
 
-    *confirm* is a callable ``(message: str) -> bool`` (defaults to ``typer.confirm``).
-    When *silent* is True, never prompt — raise with the install hint instead.
+    *confirm* is a callable ``(message: str, *, default: bool = False) -> bool``
+    (defaults to ``prompt_confirm``). When *silent* is True, never prompt —
+    raise with the install hint instead.
 
     Always stops any active spinner before prompting: a prompt printed under a
     live spinner is erased on the next refresh and looks like a hang.
@@ -588,9 +589,9 @@ def ensure_sqlserver_module(
     clear_status()
 
     if confirm is None:
-        import typer
+        from fabric_tools.confirm import prompt_confirm
 
-        confirm = typer.confirm
+        confirm = prompt_confirm
 
     prompt = (
         f"{SQLSERVER_MODULE} PowerShell module not found. "

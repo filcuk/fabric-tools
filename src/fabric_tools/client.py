@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from fabric_tools.auth import TokenProvider, token_provider
+from fabric_tools.status import set_percent
 
 DEFAULT_BASE_URL = "https://api.fabric.microsoft.com/v1"
 DEFAULT_RETRY_AFTER_SECONDS = 5
@@ -224,6 +225,17 @@ class FabricClient:
 
         state_url = location or f"{self.base_url}/operations/{operation_id}"
 
+        try:
+            return self._poll_operation(state_url, operation_id, retry_after)
+        finally:
+            set_percent(None)
+
+    def _poll_operation(
+        self,
+        state_url: str,
+        operation_id: str | None,
+        retry_after: int,
+    ) -> Any:
         while True:
             self._sleep(retry_after)
             state_response = self._client.get(state_url, headers=self._headers())
@@ -265,6 +277,10 @@ class FabricClient:
                     else None,
                     details=error or payload,
                 )
+
+            percent = _operation_percent(payload)
+            if percent is not None:
+                set_percent(percent)
 
             # Still running — prefer Location from latest response when present.
             next_location = state_response.headers.get("Location")
@@ -343,6 +359,15 @@ def _parse_retry_after(
     except ValueError:
         return default
     return max(parsed, 1)
+
+
+def _operation_percent(payload: Any) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get("percentComplete")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return min(max(value, 0), 100)
 
 
 def _operation_status(payload: Any) -> str | None:

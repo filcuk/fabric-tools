@@ -320,7 +320,7 @@ def _maybe_publish(
     if not item_id:
         return OpResult(
             False,
-            f"{base_message}; publish skipped: missing dataflow id after deploy",
+            f"{base_message}\npublish skipped: missing dataflow id after deploy",
             workspace_id,
             None,
         )
@@ -329,7 +329,7 @@ def _maybe_publish(
     except FabricApiError as exc:
         return OpResult(
             False,
-            f"{base_message}; publish (Apply Changes) failed: {exc}",
+            f"{base_message}\npublish (Apply Changes) failed: {exc}",
             workspace_id,
             item_id,
         )

@@ -11,7 +11,7 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Role | Style | Mechanism | Typical use |
 |------|--------|-----------|-------------|
 | Error / failure | red | Typer `fg=RED` / Rich `"red"`; **Error** panel | All error messages (`print_error_panel` / `_exit_error`), including per-item op/compare failures |
-| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | Command-level warnings and cancel (`print_warn_panel` / `_exit_warn`); update notices; compare STATUS `differences` and other inline status tokens stay Rich yellow text only |
+| Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | Command-level warnings and cancel (`print_warn_panel` / `_exit_warn`); under-spinner notices (`status.warn_aside`); update notices; compare STATUS `differences` and other inline status tokens stay Rich yellow text only |
 | Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare STATUS `identical`, enabled/set |
 | Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands, **Usage** command path and `COMMAND` placeholder |
 | Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Options/Arguments metavar column (`TEXT`, …); Usage / synopsis placeholders (`<PATH>`, `[ARGS]...`); **Power BI** in help text; optional Rich `[metavar]…[/metavar]` in prose |
@@ -36,7 +36,25 @@ Command-level failure and warning messages use a Rich `Panel` on stderr, matchin
 - **Error** — red border, title `Error`, left-aligned (`fabric_tools.colours.print_error_panel` / `cli._exit_error`). Also used for per-item compare failure detail after the summary table.
 - **Warning** — yellow border, title `Warning`, left-aligned (`print_warn_panel` / `_exit_warn`) for cancel, soft abort, update notices, and other command-level soft fails.
 
+**Usage errors** (unknown command/option, missing required args, …) print `Usage:` (same highlighting as `--help`) then the Error panel. Do **not** print Typer’s default `Try '… --help' for help.` line — it is suppressed in `apply_help_theme` (`rich_format_error`). The Error panel already carries the useful hint (e.g. Did you mean … / No such option).
+
 Do not invent a different boxed style. Success / identifier lines (GUIDs, remap ok) stay unboxed `secho`. Inline value colours in tables (setup status, env list, compare STATUS) stay Rich styles, not panels. Diff body text stays primary (uncoloured). Compare advisories (e.g. joined-model notes) print as **dim** lines after the summary table — not Warning panels.
+
+### Success / op result lines
+
+Successful download / deploy / delete ops print via `_print_op_results` as unboxed green `secho` of `OpResult.message` (one `OpResult` per work item).
+
+When one op produces **multiple distinct outcomes** (joined report + model, `.pbip` shortcut, deploy model then report, publish follow-up failure after a successful create, …), put **one outcome per line** in `message` (join with `"\n"`, not `"; "`). Parenthetical qualifiers on a single outcome stay on the same line (e.g. `… (published)`, `… (IncludeModel — report + semantic model)`).
+
+Example (joined report download):
+
+```text
+downloaded report <ws>:<id> -> temp\Projects.Report
+downloaded joined semantic model <ws>:<id> -> temp\Projects.SemanticModel
+wrote Power BI Desktop shortcut temp\Projects.pbip
+```
+
+Do not glue those into one semicolon-separated line. Error panels may also be multi-line when a partial success is followed by a distinct failure (same newline rule).
 
 ### Aligned key / value and table layout
 
@@ -82,6 +100,8 @@ At CLI startup, Typer Rich help styles are set so **long options** (`--target`) 
 Do **not** auto-colour bare ALL-CAPS words in help prose (`GUID`, `OK`, `XMLA`, `RLS`, …). To yellow a prose token intentionally, wrap it with `help_metavar(...)` from `fabric_tools.cli.options` (emits Rich `[metavar]…[/metavar]`); use this for selector shapes such as `workspace:artifact`, `workspace:*`, and `workspaceId:itemId`. Unmarked prose stays primary.
 
 **Usage** lines are highlighted the same way: dim `Usage:` label, cyan command path (`fabric-tools notebook …`) and `COMMAND` placeholder, magenta `[OPTIONS]` / `--flags`, bright yellow argument placeholders (`[ARGS]...`, `<…>`).
+
+Usage-error output reuses that Usage line, then the Error panel only — Typer’s `Try '… --help' for help.` hint is omitted (see Error and warning panels).
 
 In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is bright yellow (`fabric-tools` is left alone). Do not grow an acronym highlighter list for other product terms.
 
@@ -133,13 +153,17 @@ setup: checking for updates…
 
 Build lines with `status_detail(module, action, name=None)` (and `progress_message` for `n of m ·` prefixes). Do not put only a name after the module (e.g. `XMLA: Harvest…`); the action is required.
 
+While a Fabric long-running operation (HTTP 202) is polled, a numeric `percentComplete` is appended after the trailing `…` (e.g. `1 of 4 · notebook: downloading (Sales)… 40%`) via `status.set_percent`. It is display-only (`current_message` is unchanged), omitted when Fabric returns `null`, cleared when polling ends, and never printed on non-TTY.
+
 The dots spinner glyph is **green**; the status text stays primary (default). Do not append long hints onto the spinner line (auth stays `auth: authenticating (Windows)…` — device-code URI/user code print as a separate stderr line).
 
-Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error/Warning panels so they are not printed mid-line.
+Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error/Warning panels so they are not printed mid-line. For **non-blocking** notices that must stay visible while work continues, use `status.set_aside(renderable)` / `status.warn_aside(message)` — these draw under the live spinner without stopping it (replacing any prior aside). `status.clear_aside()` removes the aside. Outside `busy`, `set_aside` / `warn_aside` print once to stderr.
 
-Stopping a spinner must not leave a blank line and must not cursor-up into the previous prompt (use in-place erase, not Rich `restore_cursor`). Live must not redirect stdout/stderr, or `typer.confirm` and other prompts get swallowed into the spinner.
+Stopping a spinner must not leave a blank line and must not cursor-up into the previous prompt (use in-place erase, not Rich `restore_cursor`). Live must not redirect stdout/stderr, or prompts get swallowed into the spinner.
 
-**Never prompt under a live spinner.** Any `typer.confirm` / input must run outside `busy`, or call `status.clear()` first — otherwise the spinner refresh erases the prompt and the CLI appears to hang while waiting on stdin. Do interactive pre-checks (e.g. SqlServer install offer) before entering a spinner.
+**Never prompt under a live spinner.** Any yes/no prompt must run outside `busy`, or call `status.clear()` first — otherwise the spinner refresh erases the prompt and the CLI appears to hang while waiting on stdin. Do interactive pre-checks (e.g. SqlServer install offer) before entering a spinner.
+
+**Yes/no prompts:** use `confirm.prompt_confirm` / `confirm.confirm_or_abort` (not raw `typer.confirm`). Decline and Ctrl+C/EOF both become a user abort: `ConfirmationAborted` + Warning panel `Aborted by user.`, never a red `Operation failed.` glued to `[y/N]:`. Sync exits go through `_exit_user_abort` so a stray `typer.Abort` is handled the same way.
 
 XMLA role ops update the same spinner across stages (`connecting via XMLA` → `loading model` → `adding role member` / `saving model changes`, etc.) via stderr progress markers from `xmla_role_members.ps1`.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -41,9 +42,51 @@ from fabric_tools.variable_library.definition import (
     display_name_from_path as variable_library_name_from_path,
 )
 
+# Shared copy for decline, Ctrl+C/EOF on prompts, and empty warn-panel fallback.
+CONFIRM_ABORT_MESSAGE = "Aborted by user."
+
 
 class ConfirmationAborted(Exception):
-    """Raised when the user declines a confirmation prompt."""
+    """Raised when the user declines or interrupts a confirmation prompt."""
+
+
+def finish_prompt_line(*, err: bool = False) -> None:
+    """Advance past a mid-line prompt after Ctrl+C / EOF.
+
+    ``typer.confirm`` writes the prompt without a trailing newline; an interrupt
+    leaves the cursor on that line. Following stderr panels must not glue to
+    ``[y/N]:``.
+    """
+    stream = sys.stderr if err else sys.stdout
+    try:
+        stream.write("\n")
+        stream.flush()
+    except OSError:
+        pass
+
+
+def abort_interrupt_message(*, err: bool = False) -> str:
+    """Finish a mid-line prompt after ``typer.Abort``; return shared abort text."""
+    finish_prompt_line(err=err)
+    return CONFIRM_ABORT_MESSAGE
+
+
+def prompt_confirm(
+    message: str,
+    *,
+    default: bool = False,
+    err: bool = False,
+) -> bool:
+    """Yes/no confirm. Decline and Ctrl+C/EOF both return ``False``.
+
+    Prefer this over raw ``typer.confirm`` so interrupt is not an empty
+    ``typer.Abort`` that becomes a red ``Operation failed.`` panel mid-line.
+    """
+    try:
+        return bool(typer.confirm(message, default=default, err=err))
+    except typer.Abort:
+        finish_prompt_line(err=err)
+        return False
 
 
 def _normalize_explicit_download_files(
@@ -69,11 +112,11 @@ def _normalize_report_download_path(path: Path) -> Path:
 
 
 def confirm_or_abort(message: str, *, silent: bool) -> None:
-    """Prompt unless ``silent``; abort on decline."""
+    """Prompt unless ``silent``; abort on decline or interrupt."""
     if silent:
         return
-    if not typer.confirm(message, default=False):
-        raise ConfirmationAborted("Aborted by user.")
+    if not prompt_confirm(message, default=False):
+        raise ConfirmationAborted(CONFIRM_ABORT_MESSAGE)
 
 
 def resolve_workspace_name(client: FabricClient, workspace_id: str) -> str:

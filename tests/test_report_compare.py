@@ -204,6 +204,27 @@ def test_compare_joined_file_identical(tmp_path: Path) -> None:
     assert str(tmp_path / "Sales.SemanticModel") in results[1].header
 
 
+def test_compare_local_by_path_matches_remote_connection(tmp_path: Path) -> None:
+    report = _write_local(tmp_path / "Sales.Report")
+    (report / "definition.pbir").write_text(
+        json.dumps(
+            {
+                "version": "4.0",
+                "datasetReference": {"byPath": {"path": "../Sales.SemanticModel"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_model(tmp_path / "Sales.SemanticModel")
+    results = compare_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), report),  # type: ignore[arg-type]
+        powerbi_client=FakePowerBi(dataset_id=MODEL),
+    )
+    assert len(results) == 2
+    assert all(r.ok and r.identical for r in results)
+
+
 def test_compare_joined_file_model_diff(tmp_path: Path) -> None:
     report = _write_local(tmp_path / "Sales.Report")
     _write_model(tmp_path / "Sales.SemanticModel", body="model Changed\n")
@@ -228,6 +249,46 @@ def test_compare_independent_skips_joined_model(tmp_path: Path) -> None:
     assert len(results) == 1
     assert results[0].ok and results[0].identical
     assert not results[0].messages
+
+
+def test_compare_joined_warns_under_spinner(tmp_path: Path, monkeypatch: Any) -> None:
+    report = _write_local(tmp_path / "Sales.Report")
+    _write_model(tmp_path / "Sales.SemanticModel")
+    warnings: list[str] = []
+
+    def capture_warn(message: Any) -> None:
+        plain = message.plain if hasattr(message, "plain") else str(message)
+        warnings.append(plain)
+
+    monkeypatch.setattr("fabric_tools.report.compare.warn_aside", capture_warn)
+
+    results = compare_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), report),  # type: ignore[arg-type]
+        silent=False,
+    )
+    assert len(results) == 2
+    assert len(warnings) == 1
+    assert "Also comparing connected semantic model" in warnings[0]
+    assert MODEL in warnings[0]
+    assert "--independent" in warnings[0]
+
+    warnings.clear()
+    compare_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), report),  # type: ignore[arg-type]
+        silent=True,
+    )
+    assert warnings == []
+
+    warnings.clear()
+    compare_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), report),  # type: ignore[arg-type]
+        independent=True,
+        silent=False,
+    )
+    assert warnings == []
 
 
 def test_compare_joined_unbound_notes_message(tmp_path: Path) -> None:
@@ -320,10 +381,14 @@ def test_run_compare_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> No
             WorkItem(Target(WS, REPORT), report_a),  # type: ignore[arg-type]
             WorkItem(Target(WS, report_id_b), report_b),  # type: ignore[arg-type]
         ],
+        silent=True,
+        powerbi_client=FakePowerBi(dataset_id=MODEL),
     )
     assert messages == [
-        "1 of 4 · report: comparing (Sales)…",
-        "2 of 4 · semantic-model: comparing (Sales)…",
+        "report: checking (Sales)…",
+        "1 of 3 · report: comparing (Sales)…",
+        "2 of 3 · semantic-model: comparing (Sales)…",
+        "report: checking (Sales)…",
         "3 of 4 · report: comparing (Sales)…",
         "4 of 4 · semantic-model: comparing (Sales)…",
     ]
@@ -408,10 +473,13 @@ def test_run_compare_batch_status_skipped_join(
             WorkItem(Target(WS, REPORT), report_a),  # type: ignore[arg-type]
             WorkItem(Target(WS, report_id_b), report_b),  # type: ignore[arg-type]
         ],
+        silent=True,
         powerbi_client=FakePowerBi(dataset_id=None),
     )
     assert messages == [
-        "1 of 4 · report: comparing (Sales)…",
+        "report: checking (Sales)…",
+        "1 of 2 · report: comparing (Sales)…",
+        "report: checking (Sales)…",
         "2 of 3 · report: comparing (Sales)…",
         "3 of 3 · semantic-model: comparing (Sales)…",
     ]

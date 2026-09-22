@@ -32,6 +32,11 @@ PBIR_PART = "definition.pbir"
 REPORT_JSON_PART = "report.json"
 DEFINITION_DIR = "definition"
 PLATFORM_PART = ".platform"
+PBIP_SUFFIX = ".pbip"
+PBIP_SCHEMA = (
+    "https://developer.microsoft.com/json-schemas/fabric/pbip/pbipProperties/"
+    "1.0.0/schema.json"
+)
 
 _SEMANTIC_MODEL_ID_RE = re.compile(
     r"semanticmodelid\s*=\s*([0-9a-fA-F-]{36})",
@@ -224,6 +229,40 @@ def rewrite_pbir_to_by_connection(
     return updated
 
 
+def rewrite_pbir_to_by_path(pbir: dict[str, Any], relative_path: str) -> dict[str, Any]:
+    """Return a copy of *pbir* bound via ``byPath`` to a local semantic model folder."""
+    if not relative_path.strip():
+        raise DefinitionError("relative_path is required for byPath rewrite")
+    updated = json.loads(json.dumps(pbir))
+    updated["datasetReference"] = {
+        "byPath": {"path": relative_path.strip().replace("\\", "/")}
+    }
+    return updated
+
+
+def pbip_path_for(report_folder: Path | str) -> Path:
+    """Sibling ``{stem}.pbip`` shortcut path for a ``*.Report`` folder."""
+    folder = Path(report_folder)
+    return folder.parent / f"{display_name_from_path(folder)}{PBIP_SUFFIX}"
+
+
+def write_pbip(report_folder: Path | str) -> Path:
+    """Write a Power BI Desktop ``.pbip`` shortcut next to *report_folder*."""
+    folder = Path(report_folder)
+    payload = {
+        "$schema": PBIP_SCHEMA,
+        "version": "1.0",
+        "artifacts": [{"report": {"path": folder.name}}],
+        "settings": {"enableAutoRecovery": True},
+    }
+    path = pbip_path_for(folder)
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def write_pbir(folder: Path | str, pbir: dict[str, Any]) -> Path:
     """Write ``definition.pbir`` into a report folder."""
     dest = Path(folder)
@@ -371,6 +410,34 @@ def definition_to_diff_text(definition: dict[str, Any]) -> str:
 def folder_to_diff_text(path: Path | str) -> str:
     """Stable multi-file text for unified diffs of a local report folder."""
     return payloads_to_diff_text(folder_payloads(path))
+
+
+def align_local_bind_for_diff(
+    local: dict[str, bytes], remote: dict[str, bytes]
+) -> dict[str, bytes]:
+    """Treat a local ``byPath`` bind as equal to the remote ``byConnection`` bind.
+
+    Joined download rewrites ``definition.pbir`` to ``byPath`` for Power BI Desktop,
+    and joined deploy rewrites it back to ``byConnection``.
+    """
+    local_raw = local.get(PBIR_PART)
+    remote_raw = remote.get(PBIR_PART)
+    if local_raw is None or remote_raw is None:
+        return local
+    try:
+        local_pbir = json.loads(local_raw.decode("utf-8-sig"))
+        remote_pbir = json.loads(remote_raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return local
+    if not isinstance(local_pbir, dict) or not isinstance(remote_pbir, dict):
+        return local
+    if (
+        parse_dataset_reference(local_pbir).kind != "byPath"
+        or parse_dataset_reference(remote_pbir).kind != "byConnection"
+    ):
+        return local
+    aligned = {**local_pbir, "datasetReference": remote_pbir["datasetReference"]}
+    return {**local, PBIR_PART: json.dumps(aligned).encode("utf-8")}
 
 
 def payloads_to_diff_text(payloads: dict[str, bytes]) -> str:

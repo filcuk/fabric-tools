@@ -24,7 +24,7 @@ from fabric_tools.sync.common import (
     _exit_error,
     _exit_from_compare_results,
     _exit_from_op_results,
-    _exit_warn,
+    _exit_user_abort,
     _fail_auth,
     _list_items_fn_for_kind,
     _notify_success,
@@ -281,7 +281,9 @@ def run_sync_command(spec: KindSpec, req: SyncRequest) -> None:
         else:
             _exit_error(f"Unknown mode: {req.mode}")
     except ConfirmationAborted as exc:
-        _exit_warn(str(exc))
+        _exit_user_abort(exc)
+    except typer.Abort as exc:
+        _exit_user_abort(exc)
     except typer.Exit:
         raise
     except AuthError as exc:
@@ -342,7 +344,9 @@ def _run_dry_run(spec: KindSpec, req: SyncRequest, expand_client: Any) -> None:
 def _run_download(spec: KindSpec, req: SyncRequest, client: Any) -> None:
     req.items = spec.resolve_download_files(client, req.items)
     spec.confirm_download(client, req.items, silent=req.silent)
-    with busy(status_detail(spec.status_label, "downloading")):
+    # Start on ``checking`` so kinds that preflight (e.g. report join) never flash
+    # a premature ``downloading`` line before the bind is known.
+    with busy(status_detail(spec.status_label, "checking")):
         op_results = spec.run_download(
             client, req.items, **_call_kwargs(spec.download_kwargs, req)
         )
@@ -389,7 +393,7 @@ def _run_deploy(spec: KindSpec, req: SyncRequest, client: Any) -> None:
 
 
 def _run_compare(spec: KindSpec, req: SyncRequest, client: Any) -> None:
-    with busy(status_detail(spec.status_label, "comparing")):
+    with busy(status_detail(spec.status_label, "checking")):
         compare_results = spec.run_compare(
             client, req.items, **_call_kwargs(spec.compare_kwargs, req)
         )
