@@ -207,7 +207,8 @@ When adding a new syncable Fabric / Power BI artifact kind, wire it end-to-end i
 - Join by default when a packable model is present (sibling / `byPath` `.SemanticModel`, or thick `.pbix` / `IncludeModel`); thin/live-connect → report only
 - Opt-out: `--independent` / `-i` on download/deploy/compare (not delete). Thick `.pbix` + `--independent` → error
 - Deploy joined folders: create/update model, rewrite `definition.pbir` to `byConnection`, then report
-- Compare: folders/origins only (reject `.pbix`)
+- Folder download writes a sibling `{stem}.pbip` Power BI Desktop shortcut (not a definition part; not packed). Joined download with a successful model download rewrites local `definition.pbir` to `byPath` (`../{stem}.SemanticModel`) so Desktop opens the local model; otherwise the service bind is kept
+- Compare: folders/origins only (reject `.pbix`); a local `byPath` bind is treated as equal to the remote `byConnection` bind
 - Delete: report only; confirm notes orphan upstream model when known
 
 ### Paginated reports (`paginated-report`)

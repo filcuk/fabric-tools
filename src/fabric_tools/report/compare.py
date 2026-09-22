@@ -12,10 +12,13 @@ from fabric_tools.confirm import item_display_name, resolve_workspace_name
 from fabric_tools.parsing import Target, WorkItem
 from fabric_tools.report.definition import (
     DefinitionError,
+    align_local_bind_for_diff,
     definition_to_diff_text,
-    folder_to_diff_text,
+    folder_payloads,
     is_pbix_path,
     packable_local_model,
+    part_payloads,
+    payloads_to_diff_text,
     validate_local_report,
 )
 from fabric_tools.report.ops import (
@@ -342,7 +345,7 @@ def _compare_file_to_target(
 
     try:
         validate_local_report(local_path)
-        local_text = folder_to_diff_text(local_path)
+        local_payloads = folder_payloads(local_path)
     except DefinitionError as exc:
         return (
             CompareResult(
@@ -365,7 +368,7 @@ def _compare_file_to_target(
             remote_definition = get_report_definition(
                 client, target.workspace_id, target.item_id
             )
-        remote_text = definition_to_diff_text(remote_definition)
+        remote_payloads = part_payloads(remote_definition)
     except (FabricApiError, DefinitionError) as exc:
         return (
             CompareResult(
@@ -380,6 +383,10 @@ def _compare_file_to_target(
             None,
         )
 
+    remote_text = payloads_to_diff_text(remote_payloads)
+    local_text = payloads_to_diff_text(
+        align_local_bind_for_diff(local_payloads, remote_payloads)
+    )
     return (
         _diff_texts(
             header,

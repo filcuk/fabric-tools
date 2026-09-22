@@ -204,6 +204,27 @@ def test_compare_joined_file_identical(tmp_path: Path) -> None:
     assert str(tmp_path / "Sales.SemanticModel") in results[1].header
 
 
+def test_compare_local_by_path_matches_remote_connection(tmp_path: Path) -> None:
+    report = _write_local(tmp_path / "Sales.Report")
+    (report / "definition.pbir").write_text(
+        json.dumps(
+            {
+                "version": "4.0",
+                "datasetReference": {"byPath": {"path": "../Sales.SemanticModel"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_model(tmp_path / "Sales.SemanticModel")
+    results = compare_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), report),  # type: ignore[arg-type]
+        powerbi_client=FakePowerBi(dataset_id=MODEL),
+    )
+    assert len(results) == 2
+    assert all(r.ok and r.identical for r in results)
+
+
 def test_compare_joined_file_model_diff(tmp_path: Path) -> None:
     report = _write_local(tmp_path / "Sales.Report")
     _write_model(tmp_path / "Sales.SemanticModel", body="model Changed\n")

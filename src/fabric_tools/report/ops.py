@@ -29,8 +29,11 @@ from fabric_tools.report.definition import (
     part_payloads,
     resolve_local_join,
     rewrite_pbir_to_by_connection,
+    rewrite_pbir_to_by_path,
     unpack_definition,
     validate_local_report,
+    write_pbip,
+    write_pbir,
 )
 from fabric_tools.semantic_model.definition import (
     definition_has_platform as sm_has_platform,
@@ -268,6 +271,23 @@ def download_report(
                     f"({target.workspace_id}:{model_id}): {exc}"
                 )
                 model_id = None
+            else:
+                try:
+                    write_pbir(
+                        written,
+                        rewrite_pbir_to_by_path(
+                            load_pbir(written), f"../{Path(sm_written).name}"
+                        ),
+                    )
+                except (DefinitionError, OSError) as exc:
+                    messages.append(
+                        f"definition.pbir not rebound to local model (byPath): {exc}"
+                    )
+
+    try:
+        messages.append(f"wrote Power BI Desktop shortcut {write_pbip(written)}")
+    except OSError as exc:
+        messages.append(f"Power BI Desktop shortcut not written: {exc}")
 
     return OpResult(
         True,

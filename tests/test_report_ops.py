@@ -226,6 +226,28 @@ def test_download_report_joined(tmp_path: Path) -> None:
     assert (dest / "definition" / "report.json").is_file()
     assert (tmp_path / "Sales.SemanticModel" / "definition" / "model.tmdl").is_file()
     assert result.semantic_model_id == MODEL
+    pbir = json.loads((dest / "definition.pbir").read_text(encoding="utf-8"))
+    assert pbir["datasetReference"] == {"byPath": {"path": "../Sales.SemanticModel"}}
+    pbip = json.loads((tmp_path / "Sales.pbip").read_text(encoding="utf-8"))
+    assert pbip["artifacts"] == [{"report": {"path": "Sales.Report"}}]
+    assert pbip["version"] == "1.0"
+    assert "pbipProperties" in pbip["$schema"]
+
+
+def test_download_report_independent_keeps_connection_and_writes_pbip(
+    tmp_path: Path,
+) -> None:
+    dest = tmp_path / "Sales.Report"
+    result = download_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), dest),  # type: ignore[arg-type]
+        independent=True,
+        powerbi_client=FakePowerBi(),
+    )
+    assert result.ok
+    pbir = json.loads((dest / "definition.pbir").read_text(encoding="utf-8"))
+    assert "byConnection" in pbir["datasetReference"]
+    assert (tmp_path / "Sales.pbip").is_file()
 
 
 def test_download_report_joined_warns_before_model_step(
