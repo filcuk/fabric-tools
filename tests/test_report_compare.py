@@ -247,11 +247,10 @@ def test_compare_joined_warns_under_spinner(tmp_path: Path, monkeypatch: Any) ->
         silent=False,
     )
     assert len(results) == 2
-    assert len(warnings) == 2
-    assert "also be compared" in warnings[0]
-    assert "Also comparing connected semantic model" in warnings[1]
-    assert MODEL in warnings[1]
-    assert "--independent" in warnings[1]
+    assert len(warnings) == 1
+    assert "Also comparing connected semantic model" in warnings[0]
+    assert MODEL in warnings[0]
+    assert "--independent" in warnings[0]
 
     warnings.clear()
     compare_report(
@@ -362,10 +361,13 @@ def test_run_compare_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> No
             WorkItem(Target(WS, report_id_b), report_b),  # type: ignore[arg-type]
         ],
         silent=True,
+        powerbi_client=FakePowerBi(dataset_id=MODEL),
     )
     assert messages == [
-        "1 of 4 · report: comparing (Sales)…",
-        "2 of 4 · semantic-model: comparing (Sales)…",
+        "report: checking (Sales)…",
+        "1 of 3 · report: comparing (Sales)…",
+        "2 of 3 · semantic-model: comparing (Sales)…",
+        "report: checking (Sales)…",
         "3 of 4 · report: comparing (Sales)…",
         "4 of 4 · semantic-model: comparing (Sales)…",
     ]
@@ -454,7 +456,9 @@ def test_run_compare_batch_status_skipped_join(
         powerbi_client=FakePowerBi(dataset_id=None),
     )
     assert messages == [
-        "1 of 4 · report: comparing (Sales)…",
+        "report: checking (Sales)…",
+        "1 of 2 · report: comparing (Sales)…",
+        "report: checking (Sales)…",
         "2 of 3 · report: comparing (Sales)…",
         "3 of 3 · semantic-model: comparing (Sales)…",
     ]

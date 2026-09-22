@@ -228,36 +228,48 @@ def test_download_report_joined(tmp_path: Path) -> None:
     assert result.semantic_model_id == MODEL
 
 
-def test_download_report_joined_warns_under_spinner(
+def test_download_report_joined_warns_before_model_step(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
+    """Warn + ``1 of 2`` must land before the semantic-model advance."""
     dest = tmp_path / "Sales.Report"
-    warnings: list[str] = []
+    events: list[str] = []
 
     def capture_warn(message: Any) -> None:
         plain = message.plain if hasattr(message, "plain") else str(message)
-        warnings.append(plain)
+        events.append(f"warn:{plain}")
 
-    monkeypatch.setattr(
-        "fabric_tools.report.ops.warn_aside",
-        capture_warn,
-    )
+    def capture_update(msg: str) -> None:
+        events.append(f"status:{msg}")
 
+    monkeypatch.setattr("fabric_tools.report.ops.warn_aside", capture_warn)
+    monkeypatch.setattr("fabric_tools.status.update", capture_update)
+
+    from fabric_tools.status import BatchProgress
+
+    progress = BatchProgress(total=1)
     result = download_report(
         FakeClient(),
         WorkItem(Target(WS, REPORT), dest),  # type: ignore[arg-type]
         independent=False,
         silent=False,
         powerbi_client=FakePowerBi(),
+        progress=progress,
     )
     assert result.ok
-    assert len(warnings) == 2
-    assert "If this report is connected" in warnings[0]
-    assert "Also downloading connected semantic model" in warnings[1]
-    assert MODEL in warnings[1]
-    assert "--independent" in warnings[1]
+    warn_idx = next(i for i, e in enumerate(events) if e.startswith("warn:"))
+    report_idx = next(
+        i for i, e in enumerate(events) if "1 of 2 · report: downloading" in e
+    )
+    model_idx = next(
+        i for i, e in enumerate(events) if "2 of 2 · semantic-model: downloading" in e
+    )
+    assert warn_idx < report_idx < model_idx
+    assert "Also downloading connected semantic model" in events[warn_idx]
+    assert MODEL in events[warn_idx]
+    assert "--independent" in events[warn_idx]
 
-    warnings.clear()
+    events.clear()
     dest2 = tmp_path / "Other.Report"
     result2 = download_report(
         FakeClient(),
@@ -267,9 +279,9 @@ def test_download_report_joined_warns_under_spinner(
         powerbi_client=FakePowerBi(),
     )
     assert result2.ok
-    assert warnings == []
+    assert not any(e.startswith("warn:") for e in events)
 
-    warnings.clear()
+    events.clear()
     dest3 = tmp_path / "Indep.Report"
     result3 = download_report(
         FakeClient(),
@@ -279,7 +291,7 @@ def test_download_report_joined_warns_under_spinner(
         powerbi_client=FakePowerBi(),
     )
     assert result3.ok
-    assert warnings == []
+    assert not any(e.startswith("warn:") for e in events)
 
 
 def test_deploy_create_report_only(tmp_path: Path) -> None:
@@ -434,8 +446,10 @@ def test_run_download_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> N
         powerbi_client=FakePowerBi(),
     )
     assert messages == [
-        "1 of 4 · report: downloading (FromOrigin)…",
-        "2 of 4 · semantic-model: downloading (Sales)…",
+        "report: checking (FromOrigin)…",
+        "1 of 3 · report: downloading (FromOrigin)…",
+        "2 of 3 · semantic-model: downloading (Sales)…",
+        "report: checking (FromOrigin)…",
         "3 of 4 · report: downloading (FromOrigin)…",
         "4 of 4 · semantic-model: downloading (FromOrigin)…",
     ]

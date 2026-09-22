@@ -127,6 +127,11 @@ class BatchProgress:
     current: int = 0
     total: int = 0
 
+    def plan_extra(self, count: int = 1) -> None:
+        """Raise *total* when an optional step is confirmed (e.g. joined model)."""
+        if count > 0:
+            self.total += count
+
     def advance(self, detail: str) -> None:
         self.current += 1
         update(progress_message(self.current, self.total, detail))

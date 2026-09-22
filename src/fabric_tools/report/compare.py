@@ -6,6 +6,7 @@ import difflib
 from dataclasses import dataclass, field
 from typing import Any
 
+from fabric_tools import status as status_mod
 from fabric_tools.client import FabricApiError, FabricClient
 from fabric_tools.confirm import item_display_name, resolve_workspace_name
 from fabric_tools.parsing import Target, WorkItem
@@ -18,8 +19,11 @@ from fabric_tools.report.definition import (
     validate_local_report,
 )
 from fabric_tools.report.ops import (
+    _report_definition_cache_key,
+    get_cached_report_definition,
     get_report_definition,
     joined_model_aside_text,
+    preflight_bound_model_id,
     resolve_bound_model_id,
 )
 from fabric_tools.semantic_model.compare import compare_semantic_model
@@ -47,6 +51,7 @@ def compare_report(
     silent: bool = False,
     powerbi_client: Any | None = None,
     progress: BatchProgress | None = None,
+    definition_cache: dict[str, dict[str, Any]] | None = None,
 ) -> list[CompareResult]:
     """Diff target report against a local folder or another remote.
 
@@ -94,23 +99,53 @@ def compare_report(
             )
         ]
 
-    plans_model = _plans_model_step(item, independent=independent)
+    cache = definition_cache if definition_cache is not None else {}
+    name = item_display_name(client, item.target)
+    # Check bind while spinner says ``checking``; only then show compare status.
+    if progress is not None and not independent:
+        status_mod.update(status_detail("report", "checking", name))
+
+    will_join_model, join_warn_detail = _compare_join_preflight(
+        client,
+        item,
+        independent=independent,
+        powerbi_client=powerbi_client,
+        definition_cache=cache,
+    )
+    if will_join_model:
+        if progress is not None:
+            progress.plan_extra(1)
+        if join_warn_detail and not silent:
+            warn_aside(joined_model_aside_text(detail=join_warn_detail))
+
     if progress is not None:
-        name = item_display_name(client, item.target)
         progress.advance(status_detail("report", "comparing", name))
 
-    if plans_model and not silent:
-        warn_aside(
-            joined_model_aside_text(
-                provisional=(
-                    "If this report is joined to a packable semantic model, that "
-                    "model will also be compared."
-                )
-            )
-        )
-
     if item.origin is not None:
-        report_result, origin_def, target_def = _compare_origin_to_target(client, item)
+        origin_def: dict[str, Any] | None = None
+        target_def: dict[str, Any] | None = None
+        if item.origin.item_id and item.target.item_id:
+            try:
+                origin_def = get_cached_report_definition(
+                    client,
+                    item.origin.workspace_id,
+                    item.origin.item_id,
+                    cache,
+                )
+                target_def = get_cached_report_definition(
+                    client,
+                    item.target.workspace_id,
+                    item.target.item_id,
+                    cache,
+                )
+            except (FabricApiError, DefinitionError):
+                pass
+        report_result, origin_def, target_def = _compare_origin_to_target(
+            client,
+            item,
+            origin_definition=origin_def,
+            target_definition=target_def,
+        )
         results = [report_result]
         if not independent and report_result.ok and report_result.error is None:
             model_results = _joined_origin_model_results(
@@ -122,13 +157,23 @@ def compare_report(
                 powerbi_client=powerbi_client,
                 progress=progress,
                 silent=silent,
+                planned_model_step=will_join_model,
             )
             results.extend(model_results)
-        elif plans_model and progress is not None:
+        elif will_join_model and progress is not None:
             progress.skip_planned()
         return results
 
-    report_result, remote_definition = _compare_file_to_target(client, item)
+    remote_def: dict[str, Any] | None = None
+    if item.target.item_id:
+        remote_def = cache.get(
+            _report_definition_cache_key(item.target.workspace_id, item.target.item_id)
+        )
+    report_result, remote_definition = _compare_file_to_target(
+        client,
+        item,
+        remote_definition=remote_def,
+    )
     results = [report_result]
     if (
         not independent
@@ -144,9 +189,10 @@ def compare_report(
             powerbi_client=powerbi_client,
             progress=progress,
             silent=silent,
+            planned_model_step=will_join_model,
         )
         results.extend(model_results)
-    elif plans_model and progress is not None:
+    elif will_join_model and progress is not None:
         progress.skip_planned()
     return results
 
@@ -159,25 +205,37 @@ def run_compare_batch(
     silent: bool = False,
     powerbi_client: Any | None = None,
 ) -> list[CompareResult]:
-    progress = BatchProgress(
-        total=_estimate_compare_steps(items, independent=independent)
-    )
+    from fabric_tools.powerbi_client import PowerBiClient
+
+    definition_cache: dict[str, dict[str, Any]] = {}
+    progress = BatchProgress(total=_estimate_compare_steps(items))
+    owns_pbi = powerbi_client is None and not independent
+    pbi = powerbi_client
+    if owns_pbi:
+        pbi = PowerBiClient()
+        pbi.ensure_authenticated()
     results: list[CompareResult] = []
-    for item in items:
-        results.extend(
-            compare_report(
-                client,
-                item,
-                independent=independent,
-                silent=silent,
-                powerbi_client=powerbi_client,
-                progress=progress,
+    try:
+        for item in items:
+            results.extend(
+                compare_report(
+                    client,
+                    item,
+                    independent=independent,
+                    silent=silent,
+                    powerbi_client=pbi,
+                    progress=progress,
+                    definition_cache=definition_cache,
+                )
             )
-        )
+    finally:
+        if owns_pbi and pbi is not None:
+            pbi.close()
     return results
 
 
-def _estimate_compare_steps(items: list[WorkItem], *, independent: bool) -> int:
+def _estimate_compare_steps(items: list[WorkItem]) -> int:
+    """Count report-only compare steps (no network)."""
     total = 0
     for item in items:
         if item.target is None or item.target.item_id is None:
@@ -189,23 +247,91 @@ def _estimate_compare_steps(items: list[WorkItem], *, independent: bool) -> int:
         if item.file is not None and is_pbix_path(item.file):
             continue
         total += 1
-        if _plans_model_step(item, independent=independent):
-            total += 1
     return total
 
 
-def _plans_model_step(item: WorkItem, *, independent: bool) -> bool:
-    if independent:
-        return False
+def _compare_join_preflight(
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    independent: bool,
+    powerbi_client: Any | None,
+    definition_cache: dict[str, dict[str, Any]],
+) -> tuple[bool, str | None]:
+    """Return whether a model compare step is planned and optional warn detail text."""
+    if independent or item.target is None or item.target.item_id is None:
+        return False, None
+
     if item.file is not None:
-        return (
-            not is_pbix_path(item.file) and packable_local_model(item.file) is not None
+        if is_pbix_path(item.file) or packable_local_model(item.file) is None:
+            return False, None
+        model_id = preflight_bound_model_id(
+            client,
+            item.target.workspace_id,
+            item.target.item_id,
+            independent=False,
+            powerbi_client=powerbi_client,
+            definition_cache=definition_cache,
         )
-    return item.origin is not None
+        if not model_id:
+            return False, None
+        model_name = item_display_name(
+            client, Target(item.target.workspace_id, model_id)
+        )
+        return True, (
+            f"Also comparing connected semantic model '{model_name}' "
+            f"({item.target.workspace_id}:{model_id})"
+        )
+
+    if item.origin is None or item.origin.item_id is None:
+        return False, None
+
+    try:
+        origin_def = get_cached_report_definition(
+            client,
+            item.origin.workspace_id,
+            item.origin.item_id,
+            definition_cache,
+        )
+        target_def = get_cached_report_definition(
+            client,
+            item.target.workspace_id,
+            item.target.item_id,
+            definition_cache,
+        )
+    except (FabricApiError, DefinitionError):
+        return False, None
+
+    origin_model_id = resolve_bound_model_id(
+        client,
+        item.origin.workspace_id,
+        item.origin.item_id,
+        definition=origin_def,
+        powerbi_client=powerbi_client,
+    )
+    target_model_id = resolve_bound_model_id(
+        client,
+        item.target.workspace_id,
+        item.target.item_id,
+        definition=target_def,
+        powerbi_client=powerbi_client,
+    )
+    if not origin_model_id or not target_model_id:
+        return False, None
+    model_name = item_display_name(
+        client, Target(item.target.workspace_id, target_model_id)
+    )
+    return True, (
+        f"Also comparing connected semantic model '{model_name}' "
+        f"({item.target.workspace_id}:{target_model_id})"
+    )
 
 
 def _compare_file_to_target(
-    client: FabricClient, item: WorkItem
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    remote_definition: dict[str, Any] | None = None,
 ) -> tuple[CompareResult, dict[str, Any] | None]:
     assert item.target is not None and item.target.item_id is not None
     assert item.file is not None
@@ -235,9 +361,10 @@ def _compare_file_to_target(
     header = f"remote {remote_name} in {workspace_label}  vs  local `{local_path}`"
 
     try:
-        remote_definition = get_report_definition(
-            client, target.workspace_id, target.item_id
-        )
+        if remote_definition is None:
+            remote_definition = get_report_definition(
+                client, target.workspace_id, target.item_id
+            )
         remote_text = definition_to_diff_text(remote_definition)
     except (FabricApiError, DefinitionError) as exc:
         return (
@@ -269,7 +396,11 @@ def _compare_file_to_target(
 
 
 def _compare_origin_to_target(
-    client: FabricClient, item: WorkItem
+    client: FabricClient,
+    item: WorkItem,
+    *,
+    origin_definition: dict[str, Any] | None = None,
+    target_definition: dict[str, Any] | None = None,
 ) -> tuple[CompareResult, dict[str, Any] | None, dict[str, Any] | None]:
     assert item.target is not None and item.target.item_id is not None
     assert item.origin is not None and item.origin.item_id is not None
@@ -286,12 +417,14 @@ def _compare_origin_to_target(
     )
 
     try:
-        origin_definition = get_report_definition(
-            client, origin.workspace_id, origin.item_id
-        )
-        target_definition = get_report_definition(
-            client, target.workspace_id, target.item_id
-        )
+        if origin_definition is None:
+            origin_definition = get_report_definition(
+                client, origin.workspace_id, origin.item_id
+            )
+        if target_definition is None:
+            target_definition = get_report_definition(
+                client, target.workspace_id, target.item_id
+            )
         origin_text = definition_to_diff_text(origin_definition)
         target_text = definition_to_diff_text(target_definition)
     except (FabricApiError, DefinitionError) as exc:
@@ -334,6 +467,7 @@ def _joined_file_model_results(
     powerbi_client: Any | None,
     progress: BatchProgress | None,
     silent: bool,
+    planned_model_step: bool = False,
 ) -> list[CompareResult]:
     assert item.target is not None and item.target.item_id is not None
     assert item.file is not None
@@ -359,22 +493,10 @@ def _joined_file_model_results(
         )
         if not silent:
             clear_aside()
-        if progress is not None:
+        if progress is not None and planned_model_step:
             progress.skip_planned()
         return []
 
-    if not silent:
-        model_name = item_display_name(
-            client, Target(item.target.workspace_id, model_id)
-        )
-        warn_aside(
-            joined_model_aside_text(
-                detail=(
-                    f"Also comparing connected semantic model '{model_name}' "
-                    f"({item.target.workspace_id}:{model_id})"
-                )
-            )
-        )
     if progress is not None:
         progress.advance(
             status_detail(
@@ -412,6 +534,7 @@ def _joined_origin_model_results(
     powerbi_client: Any | None,
     progress: BatchProgress | None,
     silent: bool,
+    planned_model_step: bool = False,
 ) -> list[CompareResult]:
     assert item.target is not None and item.target.item_id is not None
     assert item.origin is not None and item.origin.item_id is not None
@@ -439,22 +562,13 @@ def _joined_origin_model_results(
             )
         if not silent:
             clear_aside()
-        if progress is not None:
+        if progress is not None and planned_model_step:
             progress.skip_planned()
         return []
 
     model_name = item_display_name(
         client, Target(item.target.workspace_id, target_model_id)
     )
-    if not silent:
-        warn_aside(
-            joined_model_aside_text(
-                detail=(
-                    f"Also comparing connected semantic model '{model_name}' "
-                    f"({item.target.workspace_id}:{target_model_id})"
-                )
-            )
-        )
     if progress is not None:
         progress.advance(status_detail("semantic-model", "comparing", model_name))
     model_result = compare_semantic_model(

@@ -48,6 +48,21 @@ def test_batch_progress_advance_and_skip(monkeypatch: object) -> None:
     ]
 
 
+def test_batch_progress_plan_extra(monkeypatch: object) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(status, "update", lambda msg: messages.append(msg))
+    progress = status.BatchProgress(total=1)
+    progress.plan_extra(1)
+    progress.advance("report: downloading (Sales)…")
+    progress.advance("semantic-model: downloading (Sales)…")
+    assert progress.current == 2
+    assert progress.total == 2
+    assert messages == [
+        "1 of 2 · report: downloading (Sales)…",
+        "2 of 2 · semantic-model: downloading (Sales)…",
+    ]
+
+
 def test_update_outside_busy_is_noop() -> None:
     status.update("should not raise")
 
