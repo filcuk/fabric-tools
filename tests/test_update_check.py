@@ -416,11 +416,7 @@ def test_same_day_cache_skips_network(
         raise AssertionError("network should not be used")
 
     reset_background_update_check()
-    start_background_update_check(
-        cache_path=cache,
-        today=today,
-        check=boom
-    )
+    start_background_update_check(cache_path=cache, today=today, check=boom)
     assert calls["n"] == 0
     assert consume_update_notice(cache_path=cache, today=today) is None
 
@@ -447,11 +443,7 @@ def test_same_day_cache_shows_notice_without_network(
         raise AssertionError("network should not be used")
 
     reset_background_update_check()
-    start_background_update_check(
-        cache_path=cache,
-        today=today,
-        check=boom
-    )
+    start_background_update_check(cache_path=cache, today=today, check=boom)
     notice = consume_update_notice(cache_path=cache, today=today)
     assert notice is not None
     assert "0.3.0" in notice
@@ -491,11 +483,7 @@ def test_next_day_allows_new_check(
         )
 
     reset_background_update_check()
-    start_background_update_check(
-        cache_path=cache,
-        today=today,
-        check=fake_check
-    )
+    start_background_update_check(cache_path=cache, today=today, check=fake_check)
     import fabric_tools.update_check as uc
 
     assert uc._bg_thread is not None
@@ -520,11 +508,7 @@ def test_failed_background_check_does_not_stamp_day(
         raise UpdateCheckError("failed to reach GitHub")
 
     reset_background_update_check()
-    start_background_update_check(
-        cache_path=cache,
-        today=today,
-        check=boom
-    )
+    start_background_update_check(cache_path=cache, today=today, check=boom)
     import fabric_tools.update_check as uc
 
     assert uc._bg_thread is not None
