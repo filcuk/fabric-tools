@@ -17,9 +17,13 @@ from fabric_tools.report.definition import (
     packable_local_model,
     validate_local_report,
 )
-from fabric_tools.report.ops import get_report_definition, resolve_bound_model_id
+from fabric_tools.report.ops import (
+    get_report_definition,
+    joined_model_aside_text,
+    resolve_bound_model_id,
+)
 from fabric_tools.semantic_model.compare import compare_semantic_model
-from fabric_tools.status import BatchProgress, status_detail
+from fabric_tools.status import BatchProgress, clear_aside, status_detail, warn_aside
 
 
 @dataclass
@@ -40,6 +44,7 @@ def compare_report(
     item: WorkItem,
     *,
     independent: bool = False,
+    silent: bool = False,
     powerbi_client: Any | None = None,
     progress: BatchProgress | None = None,
 ) -> list[CompareResult]:
@@ -94,6 +99,16 @@ def compare_report(
         name = item_display_name(client, item.target)
         progress.advance(status_detail("report", "comparing", name))
 
+    if plans_model and not silent:
+        warn_aside(
+            joined_model_aside_text(
+                provisional=(
+                    "If this report is joined to a packable semantic model, that "
+                    "model will also be compared."
+                )
+            )
+        )
+
     if item.origin is not None:
         report_result, origin_def, target_def = _compare_origin_to_target(client, item)
         results = [report_result]
@@ -106,6 +121,7 @@ def compare_report(
                 target_definition=target_def,
                 powerbi_client=powerbi_client,
                 progress=progress,
+                silent=silent,
             )
             results.extend(model_results)
         elif plans_model and progress is not None:
@@ -127,6 +143,7 @@ def compare_report(
             remote_definition=remote_definition,
             powerbi_client=powerbi_client,
             progress=progress,
+            silent=silent,
         )
         results.extend(model_results)
     elif plans_model and progress is not None:
@@ -139,6 +156,7 @@ def run_compare_batch(
     items: list[WorkItem],
     *,
     independent: bool = False,
+    silent: bool = False,
     powerbi_client: Any | None = None,
 ) -> list[CompareResult]:
     progress = BatchProgress(
@@ -151,6 +169,7 @@ def run_compare_batch(
                 client,
                 item,
                 independent=independent,
+                silent=silent,
                 powerbi_client=powerbi_client,
                 progress=progress,
             )
@@ -314,12 +333,15 @@ def _joined_file_model_results(
     remote_definition: dict[str, Any] | None,
     powerbi_client: Any | None,
     progress: BatchProgress | None,
+    silent: bool,
 ) -> list[CompareResult]:
     assert item.target is not None and item.target.item_id is not None
     assert item.file is not None
 
     model_path = packable_local_model(item.file)
     if model_path is None:
+        if not silent:
+            clear_aside()
         return []
 
     model_id = resolve_bound_model_id(
@@ -335,16 +357,32 @@ def _joined_file_model_results(
             "semantic model not compared "
             "(thin/live-connect or unbound — use semantic-model compare if needed)"
         )
+        if not silent:
+            clear_aside()
         if progress is not None:
             progress.skip_planned()
         return []
 
-    if progress is not None:
+    if not silent:
         model_name = item_display_name(
             client, Target(item.target.workspace_id, model_id)
         )
-        progress.advance(status_detail("semantic-model", "comparing", model_name))
-    # semantic_model.compare.CompareResult is structurally identical.
+        warn_aside(
+            joined_model_aside_text(
+                detail=(
+                    f"Also comparing connected semantic model '{model_name}' "
+                    f"({item.target.workspace_id}:{model_id})"
+                )
+            )
+        )
+    if progress is not None:
+        progress.advance(
+            status_detail(
+                "semantic-model",
+                "comparing",
+                item_display_name(client, Target(item.target.workspace_id, model_id)),
+            )
+        )
     model_result = compare_semantic_model(
         client,
         WorkItem(Target(item.target.workspace_id, model_id), model_path),
@@ -373,6 +411,7 @@ def _joined_origin_model_results(
     target_definition: dict[str, Any] | None,
     powerbi_client: Any | None,
     progress: BatchProgress | None,
+    silent: bool,
 ) -> list[CompareResult]:
     assert item.target is not None and item.target.item_id is not None
     assert item.origin is not None and item.origin.item_id is not None
@@ -398,14 +437,25 @@ def _joined_origin_model_results(
                 "(one side is thin/live-connect or unbound — "
                 "use semantic-model compare if needed)"
             )
+        if not silent:
+            clear_aside()
         if progress is not None:
             progress.skip_planned()
         return []
 
-    if progress is not None:
-        model_name = item_display_name(
-            client, Target(item.target.workspace_id, target_model_id)
+    model_name = item_display_name(
+        client, Target(item.target.workspace_id, target_model_id)
+    )
+    if not silent:
+        warn_aside(
+            joined_model_aside_text(
+                detail=(
+                    f"Also comparing connected semantic model '{model_name}' "
+                    f"({item.target.workspace_id}:{target_model_id})"
+                )
+            )
         )
+    if progress is not None:
         progress.advance(status_detail("semantic-model", "comparing", model_name))
     model_result = compare_semantic_model(
         client,

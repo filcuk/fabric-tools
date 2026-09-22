@@ -108,7 +108,14 @@ def download_report(
     # Immediate under-spinner notice (no extra auth). Refined with the model
     # id after the Fabric definition is parsed; cleared if unbound.
     if not independent and not silent:
-        warn_aside(_connected_model_download_warn())
+        warn_aside(
+            joined_model_aside_text(
+                provisional=(
+                    "If this report is connected to a semantic model, that model "
+                    "will also be downloaded."
+                )
+            )
+        )
 
     try:
         dest = detect_report_path(dest)
@@ -733,19 +740,26 @@ def _independent_opt_hint() -> Text:
     return text
 
 
-def _connected_model_download_warn(*, detail: str | None = None) -> Text:
-    """Warning body for joined report download (optional connected-model detail)."""
+def joined_model_aside_text(
+    *,
+    provisional: str | None = None,
+    detail: str | None = None,
+) -> Text:
+    """Warning body for joined report ops (download/compare).
+
+    Pass *provisional* for the early notice, or *detail* (without trailing
+    period) once a connected model id is known.
+    """
     text = Text()
     if detail:
         text.append(detail)
         if not detail.endswith((".", "!", "?")):
             text.append(".")
         text.append(" ")
-    else:
-        text.append(
-            "If this report is connected to a semantic model, that model will "
-            "also be downloaded. "
-        )
+    elif provisional:
+        text.append(provisional)
+        if not provisional.endswith(" "):
+            text.append(" ")
     text.append("Use ")
     text.append_text(_independent_opt_hint())
     text.append(" for report only.")
@@ -760,7 +774,7 @@ def _warn_connected_model_download(
     """Non-blocking notice under the download spinner (see ``status.warn_aside``)."""
     label = status_item_label_for_id(client, workspace_id, model_id)
     warn_aside(
-        _connected_model_download_warn(
+        joined_model_aside_text(
             detail=(
                 f"Also downloading connected semantic model '{label}' "
                 f"({workspace_id}:{model_id})"

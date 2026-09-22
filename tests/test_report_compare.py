@@ -230,6 +230,47 @@ def test_compare_independent_skips_joined_model(tmp_path: Path) -> None:
     assert not results[0].messages
 
 
+def test_compare_joined_warns_under_spinner(tmp_path: Path, monkeypatch: Any) -> None:
+    report = _write_local(tmp_path / "Sales.Report")
+    _write_model(tmp_path / "Sales.SemanticModel")
+    warnings: list[str] = []
+
+    def capture_warn(message: Any) -> None:
+        plain = message.plain if hasattr(message, "plain") else str(message)
+        warnings.append(plain)
+
+    monkeypatch.setattr("fabric_tools.report.compare.warn_aside", capture_warn)
+
+    results = compare_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), report),  # type: ignore[arg-type]
+        silent=False,
+    )
+    assert len(results) == 2
+    assert len(warnings) == 2
+    assert "also be compared" in warnings[0]
+    assert "Also comparing connected semantic model" in warnings[1]
+    assert MODEL in warnings[1]
+    assert "--independent" in warnings[1]
+
+    warnings.clear()
+    compare_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), report),  # type: ignore[arg-type]
+        silent=True,
+    )
+    assert warnings == []
+
+    warnings.clear()
+    compare_report(
+        FakeClient(),
+        WorkItem(Target(WS, REPORT), report),  # type: ignore[arg-type]
+        independent=True,
+        silent=False,
+    )
+    assert warnings == []
+
+
 def test_compare_joined_unbound_notes_message(tmp_path: Path) -> None:
     report = _write_local(tmp_path / "Sales.Report")
     _write_model(tmp_path / "Sales.SemanticModel")
@@ -320,6 +361,7 @@ def test_run_compare_batch_status_joined(tmp_path: Path, monkeypatch: Any) -> No
             WorkItem(Target(WS, REPORT), report_a),  # type: ignore[arg-type]
             WorkItem(Target(WS, report_id_b), report_b),  # type: ignore[arg-type]
         ],
+        silent=True,
     )
     assert messages == [
         "1 of 4 · report: comparing (Sales)…",
@@ -408,6 +450,7 @@ def test_run_compare_batch_status_skipped_join(
             WorkItem(Target(WS, REPORT), report_a),  # type: ignore[arg-type]
             WorkItem(Target(WS, report_id_b), report_b),  # type: ignore[arg-type]
         ],
+        silent=True,
         powerbi_client=FakePowerBi(dataset_id=None),
     )
     assert messages == [
