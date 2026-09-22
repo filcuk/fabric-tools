@@ -235,10 +235,11 @@ def print_warn_panel(message: str) -> None:
     from rich.console import Console
     from rich.panel import Panel
 
+    from fabric_tools.confirm import CONFIRM_ABORT_MESSAGE
     from fabric_tools.status import clear
 
     clear()
-    text = (message or "").strip() or "Aborted by user."
+    text = (message or "").strip() or CONFIRM_ABORT_MESSAGE
     Console(stderr=True).print(
         Panel(
             text,

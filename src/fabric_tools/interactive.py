@@ -12,6 +12,7 @@ from prompt_toolkit.keys import Keys
 from questionary import Choice, Style
 
 from fabric_tools.colours import FG_OK, print_warn_panel
+from fabric_tools.confirm import CONFIRM_ABORT_MESSAGE
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
@@ -35,7 +36,6 @@ from fabric_tools.notebook.compare import CompareResult
 from fabric_tools.notebook.ops import OpResult
 from fabric_tools.parsing import CommandMode, WorkItem
 
-_ABORT_BY_USER = "Aborted by user."
 _TOOL_KIND = {
     "notebook": KIND_NOTEBOOK,
     "dataflow": KIND_DATAFLOW,
@@ -82,7 +82,7 @@ class _Back(Exception):
 
 def _abort_by_user() -> NoReturn:
     """Exit interactive with the shared Warning panel used elsewhere in the CLI."""
-    print_warn_panel(_ABORT_BY_USER)
+    print_warn_panel(CONFIRM_ABORT_MESSAGE)
     raise typer.Exit(code=EXIT_USER) from None
 
 

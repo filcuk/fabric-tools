@@ -147,7 +147,7 @@ def busy(message: str) -> Iterator[None]:
     ``Live.stop``), so the next prompt or spinner is not pushed down a blank
     line after confirms.
 
-    Live must not redirect stdout/stderr — otherwise ``typer.confirm`` and auth
+    Live must not redirect stdout/stderr — otherwise ``prompt_confirm`` and auth
     hints are swallowed into the spinner and overwrite the prompt.
     """
     parent = _active.get()

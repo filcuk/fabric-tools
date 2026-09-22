@@ -10,6 +10,11 @@ import typer
 
 from fabric_tools.auth import AuthError
 from fabric_tools.colours import FG_OK, print_error_panel, print_warn_panel
+from fabric_tools.confirm import (
+    CONFIRM_ABORT_MESSAGE,
+    ConfirmationAborted,
+    abort_interrupt_message,
+)
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
@@ -62,9 +67,18 @@ def _exit_error(message: str, *, code: int = EXIT_USER) -> NoReturn:
 
 def _exit_warn(message: str, *, code: int = EXIT_USER) -> NoReturn:
     """Print a shared Warning panel and exit (never returns)."""
-    text = (message or "").strip() or "Aborted by user."
+    text = (message or "").strip() or CONFIRM_ABORT_MESSAGE
     print_warn_panel(text)
     raise typer.Exit(code=code)
+
+
+def _exit_user_abort(exc: BaseException | None = None) -> NoReturn:
+    """Exit for ``ConfirmationAborted`` or mid-prompt ``typer.Abort``."""
+    if isinstance(exc, ConfirmationAborted):
+        _exit_warn(str(exc))
+    if isinstance(exc, typer.Abort):
+        _exit_warn(abort_interrupt_message())
+    _exit_warn(CONFIRM_ABORT_MESSAGE)
 
 
 def _resolve_deploy_guid_maps(

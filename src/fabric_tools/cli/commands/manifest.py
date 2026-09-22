@@ -20,7 +20,7 @@ from fabric_tools.manifest import (
     resolve_inspect_target,
     resolve_manifest_path,
 )
-from fabric_tools.sync.common import _exit_error, _exit_warn
+from fabric_tools.sync.common import _exit_error, _exit_user_abort
 
 manifest_app = typer.Typer(
     name="manifest",
@@ -139,7 +139,9 @@ def manifest_delete(
         )
         delete_manifest_file(path)
     except ConfirmationAborted as exc:
-        _exit_warn(str(exc))
+        _exit_user_abort(exc)
+    except typer.Abort as exc:
+        _exit_user_abort(exc)
     except ManifestError as exc:
         _exit_error(str(exc))
 
@@ -182,7 +184,9 @@ def manifest_move(
         confirm_or_abort(message, silent=silent)
         move_manifest_file(source, dest)
     except ConfirmationAborted as exc:
-        _exit_warn(str(exc))
+        _exit_user_abort(exc)
+    except typer.Abort as exc:
+        _exit_user_abort(exc)
     except ManifestError as exc:
         _exit_error(str(exc))
 

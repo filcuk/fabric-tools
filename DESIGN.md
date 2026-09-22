@@ -137,9 +137,11 @@ The dots spinner glyph is **green**; the status text stays primary (default). Do
 
 Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error/Warning panels so they are not printed mid-line. For **non-blocking** notices that must stay visible while work continues, use `status.set_aside(renderable)` / `status.warn_aside(message)` — these draw under the live spinner without stopping it (replacing any prior aside). `status.clear_aside()` removes the aside. Outside `busy`, `set_aside` / `warn_aside` print once to stderr.
 
-Stopping a spinner must not leave a blank line and must not cursor-up into the previous prompt (use in-place erase, not Rich `restore_cursor`). Live must not redirect stdout/stderr, or `typer.confirm` and other prompts get swallowed into the spinner.
+Stopping a spinner must not leave a blank line and must not cursor-up into the previous prompt (use in-place erase, not Rich `restore_cursor`). Live must not redirect stdout/stderr, or prompts get swallowed into the spinner.
 
-**Never prompt under a live spinner.** Any `typer.confirm` / input must run outside `busy`, or call `status.clear()` first — otherwise the spinner refresh erases the prompt and the CLI appears to hang while waiting on stdin. Do interactive pre-checks (e.g. SqlServer install offer) before entering a spinner.
+**Never prompt under a live spinner.** Any yes/no prompt must run outside `busy`, or call `status.clear()` first — otherwise the spinner refresh erases the prompt and the CLI appears to hang while waiting on stdin. Do interactive pre-checks (e.g. SqlServer install offer) before entering a spinner.
+
+**Yes/no prompts:** use `confirm.prompt_confirm` / `confirm.confirm_or_abort` (not raw `typer.confirm`). Decline and Ctrl+C/EOF both become a user abort: `ConfirmationAborted` + Warning panel `Aborted by user.`, never a red `Operation failed.` glued to `[y/N]:`. Sync exits go through `_exit_user_abort` so a stray `typer.Abort` is handled the same way.
 
 XMLA role ops update the same spinner across stages (`connecting via XMLA` → `loading model` → `adding role member` / `saving model changes`, etc.) via stderr progress markers from `xmla_role_members.ps1`.
 

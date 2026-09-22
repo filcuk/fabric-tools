@@ -24,7 +24,7 @@ from fabric_tools.sync.common import (
     _exit_error,
     _exit_from_compare_results,
     _exit_from_op_results,
-    _exit_warn,
+    _exit_user_abort,
     _fail_auth,
     _list_items_fn_for_kind,
     _notify_success,
@@ -281,7 +281,9 @@ def run_sync_command(spec: KindSpec, req: SyncRequest) -> None:
         else:
             _exit_error(f"Unknown mode: {req.mode}")
     except ConfirmationAborted as exc:
-        _exit_warn(str(exc))
+        _exit_user_abort(exc)
+    except typer.Abort as exc:
+        _exit_user_abort(exc)
     except typer.Exit:
         raise
     except AuthError as exc:
