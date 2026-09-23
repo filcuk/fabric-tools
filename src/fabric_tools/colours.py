@@ -95,6 +95,7 @@ _HELP_NEGATIVE_HIGHLIGHTS = [
 CLI_COMMAND_WORDS: frozenset[str] = frozenset(
     {
         "add",
+        "banner",
         "clean",
         "color",
         "compare",

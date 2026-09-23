@@ -264,6 +264,20 @@ def test_debug_color_emits_palette_labels() -> None:
         assert row.usage.split(";")[0] in result.stdout
 
 
+def test_debug_banner_emits_all_panel_titles() -> None:
+    result = CliRunner().invoke(app, ["debug", "banner"])
+    assert result.exit_code == EXIT_OK
+    err = result.stderr or ""
+    for title, body in (
+        ("Error", "Example error."),
+        ("Warning", "Example warning."),
+        ("Info", "Example info."),
+        ("Success", "Example success."),
+    ):
+        assert title in err
+        assert body in err
+
+
 def test_debug_hidden_from_root_help() -> None:
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == EXIT_OK
