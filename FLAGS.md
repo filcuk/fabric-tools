@@ -59,6 +59,7 @@ list APIs for gen1 / paginated reports); zero matches is an error. Manifests sta
 | deploy | required local path or remote | required remote |
 | compare | required local path or remote | required remote |
 | delete | not used | required remote |
+| run / refresh | not used | required remote (or `-m` with itemId) |
 
 ## Global / common
 
@@ -67,9 +68,10 @@ list APIs for gen1 / paginated reports); zero matches is an error. Manifests sta
 | `--help` | `-h` | everywhere | Show help |
 | `--version` | `-v` | root | Show version |
 | `--interactive` | `-i` | root | Guided wizard |
-| `--manifest` | `-m` | sync / pack / manifest cmds | `.ftdep` stem or path |
+| `--manifest` | `-m` | sync / pack / manifest / run / refresh cmds | `.ftdep` stem or path |
 | `--silent` | `-s` | mutating cmds | Skip confirms |
-| `--dry-run` | `-d` | sync / pack | Validate only |
+| `--dry-run` | `-d` | sync / pack / run / refresh | Validate only |
+| `--no-wait` | `-w` | run / refresh | Return after the job is accepted; do not wait |
 | `--name` | `-n` | create deploy | Display name |
 | `--cells` | `-c` | notebook deploy | 1-based cell indices |
 | `--remap` | `-r` | deploy (selected kinds) | GUID map JSON |
@@ -90,6 +92,21 @@ list APIs for gen1 / paginated reports); zero matches is an error. Manifests sta
 | `--include-schedules` | `-i` | pipeline download/deploy/compare; pack |
 | `--include-outputs` | `-i` | notebook compare |
 | `--independent` | `-i` | report / semantic-model / pack |
+
+## Run / refresh
+
+`notebook run`, `pipeline run`, `dataflow refresh`, `semantic-model refresh`.
+
+| Long | Short | Meaning |
+|------|-------|---------|
+| `--target` | `-t` | `workspaceId:itemId` or `workspaceId:*` (no `--origin`) |
+| `--manifest` | `-m` | Load entries with `itemId`; never rewritten |
+| `--filter` | `-f` | `displayName` substring; only with `workspaceId:*` |
+| `--silent` | `-s` | Skip confirm |
+| `--dry-run` | `-d` | Resolve targets only; start nothing |
+| `--no-wait` | `-w` | Return after accept (default waits for completion) |
+
+`-w` is the short form of `--no-wait` (primary word `wait`); there is no `--wait` flag.
 
 ## Semantic-model role (RLS members)
 
