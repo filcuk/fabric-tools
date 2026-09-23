@@ -14,6 +14,7 @@ from fabric_tools.dataflow_gen1.definition import (
     DefinitionError as DataflowDefinitionError,
 )
 from fabric_tools.dataflow_gen1.definition import validate_local_model
+from fabric_tools.display import format_guid, format_local_path
 from fabric_tools.environment.definition import (
     DefinitionError as EnvironmentDefinitionError,
 )
@@ -100,10 +101,16 @@ def run_dry_run(
             try:
                 fmt = validate_local_notebook(item.file)
                 results.append(
-                    CheckResult(True, f"local ok: {item.file} ({fmt.value})")
+                    CheckResult(
+                        True, f"local ok: {format_local_path(item.file)} ({fmt.value})"
+                    )
                 )
             except DefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
                 continue
             if cell_indices is not None and fmt is NotebookFormat.IPYNB:
                 results.append(_check_local_cells(item, cell_indices))
@@ -196,10 +203,17 @@ def run_dry_run_dataflow(
             try:
                 validate_local_dataflow(item.file)
                 results.append(
-                    CheckResult(True, f"local ok: {item.file} (Dataflow folder)")
+                    CheckResult(
+                        True,
+                        f"local ok: {format_local_path(item.file)} (Dataflow folder)",
+                    )
                 )
             except DataflowGen2DefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     needs_remote = has_targets or has_origins
     if needs_remote:
@@ -281,10 +295,17 @@ def run_dry_run_org_app(
             try:
                 validate_local_org_app(item.file)
                 results.append(
-                    CheckResult(True, f"local ok: {item.file} (OrgApp folder)")
+                    CheckResult(
+                        True,
+                        f"local ok: {format_local_path(item.file)} (OrgApp folder)",
+                    )
                 )
             except OrgAppDefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     needs_remote = has_targets or has_origins
     if needs_remote:
@@ -365,10 +386,17 @@ def run_dry_run_variable_library(
             try:
                 validate_local_variable_library(item.file)
                 results.append(
-                    CheckResult(True, f"local ok: {item.file} (VariableLibrary folder)")
+                    CheckResult(
+                        True,
+                        f"local ok: {format_local_path(item.file)} (VariableLibrary folder)",
+                    )
                 )
             except VariableLibraryDefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     if has_targets or has_origins:
         if client is None:
@@ -445,10 +473,17 @@ def run_dry_run_environment(
             try:
                 validate_local_environment(item.file)
                 results.append(
-                    CheckResult(True, f"local ok: {item.file} (Environment folder)")
+                    CheckResult(
+                        True,
+                        f"local ok: {format_local_path(item.file)} (Environment folder)",
+                    )
                 )
             except EnvironmentDefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     if has_targets or has_origins:
         if client is None:
@@ -526,10 +561,17 @@ def run_dry_run_semantic_model(
             try:
                 validate_local_semantic_model(item.file)
                 results.append(
-                    CheckResult(True, f"local ok: {item.file} (SemanticModel folder)")
+                    CheckResult(
+                        True,
+                        f"local ok: {format_local_path(item.file)} (SemanticModel folder)",
+                    )
                 )
             except SemanticModelDefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     needs_remote = has_targets or has_origins
     if needs_remote:
@@ -613,24 +655,38 @@ def run_dry_run_report(
                     results.append(
                         CheckResult(
                             False,
-                            f"local fail: {item.file} — compare does not support .pbix "
+                            f"local fail: {format_local_path(item.file)} — compare does not support .pbix "
                             "(use a *.Report folder or remote --origin)",
                         )
                     )
                 elif item.file.is_file():
-                    results.append(CheckResult(True, f"local ok: {item.file} (.pbix)"))
+                    results.append(
+                        CheckResult(
+                            True, f"local ok: {format_local_path(item.file)} (.pbix)"
+                        )
+                    )
                 else:
                     results.append(
-                        CheckResult(False, f"local fail: {item.file} — file not found")
+                        CheckResult(
+                            False,
+                            f"local fail: {format_local_path(item.file)} — file not found",
+                        )
                     )
                 continue
             try:
                 validate_local_report(item.file)
                 results.append(
-                    CheckResult(True, f"local ok: {item.file} (Report folder)")
+                    CheckResult(
+                        True,
+                        f"local ok: {format_local_path(item.file)} (Report folder)",
+                    )
                 )
             except ReportDefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     needs_remote = has_targets or has_origins
     if needs_remote:
@@ -711,9 +767,17 @@ def run_dry_run_dataflow_gen1(
             seen_files.add(file_key)
             try:
                 validate_local_model(item.file)
-                results.append(CheckResult(True, f"local ok: {item.file} (model.json)"))
+                results.append(
+                    CheckResult(
+                        True, f"local ok: {format_local_path(item.file)} (model.json)"
+                    )
+                )
             except DataflowDefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     needs_remote = has_targets or has_origins
     if needs_remote:
@@ -786,9 +850,17 @@ def run_dry_run_paginated_report(
             seen_files.add(file_key)
             try:
                 validate_local_rdl(item.file)
-                results.append(CheckResult(True, f"local ok: {item.file} (.rdl)"))
+                results.append(
+                    CheckResult(
+                        True, f"local ok: {format_local_path(item.file)} (.rdl)"
+                    )
+                )
             except PaginatedReportDefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     needs_remote = has_targets or has_origins
     if needs_remote:
@@ -862,10 +934,17 @@ def run_dry_run_pipeline(
             try:
                 validate_local_pipeline(item.file)
                 results.append(
-                    CheckResult(True, f"local ok: {item.file} (DataPipeline folder)")
+                    CheckResult(
+                        True,
+                        f"local ok: {format_local_path(item.file)} (DataPipeline folder)",
+                    )
                 )
             except PipelineDefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     needs_remote = has_targets or has_origins
     if needs_remote:
@@ -948,11 +1027,16 @@ def run_dry_run_udf(
                 validate_local_udf(item.file)
                 results.append(
                     CheckResult(
-                        True, f"local ok: {item.file} (UserDataFunction folder)"
+                        True,
+                        f"local ok: {format_local_path(item.file)} (UserDataFunction folder)",
                     )
                 )
             except UdfDefinitionError as exc:
-                results.append(CheckResult(False, f"local fail: {item.file} — {exc}"))
+                results.append(
+                    CheckResult(
+                        False, f"local fail: {format_local_path(item.file)} — {exc}"
+                    )
+                )
 
     needs_remote = has_targets or has_origins
     if needs_remote:
@@ -1016,10 +1100,10 @@ def _check_local_cells(item: WorkItem, cell_indices: list[int]) -> CheckResult:
         notebook = read_ipynb(item.file)
         validate_cell_indices(notebook, cell_indices, side="local")
     except (DefinitionError, CellSelectionError) as exc:
-        return CheckResult(False, f"cells fail: {item.file} — {exc}")
+        return CheckResult(False, f"cells fail: {format_local_path(item.file)} — {exc}")
     return CheckResult(
         True,
-        f"cells ok (local): [{format_cell_indices(cell_indices)}] in {item.file}",
+        f"cells ok (local): [{format_cell_indices(cell_indices)}] in {format_local_path(item.file)}",
     )
 
 
@@ -1029,7 +1113,7 @@ def _check_remote_cells(
     cell_indices: list[int],
 ) -> CheckResult:
     assert item.target is not None and item.target.item_id is not None
-    label = item.target.label()
+    label = format_guid(item.target.item_id)
     try:
         definition = get_notebook_definition(
             client,
@@ -1051,9 +1135,13 @@ def _check_workspace(client: FabricClient, workspace_id: str) -> CheckResult:
     try:
         data = client.get_workspace(workspace_id)
     except FabricApiError as exc:
-        return CheckResult(False, f"remote fail: workspace {workspace_id} — {exc}")
+        return CheckResult(
+            False, f"remote fail: workspace {format_guid(workspace_id)} — {exc}"
+        )
     name = data.get("displayName") or data.get("name") or workspace_id
-    return CheckResult(True, f"remote ok: workspace '{name}' ({workspace_id})")
+    return CheckResult(
+        True, f"remote ok: workspace '{name}' ({format_guid(workspace_id)})"
+    )
 
 
 def _check_item(
@@ -1071,19 +1159,20 @@ def _check_item(
     except FabricApiError as exc:
         return CheckResult(
             False,
-            f"remote fail: {role} {target.workspace_id}:{target.item_id} — {exc}",
+            f"remote fail: {role} {format_guid(target.item_id)} — {exc}",
         )
     name = data.get("displayName") or data.get("name") or target.item_id
     item_type = data.get("type")
     if item_type and item_type != expected_type:
         return CheckResult(
             False,
-            f"remote fail: {role} '{name}' ({target.item_id}) is type {item_type}, "
-            f"expected {expected_type}",
+            f"remote fail: {role} '{name}' ({format_guid(target.item_id)}) "
+            f"is type {item_type}, expected {expected_type}",
         )
     return CheckResult(
         True,
-        f"remote ok: {role} {kind_label} '{name}' ({target.item_id}) [{mode.value}]",
+        f"remote ok: {role} {kind_label} '{name}' ({format_guid(target.item_id)}) "
+        f"[{mode.value}]",
     )
 
 
@@ -1091,9 +1180,11 @@ def _check_powerbi_group(client: PowerBiClient, group_id: str) -> CheckResult:
     try:
         data = client.get_group(group_id)
     except PowerBiApiError as exc:
-        return CheckResult(False, f"remote fail: workspace {group_id} — {exc}")
+        return CheckResult(
+            False, f"remote fail: workspace {format_guid(group_id)} — {exc}"
+        )
     name = data.get("name") or data.get("displayName") or group_id
-    return CheckResult(True, f"remote ok: workspace '{name}' ({group_id})")
+    return CheckResult(True, f"remote ok: workspace '{name}' ({format_guid(group_id)})")
 
 
 def _check_powerbi_dataflow(
@@ -1109,12 +1200,13 @@ def _check_powerbi_dataflow(
     except PowerBiApiError as exc:
         return CheckResult(
             False,
-            f"remote fail: {role} {target.workspace_id}:{target.item_id} — {exc}",
+            f"remote fail: {role} {format_guid(target.item_id)} — {exc}",
         )
     name = data.get("name") or target.item_id
     return CheckResult(
         True,
-        f"remote ok: {role} dataflow-gen1 '{name}' ({target.item_id}) [{mode.value}]",
+        f"remote ok: {role} dataflow-gen1 '{name}' ({format_guid(target.item_id)}) "
+        f"[{mode.value}]",
     )
 
 
@@ -1128,20 +1220,20 @@ def _check_powerbi_paginated_report(
     assert target.item_id is not None
     try:
         data = client.get_report(target.workspace_id, target.item_id)
-        ensure_paginated_report(data, label=target.label())
+        ensure_paginated_report(data, label=format_guid(target.item_id))
     except PowerBiApiError as exc:
         return CheckResult(
             False,
-            f"remote fail: {role} {target.workspace_id}:{target.item_id} — {exc}",
+            f"remote fail: {role} {format_guid(target.item_id)} — {exc}",
         )
     except PaginatedReportDefinitionError as exc:
         return CheckResult(
             False,
-            f"remote fail: {role} {target.workspace_id}:{target.item_id} — {exc}",
+            f"remote fail: {role} {format_guid(target.item_id)} — {exc}",
         )
     name = data.get("name") or target.item_id
     return CheckResult(
         True,
-        f"remote ok: {role} paginated-report '{name}' ({target.item_id}) "
+        f"remote ok: {role} paginated-report '{name}' ({format_guid(target.item_id)}) "
         f"[{mode.value}]",
     )

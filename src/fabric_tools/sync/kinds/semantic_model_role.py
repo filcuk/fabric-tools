@@ -6,6 +6,7 @@ import typer
 
 from fabric_tools.auth import AuthError
 from fabric_tools.colours import FG_OK, print_error_panel
+from fabric_tools.display import format_guid, format_item_ref
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK
 from fabric_tools.manifest import (
     KIND_SEMANTIC_MODEL,
@@ -151,18 +152,21 @@ def run_semantic_model_role_command(
                 model_name = model_item.get("displayName") or model_item.get("name")
                 if not isinstance(ws_name, str) or not ws_name.strip():
                     _exit_error(
-                        f"Workspace {item.target.workspace_id} has no displayName "
+                        f"Workspace {format_guid(item.target.workspace_id)} "
+                        "has no displayName "
                         "for XMLA."
                     )
                 if not isinstance(model_name, str) or not model_name.strip():
                     _exit_error(
-                        f"Semantic model {item.target.item_id} has no displayName "
+                        f"Semantic model {format_guid(item.target.item_id)} "
+                        "has no displayName "
                         "for XMLA."
                     )
                 item_type = model_item.get("type")
                 if item_type and item_type != "SemanticModel":
                     _exit_error(
-                        f"Target {item.target.item_id} type is {item_type!r}; "
+                        f"Target {format_guid(item.target.item_id)} type is "
+                        f"{item_type!r}; "
                         "expected SemanticModel."
                     )
                 ws_label = resolve_workspace_name(client, item.target.workspace_id)
@@ -201,7 +205,7 @@ def run_semantic_model_role_command(
                 if action == "list":
                     typer.secho(
                         f"[dry-run] would list roles on semantic model "
-                        f'"{model_name}" ({model_id}) in {ws_label}',
+                        f'"{model_name}" ({format_guid(model_id)}) in {ws_label}',
                         fg=FG_OK,
                     )
                 else:
@@ -210,7 +214,7 @@ def run_semantic_model_role_command(
                     typer.secho(
                         f'[dry-run] would {verb} member "{member_name}" {prep} '
                         f'role "{role_name}" on semantic model "{model_name}" '
-                        f"({model_id}) in {ws_label}",
+                        f"({format_guid(model_id)}) in {ws_label}",
                         fg=FG_OK,
                     )
             raise typer.Exit(code=EXIT_OK)
@@ -294,7 +298,7 @@ def run_semantic_model_role_command(
                 code = f" [{outcome.code}]" if outcome.code else ""
                 print_error_panel(
                     (
-                        f"{model_name} ({model_id}) in {ws_label}: "
+                        f"{format_item_ref(model_name, model_id)} in {ws_label}: "
                         f"{outcome}{stage}{code}{detail}"
                     ).strip()
                     or "XMLA role operation failed."
@@ -302,7 +306,10 @@ def run_semantic_model_role_command(
                 failed = True
                 continue
 
-            header = f"{model_name} ({model_id}) in {ws_label}: {outcome.message}"
+            header = (
+                f"{format_item_ref(model_name, model_id)} in {ws_label}: "
+                f"{outcome.message}"
+            )
             typer.secho(header, fg=FG_OK)
             if outcome.roles:
                 typer.echo(json.dumps({"roles": outcome.roles}, indent=2))

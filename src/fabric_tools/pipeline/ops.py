@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from fabric_tools.client import FabricApiError, FabricClient
-from fabric_tools.confirm import status_item_label
+from fabric_tools.confirm import origin_ref, status_item_label
+from fabric_tools.display import format_guid, format_item_ref, format_local_path
 from fabric_tools.guid_map import GuidMapError, apply_guid_map_to_definition
 from fabric_tools.parsing import WorkItem
 from fabric_tools.pipeline.definition import (
@@ -37,6 +38,7 @@ def download_pipeline(
     item: WorkItem,
     *,
     include_schedules: bool = False,
+    name: str | None = None,
 ) -> OpResult:
     """Download one remote DataPipeline definition to a local folder."""
     if item.target is None or item.target.item_id is None:
@@ -45,6 +47,7 @@ def download_pipeline(
         return OpResult(False, "download requires a local --target path")
 
     target = item.target
+    ref = format_item_ref(name, target.item_id)
     dest = item.file
     try:
         dest = detect_pipeline_path(dest)
@@ -57,14 +60,14 @@ def download_pipeline(
     except (FabricApiError, DefinitionError, OSError) as exc:
         return OpResult(
             False,
-            f"download failed {target.label()} -> {dest}: {exc}",
+            f"download failed {ref} -> {format_local_path(dest)}: {exc}",
             target.workspace_id,
             target.item_id,
         )
 
     return OpResult(
         True,
-        f"downloaded {target.label()} -> {written}",
+        f"downloaded {ref} -> {format_local_path(written)}",
         target.workspace_id,
         target.item_id,
     )
@@ -75,6 +78,7 @@ def deploy_pipeline(
     item: WorkItem,
     *,
     display_name: str | None = None,
+    target_name: str | None = None,
     origin_definition_cache: dict[str, dict[str, Any]] | None = None,
     include_schedules: bool = False,
     guid_map: dict[str, str] | None = None,
@@ -96,6 +100,7 @@ def deploy_pipeline(
         return OpResult(False, "deploy cannot mix a local path and a remote --origin")
 
     target = item.target
+    ref = format_item_ref(target_name, target.item_id)
 
     try:
         definition, source_label = _resolve_source_definition(
@@ -142,14 +147,15 @@ def deploy_pipeline(
         except FabricApiError as exc:
             return OpResult(
                 False,
-                f"create failed in {target.workspace_id} from {source_label}: {exc}",
+                f"create failed in workspace {format_guid(target.workspace_id)} "
+                f"from {source_label}: {exc}",
                 target.workspace_id,
             )
         item_id = str(created.get("id") or "")
         return OpResult(
             True,
-            f"created {target.workspace_id}:{item_id} from {source_label} "
-            f"(name='{name}'){remap_suffix}",
+            f"created {format_item_ref(name, item_id)} from {source_label}"
+            f"{remap_suffix}",
             target.workspace_id,
             item_id or None,
         )
@@ -174,25 +180,28 @@ def deploy_pipeline(
     except (FabricApiError, DefinitionError) as exc:
         return OpResult(
             False,
-            f"overwrite failed {target.label()} from {source_label}: {exc}",
+            f"overwrite failed {ref} from {source_label}: {exc}",
             target.workspace_id,
             target.item_id,
         )
     suffix = " (preserved remote schedules)" if preserved else ""
     return OpResult(
         True,
-        f"updated {target.label()} from {source_label}{suffix}{remap_suffix}",
+        f"updated {ref} from {source_label}{suffix}{remap_suffix}",
         target.workspace_id,
         target.item_id,
     )
 
 
-def delete_pipeline(client: FabricClient, item: WorkItem) -> OpResult:
+def delete_pipeline(
+    client: FabricClient, item: WorkItem, *, name: str | None = None
+) -> OpResult:
     """Soft-delete one remote DataPipeline."""
     if item.target is None or item.target.item_id is None:
         return OpResult(False, "delete requires workspace:artifact target")
 
     target = item.target
+    ref = format_item_ref(name, target.item_id)
     try:
         client.request(
             "DELETE",
@@ -201,13 +210,13 @@ def delete_pipeline(client: FabricClient, item: WorkItem) -> OpResult:
     except FabricApiError as exc:
         return OpResult(
             False,
-            f"delete failed {target.label()}: {exc}",
+            f"delete failed {ref}: {exc}",
             target.workspace_id,
             target.item_id,
         )
     return OpResult(
         True,
-        f"deleted {target.label()}",
+        f"deleted {ref}",
         target.workspace_id,
         target.item_id,
     )
@@ -276,15 +285,12 @@ def run_download_batch(
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        progress.advance(
-            status_detail(
-                "pipeline",
-                "downloading",
-                status_item_label(client, item.target),
-            )
-        )
+        label = status_item_label(client, item.target)
+        progress.advance(status_detail("pipeline", "downloading", label))
         results.append(
-            download_pipeline(client, item, include_schedules=include_schedules)
+            download_pipeline(
+                client, item, include_schedules=include_schedules, name=label
+            )
         )
     return results
 
@@ -320,6 +326,7 @@ def run_deploy_batch(
                 client,
                 item,
                 display_name=name,
+                target_name=label,
                 origin_definition_cache=origin_cache,
                 include_schedules=include_schedules,
                 guid_map=guid_map,
@@ -332,14 +339,9 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        progress.advance(
-            status_detail(
-                "pipeline",
-                "deleting",
-                status_item_label(client, item.target),
-            )
-        )
-        results.append(delete_pipeline(client, item))
+        label = status_item_label(client, item.target)
+        progress.advance(status_detail("pipeline", "deleting", label))
+        results.append(delete_pipeline(client, item, name=label))
     return results
 
 
@@ -353,12 +355,12 @@ def _resolve_source_definition(
     if item.file is not None:
         return (
             pack_definition(item.file, include_schedules=include_schedules),
-            str(item.file),
+            format_local_path(item.file),
         )
 
     assert item.origin is not None and item.origin.item_id is not None
     origin = item.origin
-    label = f"origin {origin.label()}"
+    label = f"origin {origin_ref(client, origin)}"
     cache_key = origin.label()
     if origin_definition_cache is not None and cache_key in origin_definition_cache:
         definition = origin_definition_cache[cache_key]

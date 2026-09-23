@@ -12,8 +12,13 @@ from rich.text import Text
 from fabric_tools import status as status_mod
 from fabric_tools.client import FabricApiError, FabricClient
 from fabric_tools.colours import STYLE_OPTION, STYLE_OPTION_ALIAS
-from fabric_tools.confirm import status_item_label, status_item_label_for_id
+from fabric_tools.confirm import (
+    origin_ref,
+    status_item_label,
+    status_item_label_for_id,
+)
 from fabric_tools.definition_parts import encode_part
+from fabric_tools.display import format_guid, format_item_ref, format_local_path
 from fabric_tools.parsing import WorkItem
 from fabric_tools.report.definition import (
     PBIR_PART,
@@ -155,21 +160,18 @@ def download_report(
     cache = definition_cache if definition_cache is not None else {}
 
     if is_pbix_path(dest):
+        pbix_label = status_item_label(client, target)
         if progress is not None:
-            progress.advance(
-                status_detail(
-                    "report",
-                    "downloading",
-                    status_item_label(client, target),
-                )
-            )
+            progress.advance(status_detail("report", "downloading", pbix_label))
         return _download_pbix(
             item,
             independent=independent,
             powerbi_client=powerbi_client,
+            name=pbix_label,
         )
 
     report_label = status_item_label(client, target)
+    ref = format_item_ref(report_label, target.item_id)
     model_id: str | None = None
     planned_model_step = False
 
@@ -207,12 +209,12 @@ def download_report(
             progress.skip_planned()
         return OpResult(
             False,
-            f"download failed {target.label()} -> {dest}: {exc}",
+            f"download failed {ref} -> {format_local_path(dest)}: {exc}",
             target.workspace_id,
             target.item_id,
         )
 
-    messages = [f"downloaded report {target.label()} -> {written}"]
+    messages = [f"downloaded report {ref} -> {format_local_path(written)}"]
 
     if not independent:
         # Definition is authoritative once fetched (byPath → no model download).
@@ -247,13 +249,13 @@ def download_report(
             )
 
         if model_id:
+            model_label = status_item_label_for_id(
+                client, target.workspace_id, model_id
+            )
+            model_ref = format_item_ref(model_label, model_id)
             if progress is not None:
                 progress.advance(
-                    status_detail(
-                        "semantic-model",
-                        "downloading",
-                        status_item_label_for_id(client, target.workspace_id, model_id),
-                    )
+                    status_detail("semantic-model", "downloading", model_label)
                 )
             model_dest = dest.parent / f"{display_name_from_path(dest)}.SemanticModel"
             try:
@@ -262,13 +264,13 @@ def download_report(
                 )
                 sm_written = unpack_semantic_model_definition(sm_def, model_dest)
                 messages.append(
-                    f"downloaded joined semantic model {target.workspace_id}:{model_id} "
-                    f"-> {sm_written}"
+                    f"downloaded joined semantic model {model_ref} "
+                    f"-> {format_local_path(sm_written)}"
                 )
             except (FabricApiError, OSError) as exc:
                 messages.append(
-                    f"report downloaded; joined semantic model not included "
-                    f"({target.workspace_id}:{model_id}): {exc}"
+                    f"report downloaded; joined semantic model {model_ref} "
+                    f"not included: {exc}"
                 )
                 model_id = None
             else:
@@ -285,7 +287,9 @@ def download_report(
                     )
 
     try:
-        messages.append(f"wrote Power BI Desktop shortcut {write_pbip(written)}")
+        messages.append(
+            f"wrote Power BI Desktop shortcut {format_local_path(write_pbip(written))}"
+        )
     except OSError as exc:
         messages.append(f"Power BI Desktop shortcut not written: {exc}")
 
@@ -381,30 +385,33 @@ def deploy_report(
                 progress=progress,
             )
 
+    label = status_item_label(client, target, fallback=display_name)
     if progress is not None:
         progress.advance(
             status_detail(
-                "report",
-                "creating" if target.is_create else "deploying",
-                status_item_label(client, target, fallback=display_name),
+                "report", "creating" if target.is_create else "deploying", label
             )
         )
     return _deploy_report_only(
         client,
         item,
         display_name=display_name,
+        target_name=label,
         origin_definition_cache=origin_definition_cache,
         bind_model_id=semantic_model_id,
         independent=independent,
     )
 
 
-def delete_report(client: FabricClient, item: WorkItem) -> OpResult:
+def delete_report(
+    client: FabricClient, item: WorkItem, *, name: str | None = None
+) -> OpResult:
     """Soft-delete one remote report (bound semantic model is left intact)."""
     if item.target is None or item.target.item_id is None:
         return OpResult(False, "delete requires workspace:artifact target")
 
     target = item.target
+    ref = format_item_ref(name, target.item_id)
     try:
         client.request(
             "DELETE",
@@ -413,13 +420,13 @@ def delete_report(client: FabricClient, item: WorkItem) -> OpResult:
     except FabricApiError as exc:
         return OpResult(
             False,
-            f"delete failed {target.label()}: {exc}",
+            f"delete failed {ref}: {exc}",
             target.workspace_id,
             target.item_id,
         )
     return OpResult(
         True,
-        f"deleted report {target.label()} (semantic model left intact if any)",
+        f"deleted report {ref} (semantic model left intact if any)",
         target.workspace_id,
         target.item_id,
     )
@@ -562,14 +569,9 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        progress.advance(
-            status_detail(
-                "report",
-                "deleting",
-                status_item_label(client, item.target),
-            )
-        )
-        results.append(delete_report(client, item))
+        label = status_item_label(client, item.target)
+        progress.advance(status_detail("report", "deleting", label))
+        results.append(delete_report(client, item, name=label))
     return results
 
 
@@ -616,10 +618,12 @@ def _deploy_report_only(
     origin_definition_cache: dict[str, dict[str, Any]] | None,
     bind_model_id: str | None,
     independent: bool,
+    target_name: str | None = None,
 ) -> OpResult:
     del independent  # report-only path; flag already gated join above
     target = item.target
     assert target is not None
+    ref = format_item_ref(target_name, target.item_id)
 
     try:
         definition, source_label = _resolve_source_definition(
@@ -660,14 +664,14 @@ def _deploy_report_only(
         except FabricApiError as exc:
             return OpResult(
                 False,
-                f"create failed in {target.workspace_id} from {source_label}: {exc}",
+                f"create failed in workspace {format_guid(target.workspace_id)} "
+                f"from {source_label}: {exc}",
                 target.workspace_id,
             )
         item_id = str(created.get("id") or "")
         return OpResult(
             True,
-            f"created report {target.workspace_id}:{item_id} from {source_label} "
-            f"(name='{name}')",
+            f"created report {format_item_ref(name, item_id)} from {source_label}",
             target.workspace_id,
             item_id or None,
         )
@@ -684,13 +688,13 @@ def _deploy_report_only(
     except FabricApiError as exc:
         return OpResult(
             False,
-            f"overwrite failed {target.label()} from {source_label}: {exc}",
+            f"overwrite failed {ref} from {source_label}: {exc}",
             target.workspace_id,
             target.item_id,
         )
     return OpResult(
         True,
-        f"updated report {target.label()} from {source_label}",
+        f"updated report {ref} from {source_label}",
         target.workspace_id,
         target.item_id,
     )
@@ -741,8 +745,7 @@ def _deploy_joined_folder(
             )
             model_id = str(created_model.get("id") or "")
             messages.append(
-                f"created semantic model {target.workspace_id}:{model_id} "
-                f"(name='{model_name}')"
+                f"created semantic model {format_item_ref(model_name, model_id)}"
             )
         else:
             if not model_id:
@@ -765,13 +768,12 @@ def _deploy_joined_folder(
                     target.workspace_id,
                     target.item_id,
                 )
+            remote_model_name = status_item_label_for_id(
+                client, target.workspace_id, model_id
+            )
             if progress is not None:
                 progress.advance(
-                    status_detail(
-                        "semantic-model",
-                        action,
-                        status_item_label_for_id(client, target.workspace_id, model_id),
-                    )
+                    status_detail("semantic-model", action, remote_model_name)
                 )
             update_semantic_model_definition(
                 client,
@@ -780,20 +782,17 @@ def _deploy_joined_folder(
                 definition=model_definition,
                 update_metadata=sm_has_platform(model_definition),
             )
-            messages.append(f"updated semantic model {target.workspace_id}:{model_id}")
+            messages.append(
+                f"updated semantic model {format_item_ref(remote_model_name, model_id)}"
+            )
 
         assert model_id
         pbir = rewrite_pbir_to_by_connection(load_pbir(item.file), model_id)
         report_definition = pack_definition(item.file, pbir_override=pbir)
 
+        report_label = status_item_label(client, target, fallback=report_name)
         if progress is not None:
-            progress.advance(
-                status_detail(
-                    "report",
-                    action,
-                    status_item_label(client, target, fallback=report_name),
-                )
-            )
+            progress.advance(status_detail("report", action, report_label))
 
         if target.is_create:
             created = create_report(
@@ -804,8 +803,8 @@ def _deploy_joined_folder(
             )
             report_id = str(created.get("id") or "")
             messages.append(
-                f"created report {target.workspace_id}:{report_id} "
-                f"(name='{report_name}') bound to semantic model {model_id}"
+                f"created report {format_item_ref(report_name, report_id)} "
+                f"bound to semantic model {format_guid(model_id)}"
             )
             return OpResult(
                 True,
@@ -824,7 +823,8 @@ def _deploy_joined_folder(
             update_metadata=definition_has_platform(report_definition),
         )
         messages.append(
-            f"updated report {target.label()} bound to semantic model {model_id}"
+            f"updated report {format_item_ref(report_label, target.item_id)} "
+            f"bound to semantic model {format_guid(model_id)}"
         )
         return OpResult(
             True,
@@ -892,8 +892,8 @@ def _warn_connected_model_download(
     warn_aside(
         joined_model_aside_text(
             detail=(
-                f"Also downloading connected semantic model '{label}' "
-                f"({workspace_id}:{model_id})"
+                "Also downloading connected semantic model "
+                f"{format_item_ref(label, model_id)}"
             )
         )
     )
@@ -904,12 +904,15 @@ def _download_pbix(
     *,
     independent: bool,
     powerbi_client: Any | None,
+    name: str | None = None,
 ) -> OpResult:
     from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
 
     assert item.target is not None and item.target.item_id is not None
     assert item.file is not None
     target = item.target
+    ref = format_item_ref(name, target.item_id)
+    file_label = format_local_path(item.file)
     download_type = "LiveConnect" if independent else "IncludeModel"
 
     owns_client = powerbi_client is None
@@ -934,7 +937,7 @@ def _download_pbix(
                 except PowerBiApiError as live_exc:
                     return OpResult(
                         False,
-                        f"PBIX download failed {target.label()}: IncludeModel "
+                        f"PBIX download failed {ref}: IncludeModel "
                         f"({exc}); LiveConnect ({live_exc})",
                         target.workspace_id,
                         target.item_id,
@@ -943,14 +946,14 @@ def _download_pbix(
                 item.file.write_bytes(payload)
                 return OpResult(
                     True,
-                    f"downloaded report {target.label()} -> {item.file} "
+                    f"downloaded report {ref} -> {file_label} "
                     f"(LiveConnect only; model not included — thin/live-connect)",
                     target.workspace_id,
                     target.item_id,
                 )
             return OpResult(
                 False,
-                f"PBIX download failed {target.label()}: {exc}",
+                f"PBIX download failed {ref}: {exc}",
                 target.workspace_id,
                 target.item_id,
             )
@@ -963,7 +966,7 @@ def _download_pbix(
         )
         return OpResult(
             True,
-            f"downloaded {target.label()} -> {item.file}{note}",
+            f"downloaded report {ref} -> {file_label}{note}",
             target.workspace_id,
             target.item_id,
         )
@@ -1002,7 +1005,7 @@ def _deploy_pbix(
     if not item.file.is_file():
         return OpResult(
             False,
-            f"PBIX file not found: {item.file}",
+            f"PBIX file not found: {format_local_path(item.file)}",
             target.workspace_id,
             target.item_id,
         )
@@ -1028,8 +1031,9 @@ def _deploy_pbix(
         if target.item_id and report_id and report_id != target.item_id:
             return OpResult(
                 False,
-                f"PBIX import succeeded but report id {report_id} does not match "
-                f"target {target.item_id} (name-based overwrite safety check failed)",
+                f"PBIX import succeeded but report id {format_guid(report_id)} "
+                f"does not match target {format_guid(target.item_id)} "
+                "(name-based overwrite safety check failed)",
                 target.workspace_id,
                 report_id,
                 semantic_model_id=dataset_id,
@@ -1037,8 +1041,9 @@ def _deploy_pbix(
         action = "created" if target.is_create else "updated"
         return OpResult(
             True,
-            f"{action} report {target.workspace_id}:{report_id or '?'} from "
-            f"{item.file} (dataset={dataset_id or '?'})",
+            f"{action} report {format_item_ref(name, report_id) if report_id else name}"
+            f" from {format_local_path(item.file)} "
+            f"(semantic model {format_guid(dataset_id) if dataset_id else '?'})",
             target.workspace_id,
             report_id,
             semantic_model_id=dataset_id,
@@ -1077,11 +1082,14 @@ def _resolve_source_definition(
                     "joined semantic model (rewrites to byConnection), or bind "
                     "definition.pbir to byConnection first"
                 )
-        return pack_definition(item.file, pbir_override=pbir_override), str(item.file)
+        return (
+            pack_definition(item.file, pbir_override=pbir_override),
+            format_local_path(item.file),
+        )
 
     assert item.origin is not None and item.origin.item_id is not None
     origin = item.origin
-    label = f"origin {origin.label()}"
+    label = f"origin {origin_ref(client, origin)}"
     cache_key = origin.label()
     if origin_definition_cache is not None and cache_key in origin_definition_cache:
         definition = dict(origin_definition_cache[cache_key])

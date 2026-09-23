@@ -13,6 +13,7 @@ from questionary import Choice, Style
 
 from fabric_tools.colours import FG_OK, echo_cli_hint, print_warn_panel
 from fabric_tools.confirm import CONFIRM_ABORT_MESSAGE
+from fabric_tools.display import format_local_path
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
@@ -388,7 +389,7 @@ def prompt_save_manifest(
         print_warn_panel(f"manifest not written: {exc}")
         return
     if written:
-        typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
+        typer.secho(f"Wrote manifest: {format_local_path(path)}", fg=FG_OK)
 
 
 def _needs_source_step(answers: dict[str, Any]) -> bool:

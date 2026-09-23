@@ -14,6 +14,7 @@ from fabric_tools.dataflow.definition import (
     display_name_from_path,
 )
 from fabric_tools.dataflow_gen1.definition import ensure_model_path
+from fabric_tools.display import format_guid, format_item_ref, format_local_path
 from fabric_tools.environment.definition import (
     detect_environment_path,
 )
@@ -127,9 +128,8 @@ def resolve_workspace_name(client: FabricClient, workspace_id: str) -> str:
     try:
         data = client.get_workspace(workspace_id)
     except FabricApiError as exc:
-        return f"{workspace_id} (unavailable: {exc})"
-    name = data.get("displayName") or data.get("name") or workspace_id
-    return f"{name} ({workspace_id})"
+        return f"{format_guid(workspace_id)} (unavailable: {exc})"
+    return format_item_ref(data.get("displayName") or data.get("name"), workspace_id)
 
 
 def resolve_item_name(client: FabricClient, target: Target) -> str:
@@ -138,11 +138,11 @@ def resolve_item_name(client: FabricClient, target: Target) -> str:
     try:
         data = client.get_item(target.workspace_id, target.item_id)
     except FabricApiError as exc:
-        return f"{target.item_id} (unavailable: {exc})"
+        return f"{format_guid(target.item_id)} (unavailable: {exc})"
     name = data.get("displayName") or data.get("name") or target.item_id
     item_type = data.get("type")
     suffix = f", type={item_type}" if item_type else ""
-    return f"{name} ({target.item_id}{suffix})"
+    return f"{name} ({format_guid(target.item_id)}{suffix})"
 
 
 def item_display_name(client: FabricClient, target: Target) -> str:
@@ -157,6 +157,11 @@ def item_display_name(client: FabricClient, target: Target) -> str:
     if isinstance(name, str) and name.strip():
         return name.strip()
     return target.item_id
+
+
+def origin_ref(client: FabricClient, origin: Target) -> str:
+    """``Name (shortid)`` for a remote-to-remote source item."""
+    return format_item_ref(item_display_name(client, origin), origin.item_id)
 
 
 def status_item_label(
@@ -189,9 +194,8 @@ def resolve_powerbi_group_name(client: PowerBiClient, group_id: str) -> str:
     try:
         data = client.get_group(group_id)
     except PowerBiApiError as exc:
-        return f"{group_id} (unavailable: {exc})"
-    name = data.get("name") or data.get("displayName") or group_id
-    return f"{name} ({group_id})"
+        return f"{format_guid(group_id)} (unavailable: {exc})"
+    return format_item_ref(data.get("name") or data.get("displayName"), group_id)
 
 
 def resolve_powerbi_dataflow_name(client: PowerBiClient, target: Target) -> str:
@@ -200,9 +204,8 @@ def resolve_powerbi_dataflow_name(client: PowerBiClient, target: Target) -> str:
     try:
         data = client.get_dataflow(target.workspace_id, target.item_id)
     except PowerBiApiError as exc:
-        return f"{target.item_id} (unavailable: {exc})"
-    name = data.get("name") or target.item_id
-    return f"{name} ({target.item_id})"
+        return f"{format_guid(target.item_id)} (unavailable: {exc})"
+    return format_item_ref(data.get("name"), target.item_id)
 
 
 def notebook_display_name(client: FabricClient, target: Target) -> str:
@@ -232,9 +235,8 @@ def resolve_powerbi_paginated_report_name(client: PowerBiClient, target: Target)
     try:
         data = client.get_report(target.workspace_id, target.item_id)
     except PowerBiApiError as exc:
-        return f"{target.item_id} (unavailable: {exc})"
-    name = data.get("name") or target.item_id
-    return f"{name} ({target.item_id})"
+        return f"{format_guid(target.item_id)} (unavailable: {exc})"
+    return format_item_ref(data.get("name"), target.item_id)
 
 
 def paginated_report_display_name(client: PowerBiClient, target: Target) -> str:
@@ -527,7 +529,10 @@ def confirm_download_overwrites(
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
             workspace = resolve_workspace_name(client, item.target.workspace_id)
-            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+            lines.append(
+                f"  - local `{format_local_path(item.file)}` <- remote {remote} "
+                f"in {workspace}"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -555,7 +560,10 @@ def confirm_download_overwrites_dataflow_gen1(
             assert item.target is not None and item.file is not None
             remote = resolve_powerbi_dataflow_name(client, item.target)
             workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
-            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+            lines.append(
+                f"  - local `{format_local_path(item.file)}` <- remote {remote} "
+                f"in {workspace}"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -583,7 +591,10 @@ def confirm_download_overwrites_paginated_report(
             assert item.target is not None and item.file is not None
             remote = resolve_powerbi_paginated_report_name(client, item.target)
             workspace = resolve_powerbi_group_name(client, item.target.workspace_id)
-            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+            lines.append(
+                f"  - local `{format_local_path(item.file)}` <- remote {remote} "
+                f"in {workspace}"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -611,7 +622,10 @@ def confirm_download_overwrites_dataflow(
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
             workspace = resolve_workspace_name(client, item.target.workspace_id)
-            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+            lines.append(
+                f"  - local `{format_local_path(item.file)}` <- remote {remote} "
+                f"in {workspace}"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -639,7 +653,10 @@ def confirm_download_overwrites_org_app(
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
             workspace = resolve_workspace_name(client, item.target.workspace_id)
-            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+            lines.append(
+                f"  - local `{format_local_path(item.file)}` <- remote {remote} "
+                f"in {workspace}"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -666,7 +683,10 @@ def confirm_download_overwrites_variable_library(
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
             workspace = resolve_workspace_name(client, item.target.workspace_id)
-            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+            lines.append(
+                f"  - local `{format_local_path(item.file)}` <- remote {remote} "
+                f"in {workspace}"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -693,7 +713,10 @@ def confirm_download_overwrites_environment(
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
             workspace = resolve_workspace_name(client, item.target.workspace_id)
-            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+            lines.append(
+                f"  - local `{format_local_path(item.file)}` <- remote {remote} "
+                f"in {workspace}"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -1264,7 +1287,9 @@ def confirm_download_overwrites_semantic_model(
             assert item.target is not None and item.file is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
             remote = resolve_item_name(client, item.target)
-            lines.append(f"  - {item.file}  (from {remote} in {workspace})")
+            lines.append(
+                f"  - {format_local_path(item.file)}  (from {remote} in {workspace})"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -1272,11 +1297,13 @@ def confirm_download_overwrites_semantic_model(
 def _bound_report_lines(
     workspace_id: str,
     semantic_model_id: str,
+    *,
+    exclude_id: str | None = None,
 ) -> tuple[list[str], str | None]:
     """Best-effort list of report lines bound to a semantic model in a workspace.
 
     Returns ``(lines, error_note)``. *error_note* is set when the Power BI list
-    could not be loaded.
+    could not be loaded. Reports with id *exclude_id* are skipped.
     """
     from fabric_tools.powerbi_client import PowerBiApiError, PowerBiClient
 
@@ -1292,8 +1319,10 @@ def _bound_report_lines(
     lines: list[str] = []
     for report in reports:
         rid = str(report.get("id") or "")
+        if exclude_id and rid == exclude_id:
+            continue
         rname = str(report.get("name") or report.get("displayName") or rid)
-        lines.append(f'report "{rname}" ({rid})')
+        lines.append(f'report "{rname}" ({format_guid(rid)})')
     return lines, None
 
 
@@ -1337,10 +1366,10 @@ def confirm_deploy_actions_semantic_model(
                 else:
                     name = "SemanticModel"
                 source = (
-                    str(item.file)
+                    format_local_path(item.file)
                     if item.file is not None
                     else (
-                        f"origin {item.origin.label()}"
+                        f"origin {origin_ref(client, item.origin)}"
                         if item.origin is not None
                         else "?"
                     )
@@ -1361,7 +1390,8 @@ def confirm_deploy_actions_semantic_model(
                 name = semantic_model_display_name(client, item.target)
                 sm_id = item.target.item_id
                 lines.append(
-                    f'Deploy/overwrite: semantic model "{name}" ({sm_id}) in {workspace}'
+                    f'Deploy/overwrite: semantic model "{name}" '
+                    f"({format_guid(sm_id)}) in {workspace}"
                 )
                 report_lines, err = _bound_report_lines(item.target.workspace_id, sm_id)
                 if err:
@@ -1395,7 +1425,9 @@ def confirm_delete_semantic_model(
             workspace = resolve_workspace_name(client, item.target.workspace_id)
             name = semantic_model_display_name(client, item.target)
             sm_id = item.target.item_id
-            lines.append(f'Delete: semantic model "{name}" ({sm_id}) in {workspace}')
+            lines.append(
+                f'Delete: semantic model "{name}" ({format_guid(sm_id)}) in {workspace}'
+            )
             report_lines, err = _bound_report_lines(item.target.workspace_id, sm_id)
             if err:
                 lines.append(f"  {err}")
@@ -1429,7 +1461,8 @@ def confirm_semantic_model_role_member_changes(
     for workspace, model_name, model_id, role_name, member_name in rows:
         lines.append(
             f'{verb}: member "{member_name}" {prep} role "{role_name}" '
-            f'on semantic model "{model_name}" ({model_id}) in {workspace}'
+            f'on semantic model "{model_name}" ({format_guid(model_id)}) '
+            f"in {workspace}"
         )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
@@ -1498,7 +1531,9 @@ def confirm_download_overwrites_report(
             assert item.target is not None and item.file is not None
             workspace = resolve_workspace_name(client, item.target.workspace_id)
             remote = resolve_item_name(client, item.target)
-            lines.append(f"  - {item.file}  (from {remote} in {workspace})")
+            lines.append(
+                f"  - {format_local_path(item.file)}  (from {remote} in {workspace})"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -1545,10 +1580,10 @@ def confirm_deploy_actions_report(
                 else:
                     name = "Report"
                 source = (
-                    str(item.file)
+                    format_local_path(item.file)
                     if item.file is not None
                     else (
-                        f"origin {item.origin.label()}"
+                        f"origin {origin_ref(client, item.origin)}"
                         if item.origin is not None
                         else "?"
                     )
@@ -1565,7 +1600,7 @@ def confirm_deploy_actions_report(
                 ):
                     lines.append(
                         f"    + joined semantic model '{model_path.name}' "
-                        f"({model_path})"
+                        f"({format_local_path(model_path)})"
                     )
                 elif (
                     not independent
@@ -1586,7 +1621,8 @@ def confirm_deploy_actions_report(
                 name = report_display_name(client, item.target)
                 rid = item.target.item_id
                 lines.append(
-                    f'Deploy/overwrite: report "{name}" ({rid}) in {workspace}'
+                    f'Deploy/overwrite: report "{name}" ({format_guid(rid)}) '
+                    f"in {workspace}"
                 )
                 model_path = None
                 if join_model_paths and index < len(join_model_paths):
@@ -1598,18 +1634,22 @@ def confirm_deploy_actions_report(
                     or dataset_id
                 ):
                     if dataset_id:
-                        lines.append(f'  also updates semantic model id "{dataset_id}"')
+                        lines.append(
+                            f"  also updates semantic model {format_guid(dataset_id)}"
+                        )
                         report_lines, err = _bound_report_lines(
-                            item.target.workspace_id, dataset_id
+                            item.target.workspace_id, dataset_id, exclude_id=rid
                         )
                         if err:
                             lines.append(f"  {err}")
                         elif report_lines:
                             for report_line in report_lines:
-                                if rid not in report_line:
-                                    lines.append(f"  affects: {report_line}")
+                                lines.append(f"  affects: {report_line}")
                     elif model_path is not None:
-                        lines.append(f"  also updates joined model {model_path}")
+                        lines.append(
+                            "  also updates joined model "
+                            f"{format_local_path(model_path)}"
+                        )
                     else:
                         lines.append(
                             "  also updates embedded semantic model from .pbix"
@@ -1638,7 +1678,7 @@ def confirm_delete_report(
             workspace = resolve_workspace_name(client, item.target.workspace_id)
             name = report_display_name(client, item.target)
             rid = item.target.item_id
-            lines.append(f'Delete: report "{name}" ({rid}) in {workspace}')
+            lines.append(f'Delete: report "{name}" ({format_guid(rid)}) in {workspace}')
             dataset_id = _report_dataset_id(item.target.workspace_id, rid)
             if dataset_id:
                 model_label = dataset_id
@@ -1649,7 +1689,10 @@ def confirm_delete_report(
                         model_label = f"{model_name.strip()}"
                 except FabricApiError:
                     pass
-                lines.append(f'  leaves semantic model "{model_label}" ({dataset_id})')
+                lines.append(
+                    f'  leaves semantic model "{model_label}" '
+                    f"({format_guid(dataset_id)})"
+                )
             else:
                 lines.append("  (bound semantic model unknown / unbound)")
     lines.append("Are you sure?")
@@ -1737,7 +1780,10 @@ def confirm_download_overwrites_pipeline(
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
             workspace = resolve_workspace_name(client, item.target.workspace_id)
-            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+            lines.append(
+                f"  - local `{format_local_path(item.file)}` <- remote {remote} "
+                f"in {workspace}"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -1912,7 +1958,10 @@ def confirm_download_overwrites_udf(
             assert item.target is not None and item.file is not None
             remote = resolve_item_name(client, item.target)
             workspace = resolve_workspace_name(client, item.target.workspace_id)
-            lines.append(f"  - local `{item.file}` <- remote {remote} in {workspace}")
+            lines.append(
+                f"  - local `{format_local_path(item.file)}` <- remote {remote} "
+                f"in {workspace}"
+            )
     lines.append("Are you sure?")
     confirm_or_abort("\n".join(lines), silent=False)
 
@@ -2005,7 +2054,7 @@ def _source_phrase_fabric(
     prefix: str = " from",
 ) -> str:
     if item.file is not None:
-        return f"{prefix} `{item.file}`"
+        return f"{prefix} `{format_local_path(item.file)}`"
     if item.origin is not None:
         origin_name = resolve_item_name(client, item.origin)
         origin_ws = resolve_workspace_name(client, item.origin.workspace_id)
@@ -2020,7 +2069,7 @@ def _source_phrase_powerbi(
     prefix: str = " from",
 ) -> str:
     if item.file is not None:
-        return f"{prefix} `{item.file}`"
+        return f"{prefix} `{format_local_path(item.file)}`"
     if item.origin is not None:
         origin_name = resolve_powerbi_dataflow_name(client, item.origin)
         origin_ws = resolve_powerbi_group_name(client, item.origin.workspace_id)
@@ -2035,7 +2084,7 @@ def _source_phrase_paginated_report(
     prefix: str = " from",
 ) -> str:
     if item.file is not None:
-        return f"{prefix} `{item.file}`"
+        return f"{prefix} `{format_local_path(item.file)}`"
     if item.origin is not None:
         origin_name = resolve_powerbi_paginated_report_name(client, item.origin)
         origin_ws = resolve_powerbi_group_name(client, item.origin.workspace_id)

@@ -7,12 +7,6 @@ from unittest.mock import MagicMock, patch
 from fabric_tools import status
 
 
-def test_short_guid() -> None:
-    assert status.short_guid("a1b2c3d4-e5f6-7890-abcd-ef1234567890") == "a1b2c3d4…"
-    assert status.short_guid("abc") == "abc"
-    assert status.short_guid("abcdefghij", length=4) == "abcd…"
-
-
 def test_progress_message() -> None:
     assert (
         status.progress_message(1, 4, "report: comparing (a1b2c3d4…)…")
@@ -25,7 +19,7 @@ def test_status_detail() -> None:
         status.status_detail(
             "notebook", "downloading", "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
         )
-        == "notebook: downloading (a1b2c3d4…)…"
+        == "notebook: downloading (a1b2c3d)…"
     )
     assert status.status_detail("report", "comparing", "Sales") == (
         "report: comparing (Sales)…"

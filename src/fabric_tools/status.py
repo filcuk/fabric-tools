@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -15,6 +14,8 @@ from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.text import Text
 
+from fabric_tools.display import format_guid, is_guid
+
 _console = Console(stderr=True)
 _active: ContextVar[_BusyHandle | None] = ContextVar(
     "fabric_tools_status", default=None
@@ -22,11 +23,6 @@ _active: ContextVar[_BusyHandle | None] = ContextVar(
 _message: ContextVar[str | None] = ContextVar(
     "fabric_tools_status_message", default=None
 )
-_GUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
-
 # Prefix used while Azure auth is in progress (nested busy / update guard).
 AUTH_STATUS_PREFIX = "auth: authenticating"
 
@@ -86,13 +82,6 @@ class _BusyHandle:
                 live.console.control(live._live_render.position_cursor())
 
 
-def short_guid(value: str, *, length: int = 8) -> str:
-    """Return a truncated GUID for spinner text (e.g. ``a1b2c3d4…``)."""
-    if length < 1 or len(value) <= length:
-        return value
-    return f"{value[:length]}…"
-
-
 def progress_message(current: int, total: int, detail: str) -> str:
     """Format a step-prefixed status line: ``1 of 4 · detail``."""
     return f"{current} of {total} · {detail}"
@@ -114,8 +103,8 @@ def status_detail(module: str, action: str, name: str | None = None) -> str:
 
 def _format_label(label: str, *, max_length: int = 48) -> str:
     text = label.strip()
-    if _GUID_RE.fullmatch(text):
-        return short_guid(text)
+    if is_guid(text):
+        return format_guid(text)
     if len(text) <= max_length:
         return text
     return f"{text[: max_length - 1]}…"

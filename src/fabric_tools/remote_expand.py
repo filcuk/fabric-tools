@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from fabric_tools.display import format_guid
 from fabric_tools.parsing import ClassifiedEndpoints, ParseError, Target
 
 ListItemsFn = Callable[[str], Sequence[dict[str, Any]]]
@@ -63,25 +64,23 @@ def expand_targets(
         if not target.wildcard:
             expanded.append(target)
             continue
+        workspace = format_guid(target.workspace_id)
         try:
             rows = list(list_items(target.workspace_id))
         except Exception as exc:  # noqa: BLE001 - surface list failures as ExpandError
             raise ExpandError(
-                f"failed to list {kind_label} items in workspace "
-                f"{target.workspace_id}: {exc}"
+                f"failed to list {kind_label} items in workspace {workspace}: {exc}"
             ) from exc
         rows = filter_rows_by_name(rows, name_filter)
         if not rows:
             needle = name_filter.strip() if name_filter else None
             detail = f" matching filter {needle!r}" if needle else ""
-            raise ExpandError(
-                f"no {kind_label} items{detail} in workspace {target.workspace_id}"
-            )
+            raise ExpandError(f"no {kind_label} items{detail} in workspace {workspace}")
         for row in rows:
             item_id = row_item_id(row)
             if not item_id:
                 raise ExpandError(
-                    f"list {kind_label} in workspace {target.workspace_id} "
+                    f"list {kind_label} in workspace {workspace} "
                     "returned an item without id"
                 )
             expanded.append(Target(workspace_id=target.workspace_id, item_id=item_id))

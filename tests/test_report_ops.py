@@ -229,7 +229,9 @@ def test_download_report_joined(tmp_path: Path) -> None:
     lines = result.message.splitlines()
     assert len(lines) >= 3
     assert lines[0].startswith("downloaded report ")
+    assert f"({REPORT[:7]}) -> " in lines[0]
     assert "downloaded joined semantic model " in lines[1]
+    assert WS not in result.message
     assert lines[2].startswith("wrote Power BI Desktop shortcut ")
     assert "; " not in result.message
     pbir = json.loads((dest / "definition.pbir").read_text(encoding="utf-8"))
@@ -294,7 +296,8 @@ def test_download_report_joined_warns_before_model_step(
     )
     assert warn_idx < report_idx < model_idx
     assert "Also downloading connected semantic model" in events[warn_idx]
-    assert MODEL in events[warn_idx]
+    assert f"({MODEL[:7]})" in events[warn_idx]
+    assert MODEL not in events[warn_idx]
     assert "--independent" in events[warn_idx]
 
     events.clear()
