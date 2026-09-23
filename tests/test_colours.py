@@ -171,6 +171,22 @@ def test_echo_cli_hint_prints_plain_text(capsys) -> None:
     )
 
 
+def test_render_cli_prose_plain_when_not_a_terminal() -> None:
+    message = "Pipeline-only (use --include-schedules / -i to sync schedules)."
+    assert colours.render_cli_prose(message) == message
+
+
+def test_render_cli_prose_emits_ansi_on_colour_terminal(monkeypatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("TERM", "xterm-256color")
+    out = colours.render_cli_prose("use --include-schedules / -i")
+    assert "\x1b[35m--include-schedules\x1b[0m" in out
+    # Alias colour depth depends on detected colour system; only require styling.
+    assert "m-i\x1b[0m" in out
+    assert "\x1b[35m-i" not in out
+
+
 def test_print_error_panel_highlights_options(capsys, monkeypatch) -> None:
     from rich.console import Console
 

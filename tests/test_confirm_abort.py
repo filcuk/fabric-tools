@@ -38,6 +38,24 @@ def test_prompt_confirm_true(monkeypatch: pytest.MonkeyPatch) -> None:
     assert prompt_confirm("Go?") is True
 
 
+def test_prompt_confirm_passes_highlighted_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        "fabric_tools.colours.render_cli_prose",
+        lambda message, *, stderr=False: f"<hl>{message}</hl>",
+    )
+
+    def fake_confirm(text: str, **kwargs: object) -> bool:
+        seen.append((text, bool(kwargs.get("err"))))
+        return True
+
+    monkeypatch.setattr("fabric_tools.confirm.typer.confirm", fake_confirm)
+    assert prompt_confirm("use --target?", err=True) is True
+    assert seen == [("<hl>use --target?</hl>", True)]
+
+
 def test_prompt_confirm_false(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("fabric_tools.confirm.typer.confirm", lambda *_a, **_k: False)
     assert prompt_confirm("Go?") is False

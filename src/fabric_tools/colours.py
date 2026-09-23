@@ -183,6 +183,20 @@ def echo_cli_hint(message: str) -> None:
     Console(soft_wrap=True).print(highlight_cli_prose(message))
 
 
+def render_cli_prose(message: str, *, stderr: bool = False) -> str:
+    """Return *message* with ``highlight_cli_prose`` styling as an ANSI string.
+
+    For APIs that print raw text (``typer.confirm``). Colour follows the target
+    stream: plain text when it is not a terminal or ``NO_COLOR`` is set.
+    """
+    from rich.console import Console
+
+    console = Console(stderr=stderr, soft_wrap=True)
+    with console.capture() as capture:
+        console.print(highlight_cli_prose(message), end="")
+    return capture.get()
+
+
 def format_usage_error_message(message: str) -> Text:
     """Unquote Click command/option names and highlight them for the Error panel."""
     commands: list[str] = []
