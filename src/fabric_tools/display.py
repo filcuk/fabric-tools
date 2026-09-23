@@ -69,8 +69,13 @@ def format_item_ref(name: str | None, item_id: str | None) -> str:
 
 
 def format_local_path(path: str | Path) -> str:
-    """Return *path* relative to the current directory (absolute if impossible)."""
+    """Return *path* relative to the current directory when it lies under it.
+
+    Paths outside the current directory stay absolute: ``..\\..\\AppData\\…`` is
+    harder to read than the full path.
+    """
+    resolved = Path(path).resolve()
     try:
-        return os.path.relpath(os.fspath(path), Path.cwd())
+        return str(resolved.relative_to(Path.cwd().resolve()))
     except ValueError:
-        return os.fspath(path)
+        return str(resolved)

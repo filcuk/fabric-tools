@@ -63,12 +63,22 @@ def test_format_item_ref() -> None:
     assert display.format_item_ref(None, None) == "-"
 
 
-def test_format_local_path_relative_to_cwd(
+def test_format_local_path_relative_under_cwd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
     target = tmp_path / "out" / "Sales.ipynb"
     assert display.format_local_path(target) == str(Path("out") / "Sales.ipynb")
-    assert display.format_local_path(tmp_path.parent / "x.ipynb") == str(
-        Path("..") / "x.ipynb"
+    assert display.format_local_path(Path("out") / "Sales.ipynb") == str(
+        Path("out") / "Sales.ipynb"
     )
+
+
+def test_format_local_path_outside_cwd_stays_absolute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    outside = tmp_path / "x.ipynb"
+    assert display.format_local_path(outside) == str(outside.resolve())

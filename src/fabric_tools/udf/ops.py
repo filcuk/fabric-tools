@@ -8,8 +8,9 @@ from typing import Any
 from fabric_tools.auth import service_principal_configured
 from fabric_tools.client import FabricApiError, FabricClient
 from fabric_tools.confirm import status_item_label
+from fabric_tools.display import format_guid, format_item_ref, format_local_path
 from fabric_tools.guid_map import GuidMapError, apply_guid_map_to_definition
-from fabric_tools.parsing import WorkItem
+from fabric_tools.parsing import Target, WorkItem
 from fabric_tools.status import BatchProgress, status_detail
 from fabric_tools.udf.definition import (
     DefinitionError,
@@ -47,7 +48,9 @@ class OpResult:
     item_id: str | None = None
 
 
-def download_udf(client: FabricClient, item: WorkItem) -> OpResult:
+def download_udf(
+    client: FabricClient, item: WorkItem, *, name: str | None = None
+) -> OpResult:
     """Download one remote User Data Function definition to a local folder."""
     if item.target is None or item.target.item_id is None:
         return OpResult(False, "download requires workspace:artifact target")
@@ -55,6 +58,7 @@ def download_udf(client: FabricClient, item: WorkItem) -> OpResult:
         return OpResult(False, "download requires a local --target path")
 
     target = item.target
+    ref = format_item_ref(name, target.item_id)
     dest = item.file
     try:
         dest = detect_udf_folder(dest)
@@ -67,14 +71,14 @@ def download_udf(client: FabricClient, item: WorkItem) -> OpResult:
     except (FabricApiError, DefinitionError) as exc:
         return OpResult(
             False,
-            f"download failed {target.label()} -> {dest}: {exc}",
+            f"download failed {ref} -> {format_local_path(dest)}: {exc}",
             target.workspace_id,
             target.item_id,
         )
 
     return OpResult(
         True,
-        f"downloaded {target.label()} -> {written}",
+        f"downloaded {ref} -> {format_local_path(written)}",
         target.workspace_id,
         target.item_id,
     )
@@ -85,6 +89,7 @@ def deploy_udf(
     item: WorkItem,
     *,
     display_name: str | None = None,
+    target_name: str | None = None,
     origin_definition_cache: dict[str, dict[str, Any]] | None = None,
     guid_map: dict[str, str] | None = None,
 ) -> OpResult:
@@ -102,6 +107,7 @@ def deploy_udf(
         return OpResult(False, "deploy cannot mix a local path and a remote --origin")
 
     target = item.target
+    ref = format_item_ref(target_name, target.item_id)
 
     try:
         definition, source_label = _resolve_source_definition(
@@ -149,14 +155,15 @@ def deploy_udf(
         except FabricApiError as exc:
             return OpResult(
                 False,
-                f"create failed in {target.workspace_id} from {source_label}: {exc}",
+                f"create failed in workspace {format_guid(target.workspace_id)} "
+                f"from {source_label}: {exc}",
                 target.workspace_id,
             )
         item_id = str(created.get("id") or "")
         return OpResult(
             True,
-            f"created {target.workspace_id}:{item_id} from {source_label} "
-            f"(name='{name}'){remap_suffix}",
+            f"created {format_item_ref(name, item_id)} from {source_label}"
+            f"{remap_suffix}",
             target.workspace_id,
             item_id or None,
         )
@@ -193,25 +200,28 @@ def deploy_udf(
     except (FabricApiError, DefinitionError) as exc:
         return OpResult(
             False,
-            f"overwrite failed {target.label()} from {source_label}: {exc}",
+            f"overwrite failed {ref} from {source_label}: {exc}",
             target.workspace_id,
             target.item_id,
         )
     suffix = " (preserved remote connectedDataSources)" if preserved else ""
     return OpResult(
         True,
-        f"updated {target.label()} from {source_label}{suffix}{remap_suffix}",
+        f"updated {ref} from {source_label}{suffix}{remap_suffix}",
         target.workspace_id,
         target.item_id,
     )
 
 
-def delete_udf(client: FabricClient, item: WorkItem) -> OpResult:
+def delete_udf(
+    client: FabricClient, item: WorkItem, *, name: str | None = None
+) -> OpResult:
     """Soft-delete one remote User Data Function."""
     if item.target is None or item.target.item_id is None:
         return OpResult(False, "delete requires workspace:artifact target")
 
     target = item.target
+    ref = format_item_ref(name, target.item_id)
     try:
         client.request(
             "DELETE",
@@ -220,13 +230,13 @@ def delete_udf(client: FabricClient, item: WorkItem) -> OpResult:
     except FabricApiError as exc:
         return OpResult(
             False,
-            f"delete failed {target.label()}: {exc}",
+            f"delete failed {ref}: {exc}",
             target.workspace_id,
             target.item_id,
         )
     return OpResult(
         True,
-        f"deleted {target.label()}",
+        f"deleted {ref}",
         target.workspace_id,
         target.item_id,
     )
@@ -304,14 +314,9 @@ def run_download_batch(client: FabricClient, items: list[WorkItem]) -> list[OpRe
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        progress.advance(
-            status_detail(
-                "udf",
-                "downloading",
-                status_item_label(client, item.target),
-            )
-        )
-        results.append(download_udf(client, item))
+        label = status_item_label(client, item.target)
+        progress.advance(status_detail("udf", "downloading", label))
+        results.append(download_udf(client, item, name=label))
     return results
 
 
@@ -345,6 +350,7 @@ def run_deploy_batch(
                 client,
                 item,
                 display_name=name,
+                target_name=label,
                 origin_definition_cache=origin_cache,
                 guid_map=guid_map,
             )
@@ -356,14 +362,9 @@ def run_delete_batch(client: FabricClient, items: list[WorkItem]) -> list[OpResu
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        progress.advance(
-            status_detail(
-                "udf",
-                "deleting",
-                status_item_label(client, item.target),
-            )
-        )
-        results.append(delete_udf(client, item))
+        label = status_item_label(client, item.target)
+        progress.advance(status_detail("udf", "deleting", label))
+        results.append(delete_udf(client, item, name=label))
     return results
 
 
@@ -374,11 +375,11 @@ def _resolve_source_definition(
     origin_definition_cache: dict[str, dict[str, Any]] | None,
 ) -> tuple[dict[str, Any], str]:
     if item.file is not None:
-        return pack_definition(item.file), str(item.file)
+        return pack_definition(item.file), format_local_path(item.file)
 
     assert item.origin is not None and item.origin.item_id is not None
     origin = item.origin
-    label = f"origin {origin.label()}"
+    label = f"origin {_origin_ref(client, origin)}"
     cache_key = origin.label()
     if origin_definition_cache is not None and cache_key in origin_definition_cache:
         return origin_definition_cache[cache_key], label
@@ -387,6 +388,16 @@ def _resolve_source_definition(
     if origin_definition_cache is not None:
         origin_definition_cache[cache_key] = definition
     return definition, label
+
+
+def _origin_ref(client: FabricClient, origin: Target) -> str:
+    assert origin.item_id is not None
+    try:
+        meta = get_udf_item(client, origin.workspace_id, origin.item_id)
+        name = meta.get("displayName") or meta.get("name")
+    except FabricApiError:
+        name = None
+    return format_item_ref(name if isinstance(name, str) else None, origin.item_id)
 
 
 def _extract_definition(result: Any) -> dict[str, Any]:

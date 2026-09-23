@@ -61,10 +61,12 @@ When one op produces **multiple distinct outcomes** (joined report + model, `.pb
 Example (joined report download):
 
 ```text
-downloaded report <ws>:<id> -> temp\Projects.Report
-downloaded joined semantic model <ws>:<id> -> temp\Projects.SemanticModel
+downloaded report Projects (a1b2c3d) -> temp\Projects.Report
+downloaded joined semantic model Projects (e4f5a6b) -> temp\Projects.SemanticModel
 wrote Power BI Desktop shortcut temp\Projects.pbip
 ```
+
+**Identifying items in informational lines.** Op results, confirms, dry-run checks, and warnings name an item as `Name (shortid)` via `fabric_tools.display.format_item_ref` — the display name plus the first 7 characters of its GUID (no ellipsis; the workspace GUID is omitted). `FABRIC_TOOLS_GUID_LENGTH` changes the length, or `full` shows whole GUIDs. Local paths go through `format_local_path`: relative to the current directory when under it, otherwise absolute. Command results keep full GUIDs and do not use these helpers: inspect list/get, compare `TARGET`, `manifest inspect` selectors, and the cyan `GUID: <workspaceId>:<itemId>` line after a create.
 
 Do not glue those into one semicolon-separated line. Error panels may also be multi-line when a partial success is followed by a distinct failure (same newline rule).
 
@@ -150,7 +152,7 @@ Long-running work uses a Rich dots spinner on stderr (`fabric_tools.status.busy`
 
 - **module** — CLI command group (`notebook`, `semantic-model`, `inspect`, `setup`, `auth`, …)
 - **action** — lowercase verb phrase (`downloading`, `adding role member`, `authenticating`)
-- **name** — optional **display name** in parentheses; omit the ` (…)` segment when there is no name. Resolve via `item_display_name` / `status_item_label` (or kind-specific helpers) before calling `status_detail` — do not pass a raw item GUID. Short GUID truncation is only a fallback when lookup fails.
+- **name** — optional **display name** in parentheses; omit the ` (…)` segment when there is no name. Resolve via `item_display_name` / `status_item_label` (or kind-specific helpers) before calling `status_detail` — do not pass a raw item GUID. Short GUID truncation (`format_guid`, same length as op result lines) is only a fallback when lookup fails.
 
 Examples:
 

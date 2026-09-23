@@ -14,6 +14,7 @@ from fabric_tools.dataflow.definition import (
     display_name_from_path,
 )
 from fabric_tools.dataflow_gen1.definition import ensure_model_path
+from fabric_tools.display import format_item_ref
 from fabric_tools.environment.definition import (
     detect_environment_path,
 )
@@ -157,6 +158,11 @@ def item_display_name(client: FabricClient, target: Target) -> str:
     if isinstance(name, str) and name.strip():
         return name.strip()
     return target.item_id
+
+
+def origin_ref(client: FabricClient, origin: Target) -> str:
+    """``Name (shortid)`` for a remote-to-remote source item."""
+    return format_item_ref(item_display_name(client, origin), origin.item_id)
 
 
 def status_item_label(

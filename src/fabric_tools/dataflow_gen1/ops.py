@@ -15,6 +15,7 @@ from fabric_tools.dataflow_gen1.definition import (
     validate_model_dict,
     write_model,
 )
+from fabric_tools.display import format_guid, format_item_ref, format_local_path
 from fabric_tools.parsing import WorkItem
 from fabric_tools.powerbi_client import (
     PowerBiApiError,
@@ -41,21 +42,23 @@ def download_dataflow(client: PowerBiClient, item: WorkItem) -> OpResult:
 
     target = item.target
     dest = item.file
+    ref = format_item_ref(None, target.item_id)
     try:
         model = client.get_dataflow_definition(target.workspace_id, target.item_id)
-        model = validate_model_dict(model, label=target.label())
+        model = validate_model_dict(model, label=ref)
+        ref = format_item_ref(display_name_from_model(model), target.item_id)
         written = write_model(model, dest)
     except (PowerBiApiError, DefinitionError, OSError) as exc:
         return OpResult(
             False,
-            f"download failed {target.label()} -> {dest}: {exc}",
+            f"download failed {ref} -> {format_local_path(dest)}: {exc}",
             target.workspace_id,
             target.item_id,
         )
 
     return OpResult(
         True,
-        f"downloaded {target.label()} -> {written}",
+        f"downloaded {ref} -> {format_local_path(written)}",
         target.workspace_id,
         target.item_id,
     )
@@ -84,7 +87,8 @@ def deploy_dataflow(
         return OpResult(
             False,
             "dataflow-gen1 deploy supports create only "
-            f"(got artifact target {target.label()}; use delete + create, "
+            f"(got artifact target {format_item_ref(None, target.item_id)}; "
+            "use delete + create, "
             "or fabric-tools dataflow for Gen2 overwrite)",
             target.workspace_id,
             target.item_id,
@@ -106,7 +110,7 @@ def deploy_dataflow(
     except (PowerBiApiError, DefinitionError) as exc:
         return OpResult(
             False,
-            f"create failed in {target.workspace_id}: {exc}",
+            f"create failed in workspace {format_guid(target.workspace_id)}: {exc}",
             target.workspace_id,
         )
 
@@ -117,38 +121,41 @@ def deploy_dataflow(
     if not item_id:
         return OpResult(
             True,
-            f"created dataflow in {target.workspace_id} from {source_label} "
-            f"(name='{name}'; id unknown — check workspace)",
+            f"created {name} in workspace {format_guid(target.workspace_id)} "
+            f"from {source_label} (id unknown — check workspace)",
             target.workspace_id,
             None,
         )
 
     return OpResult(
         True,
-        f"created {target.workspace_id}:{item_id} from {source_label} (name='{name}')",
+        f"created {format_item_ref(name, item_id)} from {source_label}",
         target.workspace_id,
         item_id,
     )
 
 
-def delete_dataflow(client: PowerBiClient, item: WorkItem) -> OpResult:
+def delete_dataflow(
+    client: PowerBiClient, item: WorkItem, *, name: str | None = None
+) -> OpResult:
     """Delete one remote Gen1 dataflow."""
     if item.target is None or item.target.item_id is None:
         return OpResult(False, "delete requires workspace:artifact target")
 
     target = item.target
+    ref = format_item_ref(name, target.item_id)
     try:
         client.delete_dataflow(target.workspace_id, target.item_id)
     except PowerBiApiError as exc:
         return OpResult(
             False,
-            f"delete failed {target.label()}: {exc}",
+            f"delete failed {ref}: {exc}",
             target.workspace_id,
             target.item_id,
         )
     return OpResult(
         True,
-        f"deleted {target.label()}",
+        f"deleted {ref}",
         target.workspace_id,
         target.item_id,
     )
@@ -204,14 +211,9 @@ def run_delete_batch(client: PowerBiClient, items: list[WorkItem]) -> list[OpRes
     progress = BatchProgress(total=len(items))
     results: list[OpResult] = []
     for item in items:
-        progress.advance(
-            status_detail(
-                "dataflow-gen1",
-                "deleting",
-                status_gen1_label(client, item.target),
-            )
-        )
-        results.append(delete_dataflow(client, item))
+        label = status_gen1_label(client, item.target)
+        progress.advance(status_detail("dataflow-gen1", "deleting", label))
+        results.append(delete_dataflow(client, item, name=label))
     return results
 
 
@@ -222,19 +224,21 @@ def _resolve_source_model(
     origin_model_cache: dict[str, dict[str, Any]] | None,
 ) -> tuple[dict[str, Any], str]:
     if item.file is not None:
-        return load_model(item.file), str(item.file)
+        return load_model(item.file), format_local_path(item.file)
 
     assert item.origin is not None and item.origin.item_id is not None
     origin = item.origin
-    label = f"origin {origin.label()}"
     cache_key = origin.label()
     if origin_model_cache is not None and cache_key in origin_model_cache:
-        return origin_model_cache[cache_key], label
-
-    model = client.get_dataflow_definition(origin.workspace_id, origin.item_id)
-    model = validate_model_dict(model, label=label)
-    if origin_model_cache is not None:
-        origin_model_cache[cache_key] = model
+        model = origin_model_cache[cache_key]
+    else:
+        model = client.get_dataflow_definition(origin.workspace_id, origin.item_id)
+        model = validate_model_dict(
+            model, label=f"origin {format_item_ref(None, origin.item_id)}"
+        )
+        if origin_model_cache is not None:
+            origin_model_cache[cache_key] = model
+    label = f"origin {format_item_ref(display_name_from_model(model), origin.item_id)}"
     return model, label
 
 

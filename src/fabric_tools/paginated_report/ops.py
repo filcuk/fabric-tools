@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fabric_tools.confirm import status_paginated_label
+from fabric_tools.display import format_guid, format_item_ref, format_local_path
 from fabric_tools.paginated_report.definition import (
     DefinitionError,
     display_name_from_path,
@@ -40,23 +41,25 @@ def download_paginated_report(client: PowerBiClient, item: WorkItem) -> OpResult
 
     target = item.target
     dest = item.file
+    ref = format_item_ref(None, target.item_id)
     try:
         meta = client.get_report(target.workspace_id, target.item_id)
-        ensure_paginated_report(meta, label=target.label())
+        ensure_paginated_report(meta, label=ref)
+        ref = format_item_ref(display_name_from_report(meta), target.item_id)
         rdl = client.export_report_definition(target.workspace_id, target.item_id)
-        rdl = validate_rdl_bytes(rdl, label=target.label())
+        rdl = validate_rdl_bytes(rdl, label=ref)
         written = write_rdl(rdl, dest)
     except (PowerBiApiError, DefinitionError, OSError) as exc:
         return OpResult(
             False,
-            f"download failed {target.label()} -> {dest}: {exc}",
+            f"download failed {ref} -> {format_local_path(dest)}: {exc}",
             target.workspace_id,
             target.item_id,
         )
 
     return OpResult(
         True,
-        f"downloaded {target.label()} -> {written}",
+        f"downloaded {ref} -> {format_local_path(written)}",
         target.workspace_id,
         target.item_id,
     )
@@ -102,7 +105,7 @@ def deploy_paginated_report(
     except (PowerBiApiError, DefinitionError) as exc:
         return OpResult(
             False,
-            f"deploy failed {target.label()}: {exc}",
+            f"deploy failed {format_item_ref(None, target.item_id)}: {exc}",
             target.workspace_id,
             target.item_id,
         )
@@ -114,20 +117,22 @@ def delete_paginated_report(client: PowerBiClient, item: WorkItem) -> OpResult:
         return OpResult(False, "delete requires workspace:artifact target")
 
     target = item.target
+    ref = format_item_ref(None, target.item_id)
     try:
         meta = client.get_report(target.workspace_id, target.item_id)
-        ensure_paginated_report(meta, label=target.label())
+        ensure_paginated_report(meta, label=ref)
+        ref = format_item_ref(display_name_from_report(meta), target.item_id)
         client.delete_report(target.workspace_id, target.item_id)
     except (PowerBiApiError, DefinitionError) as exc:
         return OpResult(
             False,
-            f"delete failed {target.label()}: {exc}",
+            f"delete failed {ref}: {exc}",
             target.workspace_id,
             target.item_id,
         )
     return OpResult(
         True,
-        f"deleted {target.label()}",
+        f"deleted {ref}",
         target.workspace_id,
         target.item_id,
     )
@@ -218,7 +223,9 @@ def _deploy_create(
             name = display_name_from_path(item.file)
         elif item.origin is not None and item.origin.item_id is not None:
             meta = client.get_report(item.origin.workspace_id, item.origin.item_id)
-            ensure_paginated_report(meta, label=item.origin.label())
+            ensure_paginated_report(
+                meta, label=format_item_ref(None, item.origin.item_id)
+            )
             name = display_name_from_report(meta)
         else:
             name = "PaginatedReport"
@@ -236,15 +243,15 @@ def _deploy_create(
     if not item_id:
         return OpResult(
             True,
-            f"created paginated report in {target.workspace_id} from {source_label} "
-            f"(name='{name}'; id unknown — check workspace)",
+            f"created {name} in workspace {format_guid(target.workspace_id)} "
+            f"from {source_label} (id unknown — check workspace)",
             target.workspace_id,
             None,
         )
 
     return OpResult(
         True,
-        f"created {target.workspace_id}:{item_id} from {source_label} (name='{name}')",
+        f"created {format_item_ref(name, item_id)} from {source_label}",
         target.workspace_id,
         item_id,
     )
@@ -271,7 +278,7 @@ def _deploy_overwrite(
         )
 
     meta = client.get_report(target.workspace_id, target.item_id)
-    ensure_paginated_report(meta, label=target.label())
+    ensure_paginated_report(meta, label=format_item_ref(None, target.item_id))
     name = display_name_from_report(meta)
 
     import_payload = client.import_paginated_report(
@@ -284,8 +291,7 @@ def _deploy_overwrite(
 
     return OpResult(
         True,
-        f"overwrote {target.workspace_id}:{item_id} from {source_label} "
-        f"(name='{name}')",
+        f"overwrote {format_item_ref(name, item_id)} from {source_label}",
         target.workspace_id,
         item_id,
     )
@@ -298,16 +304,16 @@ def _resolve_source_rdl(
     origin_rdl_cache: dict[str, bytes] | None,
 ) -> tuple[bytes, str]:
     if item.file is not None:
-        return load_rdl(item.file), str(item.file)
+        return load_rdl(item.file), format_local_path(item.file)
 
     assert item.origin is not None and item.origin.item_id is not None
     origin = item.origin
-    label = f"origin {origin.label()}"
     cache_key = origin.label()
+    meta = client.get_report(origin.workspace_id, origin.item_id)
+    label = f"origin {format_item_ref(display_name_from_report(meta), origin.item_id)}"
     if origin_rdl_cache is not None and cache_key in origin_rdl_cache:
         return origin_rdl_cache[cache_key], label
 
-    meta = client.get_report(origin.workspace_id, origin.item_id)
     ensure_paginated_report(meta, label=label)
     rdl = client.export_report_definition(origin.workspace_id, origin.item_id)
     rdl = validate_rdl_bytes(rdl, label=label)
