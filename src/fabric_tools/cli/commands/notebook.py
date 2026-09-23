@@ -9,8 +9,11 @@ from fabric_tools.cli.options import (
     DRY_RUN_DELETE_HELP,
     DRY_RUN_DEPLOY_HELP,
     DRY_RUN_DOWNLOAD_HELP,
+    DRY_RUN_JOB_HELP,
+    FILTER_JOB_HELP,
     HELP_CONTEXT,
     MANIFEST_DELETE_HELP,
+    MANIFEST_JOB_HELP,
     ORIGIN_COMPARE_HELP,
     ORIGIN_DEPLOY_HELP,
     ORIGIN_DOWNLOAD_HELP,
@@ -18,10 +21,12 @@ from fabric_tools.cli.options import (
     TARGET_DELETE_HELP,
     TARGET_DEPLOY_HELP,
     TARGET_DOWNLOAD_HELP,
+    TARGET_JOB_HELP,
     dry_run_opt,
     filter_opt,
     manifest_opt,
     name_opt,
+    no_wait_opt,
     option_help,
     origin_opt,
     remap_opt,
@@ -29,7 +34,7 @@ from fabric_tools.cli.options import (
     target_opt,
 )
 from fabric_tools.parsing import CommandMode
-from fabric_tools.sync import run_notebook_command
+from fabric_tools.sync import run_notebook_command, run_notebook_run_command
 
 notebook_app = typer.Typer(
     name="notebook",
@@ -139,4 +144,24 @@ def notebook_delete(
         dry_run=dry_run,
         name_filter=name_filter,
         manifest=manifest,
+    )
+
+
+@notebook_app.command("run")
+def notebook_run(
+    target: list[str] | None = target_opt(help=TARGET_JOB_HELP),
+    manifest: str | None = manifest_opt(help=MANIFEST_JOB_HELP),
+    name_filter: str | None = filter_opt(help=FILTER_JOB_HELP),
+    silent: bool = silent_opt(),
+    dry_run: bool = dry_run_opt(help=DRY_RUN_JOB_HELP),
+    no_wait: bool = no_wait_opt(),
+) -> None:
+    """Run notebook(s) on demand; waits for completion unless --no-wait."""
+    run_notebook_run_command(
+        target_values=target,
+        manifest=manifest,
+        name_filter=name_filter,
+        silent=silent,
+        dry_run=dry_run,
+        no_wait=no_wait,
     )

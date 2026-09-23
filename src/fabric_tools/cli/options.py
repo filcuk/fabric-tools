@@ -149,6 +149,25 @@ DRY_RUN_COMPARE_HELP = option_help(
 )
 DRY_RUN_DELETE_HELP = option_help("Validate targets only; do not delete.")
 
+TARGET_JOB_HELP = conditional_required_help(
+    f"{_MV_WS_ARTIFACT} GUID. "
+    "Repeatable or comma-separated (spaces after commas OK). "
+    f"Also accepts {_MV_WS_STAR} (all items of this kind).",
+    without="-m",
+)
+FILTER_JOB_HELP = option_help(
+    f"Case-insensitive displayName substring; only valid with {_MV_WS_STAR} "
+    "on --target."
+)
+MANIFEST_JOB_HELP = option_help(
+    f"Load {_MV_WS_ARTIFACT} targets from a .ftdep "
+    "(entries with itemId). Manifest is not rewritten."
+)
+DRY_RUN_JOB_HELP = option_help("Validate targets only; do not start jobs.")
+NO_WAIT_HELP = option_help(
+    "Return once the service accepts each job; do not wait for it to finish."
+)
+
 # ---------------------------------------------------------------------------
 # Option factories
 # ---------------------------------------------------------------------------
@@ -186,3 +205,7 @@ def name_opt(*, help: str = NAME_DEPLOY_HELP) -> Any:
 
 def remap_opt(*, help: str = GUID_REMAP_HELP) -> Any:
     return typer.Option(None, "--remap", "-r", help=help)
+
+
+def no_wait_opt(*, help: str = NO_WAIT_HELP) -> Any:
+    return typer.Option(False, "--no-wait", "-w", help=help)

@@ -1468,6 +1468,27 @@ def confirm_semantic_model_role_member_changes(
     confirm_or_abort("\n".join(lines), silent=False)
 
 
+def confirm_item_jobs(
+    rows: list[tuple[str, str, str]],
+    *,
+    label: str,
+    verb: str,
+    silent: bool,
+) -> None:
+    """Confirm a run / refresh for every target.
+
+    *rows* are ``(workspace_label, item_name, item_id)``. *label* is the item
+    noun in prose (``pipeline``, ``semantic model``); *verb* is ``run`` / ``refresh``.
+    """
+    if silent or not rows:
+        return
+    lines = [f"About to {verb} {label}(s):"]
+    for workspace, name, item_id in rows:
+        lines.append(f"  - {label} {format_item_ref(name, item_id)} in {workspace}")
+    lines.append("Are you sure?")
+    confirm_or_abort("\n".join(lines), silent=False)
+
+
 def report_display_name(client: FabricClient, target: Target) -> str:
     """Return Fabric item display name for a report target (fallback: id)."""
     if target.item_id is None:

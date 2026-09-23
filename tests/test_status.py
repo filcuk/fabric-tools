@@ -21,6 +21,17 @@ def test_status_detail() -> None:
         )
         == "notebook: downloading (a1b2c3d)…"
     )
+
+
+def test_status_detail_appends_progress_detail() -> None:
+    assert (
+        status.status_detail("pipeline", "running", "Sales", detail="3/12 Copy1")
+        == "pipeline: running (Sales) · 3/12 Copy1…"
+    )
+    assert (
+        status.status_detail("pipeline", "running", detail="3/12 Copy1")
+        == "pipeline: running · 3/12 Copy1…"
+    )
     assert status.status_detail("report", "comparing", "Sales") == (
         "report: comparing (Sales)…"
     )

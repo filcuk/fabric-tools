@@ -6,7 +6,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
 
 ## Project goal
 
-`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), Environment sync (`environment`), Variable Library sync (`variable-library`), Org App sync (`org-app`), semantic model sync (`semantic-model`; RLS role members via XMLA), report sync (`report`; joins a packable model by default), paginated report sync (`paginated-report`; `.rdl` via Power BI), and read-only `inspect` (list/get workspaces and items).
+`fabric-tools` is a Python CLI (later optionally TUI / Windows `.exe`) for Microsoft Fabric artifacts. Current scope: notebook sync (download/deploy/compare/delete), Dataflow Gen2 sync via Fabric (`dataflow`), Dataflow Gen1 sync via Power BI (`dataflow-gen1`; create-only deploy), DataPipeline sync (`pipeline`), User Data Function sync (`udf`), Environment sync (`environment`), Variable Library sync (`variable-library`), Org App sync (`org-app`), semantic model sync (`semantic-model`; RLS role members via XMLA), report sync (`report`; joins a packable model by default), paginated report sync (`paginated-report`; `.rdl` via Power BI), on-demand run/refresh (`notebook run`, `pipeline run`, `dataflow refresh`, `semantic-model refresh`), and read-only `inspect` (list/get workspaces and items).
 
 ## Layout
 
@@ -22,6 +22,8 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
     - `common.py` — auth/readonly exits, `_resolve_*_inputs`, manifest write, print helpers, remap pairing, `workspaceId:*` expand labels
     - `orchestrator.py` — `KindSpec`, `SyncRequest`, `run_sync_command` (shared download/deploy/compare/delete skeleton)
     - `kinds/<kind>.py` — thin `run_*_command` facades that build a `KindSpec` and call `run_sync_command` (exception: `semantic_model_role.py` stays a custom XMLA runner)
+    - `item_job.py` — `ItemJobSpec`, `run_item_job_command` (remote-only run/refresh: delete-style targets, confirm, start, wait or `--no-wait`; not part of `run_sync_command`)
+    - `kinds/item_jobs.py` — run/refresh specs + `run_notebook_run_command`, `run_pipeline_run_command`, `run_dataflow_refresh_command`, `run_semantic_model_refresh_command`
   - `xmla_roles.py` — Windows PowerShell + SqlServer (PSGallery) client for semantic-model RLS role members (`xmla_role_members.ps1`)
   - `interactive.py` — `--interactive` / `-i` guided wizard (optional `.ftdep` save); calls `fabric_tools.sync`
   - `manifest.py` — deployment manifest (`.ftdep`) load/save/inspect helpers (schema v3 packs: top-level `kind: "pack"`; per-entry `kind`: `notebook` \| `dataflow` \| `dataflow-gen1` \| `pipeline` \| `udf` \| `environment` \| `variable-library` \| `org-app` \| `semantic-model` \| `report` \| `paginated-report`; optional pack/entry `remap` path refs)
@@ -48,7 +50,7 @@ Human contributor setup (install, pytest, ruff, exe build) is in [DEVELOPMENT.md
   - `notebook/` — definition pack/unpack (`definition.py`); selective cell merge (`cells.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`, nbdime)
   - `dataflow/` — Gen2 Git-style folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `dataflow_gen1/` — `model.json` helpers (`definition.py`); download/create/delete (`ops.py`); compare (`compare.py`)
-  - `pipeline/` — DataPipeline Git-style folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
+  - `pipeline/` — DataPipeline Git-style folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`); run activity progress for the spinner (`progress.py`)
   - `udf/` — User Data Function folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `environment/` — Environment recursive folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
   - `variable_library/` — Variable Library known-part folder pack/unpack (`definition.py`); download/create/overwrite/delete (`ops.py`); compare (`compare.py`)
@@ -100,7 +102,7 @@ When adding a new syncable Fabric / Power BI artifact kind, wire it end-to-end i
 - Manifests: `--manifest` / `-m` stem → `.ftdep` (e.g. `etl` / `.\etl` → `etl.ftdep`); alone loads pairs; on success or successful dry-run rewrites when content changed (create execute backfills `itemId`; identical content is left alone with no “Wrote manifest” line). **Schema v3 only** (`kind: "pack"`; each entry has its own `kind`; schemaVersion 1/2 unsupported). Entry `file` and pack/entry `remap` paths are stored relative to the `.ftdep` folder (`../` allowed; absolute only across drives; absolute paths still load and are rewritten relative on the next save). Optional pack-level and per-entry `remap` path refs to GUID map JSON; CLI `--remap` / `-r` overrides for that run. Homogeneous packs work with kind-specific commands; mixed packs use `pack download|deploy|compare|delete`. Deploy order starts semantic-model → report → variable-library → environment, then consumers and other kinds; delete reverses kind groups. `manifest inspect` one-line summaries in cwd; `manifest inspect -m` dumps one file, or one-line summaries when `-m` is a folder; `manifest list` filenames only; `manifest delete` / `move` local `.ftdep` files (confirm unless `-s`). Interactive may offer save after execute or dry-run (optional pack-level remap path).
 - Flags: `--silent` / `-s`, `--dry-run` / `-d` (see [FLAGS.md](FLAGS.md))
 - Auth: interactive default; Windows WAM silent reuse, then interactive WAM (skipped in IDE/non-TTY, otherwise 45s timeout) then browser then device code; service principal via `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` (not supported for `udf`)
-- Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute, semantic-model role member add/remove execute, and `setup install` / `setup update` (install) / `setup uninstall` / `setup clean`. Allows download, compare, `inspect`, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `semantic-model role list`, `setup status`, `setup update --check`. `--silent` does not override.
+- Read-only (agents): `FABRIC_TOOLS_READONLY=1` refuses deploy/delete execute, run/refresh execute, semantic-model role member add/remove execute, and `setup install` / `setup update` (install) / `setup uninstall` / `setup clean`. Allows download, compare, `inspect`, `manifest inspect` / `list` / `delete` / `move`, `--dry-run`, `semantic-model role list`, `setup status`, `setup update --check`. `--silent` does not override.
 - Env report: `fabric-tools env list` lists supported env vars (`FABRIC_TOOLS_*`, `AZURE_*`) and current process values (`AZURE_CLIENT_SECRET` redacted). `env set` / `env unset` persist catalogued names in the Windows user environment (new terminal needed for other shells; secret values never echoed). Allowed under read-only.
 - Informational IDs: success / error / confirm / dry-run / spinner lines name items as `Name (shortid)` — first 7 GUID characters, no workspace GUID — and show local paths relative to cwd (absolute outside it). `FABRIC_TOOLS_GUID_LENGTH` sets the length (`full` / `0` / `36` for whole GUIDs; invalid values fall back to 7). Command results keep full GUIDs: `inspect` list/get, compare `TARGET`, `manifest inspect` selectors, `role list` JSON, and the cyan `GUID: <workspaceId>:<itemId>` create echo. See [DESIGN.md](DESIGN.md).
 - Setup (Windows): `setup install` / `setup update` / `setup update --check` / `setup status` / `setup clean` / `setup uninstall`. Background update notice at most once per local day (opt out: `FABRIC_TOOLS_DISABLE_UPDATE_CHECK=1`). `setup update` downloads the release `fabric-tools.exe` and deferred-installs into `%LOCALAPPDATA%\fabric-tools\app` (works from the installed/portable exe or a Python install; install dir is prepended on user PATH). Release builds use Nuitka onefile (`scripts/build_exe.ps1`). `setup status` uses the same key/value layout as inspect get (dim right-aligned keys, no colons; see [DESIGN.md](DESIGN.md)); it shows a Version row (installed PE version when available) and runs an async GitHub update check (yellow `installed < latest` when behind).
@@ -115,6 +117,16 @@ When adding a new syncable Fabric / Power BI artifact kind, wire it end-to-end i
 - Item list passes `--artifact` through to the Fabric `type` query param; name filter is client-side
 - Scope is what the signed-in principal can access (Personal / My workspace included for user auth; typically not for service principal)
 
+### Run / refresh
+
+- Commands: `notebook run`, `pipeline run`, `dataflow refresh`, `semantic-model refresh`. Remote-only; separate from sync (`run_item_job_command`, not `run_sync_command` / `CommandMode`)
+- Targets like delete: `-t` `workspaceId:itemId` / `workspaceId:*` + `-f`, or `-m` entries with `itemId` (manifest never rewritten); no `--origin`. Target item type must match the command (e.g. `DataPipeline` for `pipeline run`)
+- Confirm (unless `-s`) names every target; `--dry-run` / `-d` prints `[dry-run] would …` lines and starts nothing; `FABRIC_TOOLS_READONLY` blocks execute
+- Waits for completion by default: one Info panel (`Skip waiting with --no-wait / -w.`), then a spinner per target (`n of m ·` prefix when several). `--no-wait` / `-w` prints `… started <item> in <workspace> · job <id>` and returns
+- Targets run sequentially; each failure gets an Error panel, the rest still run, exit `2` if any failed. Ctrl+C while waiting prints a Warning that the job continues in the service (with its id)
+- Fabric kinds use Job Scheduler `POST .../items/{id}/jobs/{jobType}/instances` and poll the job instance (`Completed` / `Failed` / `Cancelled` / `Deduped`); semantic model uses Power BI dataset refresh (see kind sections)
+- No job parameters, enhanced refresh, cancel/status, pack, or interactive support yet
+
 ### Notebooks
 
 - Formats: `.ipynb` or Fabric Git `.Notebook` folder
@@ -123,6 +135,7 @@ When adding a new syncable Fabric / Power BI artifact kind, wire it end-to-end i
 - Origin overwrite: strip origin `lakehouse`/`environment`, then preserve each target’s dependency metadata
 - Deploy `--remap` / `-r`: rewrite source→target GUIDs in definition text before create/update (skips `.platform`); overwrite preserve of lakehouse/environment still runs after remap
 - Delete: Fabric soft delete (`DELETE .../notebooks/{id}`)
+- Run: `notebook run` → Job Scheduler `RunNotebook` (no parameters / session config yet)
 
 ### Dataflow Gen2 (`dataflow`)
 
@@ -133,6 +146,7 @@ When adding a new syncable Fabric / Power BI artifact kind, wire it end-to-end i
 - Delete: Fabric soft delete (`DELETE .../dataflows/{id}`)
 - Connection IDs / lakehouse GUIDs in mashup and metadata are environment-specific; use deploy `--remap` / `-r` to rewrite source→target GUIDs in memory (skips `.platform`)
 - Deploy alone does not publish; opt-in `--publish` / `-p` runs Fabric Apply Changes after each successful create/update (prepare for refresh; same preparation as UI Save). User identity only (not service principal)
+- Refresh: `dataflow refresh` → Job Scheduler `Refresh` with `executionData.executeOption = ApplyChangesIfNeeded`, so the latest saved definition is refreshed even without deploy `--publish`. `--publish` prepares only; it never refreshes data
 - Deploy `--remap` / `-r`: JSON object of GUID→GUID; one file may broadcast to all targets, or pair 1:1 with targets (not on download/compare/delete)
 
 ### Dataflow Gen1
@@ -152,6 +166,7 @@ When adding a new syncable Fabric / Power BI artifact kind, wire it end-to-end i
 - Compare: normalized JSON unified diff of `pipeline-content.json` by default; `.schedules` when `--include-schedules` (`.platform` always excluded)
 - `--include-schedules` / `-i` on download/deploy/compare: sync `.schedules` (download writes them; default download also removes a leftover local `.schedules`)
 - Delete: Fabric soft delete (`DELETE .../dataPipelines/{id}`)
+- Run: `pipeline run` → Job Scheduler `Pipeline` (no parameters yet). While waiting, the spinner shows activity progress (`pipeline: running (Name) · 3/12 Copy1…`): total = unique top-level activities from `getDefinition` (read once); count = those with a run; label = latest in-progress activity at any depth (`queryactivityruns` each poll). Lookup failures fall back to the plain spinner and never fail the run
 - Activity references (notebook / lakehouse / connection GUIDs) are environment-specific; use deploy `--remap` / `-r` to rewrite source→target GUIDs in memory before create/update (skips `.platform`; local folders unchanged)
 - Deploy `--remap` / `-r`: JSON object of GUID→GUID; one file may broadcast to all targets, or pair 1:1 with targets (not on download/compare/delete)
 
@@ -200,6 +215,7 @@ When adding a new syncable Fabric / Power BI artifact kind, wire it end-to-end i
 - Compare: multi-part unified diff (relative paths; JSON/`.pbism`/`.bim` pretty-printed)
 - Delete: Fabric soft delete; service also removes dependent reports — confirm lists known consumers in the workspace (Power BI report list, best-effort); **no** `--independent` (cascade cannot be opted out)
 - Overwrite confirm lists other reports bound to the model (best-effort)
+- Refresh: `semantic-model refresh` → Power BI `POST .../groups/{ws}/datasets/{id}/refreshes` (standard refresh, `notifyOption=NoNotification`; not enhanced); waits by matching the refresh history entry by request id (`Unknown` = in progress)
 - Role membership (`semantic-model role list|member add|member remove`): Windows-only; PowerShell + SqlServer (PSGallery) TOM over XMLA; `-t` / `workspaceId:*` / `-f`; membership only (not DAX filters); capacity needs XMLA read/write; personal (My) workspace uses XMLA v2 URL from token claims and requires a non-null `capacityId` (preflight `xmla_capacity_required`); staged spinner (`connecting via XMLA` → `loading model` → mutate/save); hard connect watchdog + timeouts via `FABRIC_TOOLS_XMLA_TIMEOUT` (25s) / `FABRIC_TOOLS_XMLA_CONNECT_TIMEOUT` (15s); failures include stage; `FABRIC_TOOLS_READONLY` blocks member add/remove execute (dry-run allowed); SqlServer module checked once up front outside any spinner — missing → offer `Install-Module SqlServer -Scope CurrentUser` (fail fast with hint under `-s`); never prompt under a live spinner
 
 ### Reports (`report`)

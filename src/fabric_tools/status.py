@@ -87,18 +87,28 @@ def progress_message(current: int, total: int, detail: str) -> str:
     return f"{current} of {total} · {detail}"
 
 
-def status_detail(module: str, action: str, name: str | None = None) -> str:
+def status_detail(
+    module: str,
+    action: str,
+    name: str | None = None,
+    *,
+    detail: str | None = None,
+) -> str:
     """Build spinner text: ``notebook: downloading (Sales)…``.
 
     *module* is the CLI group (e.g. ``notebook``, ``semantic-model``, ``auth``).
     *action* is a lowercase verb phrase (e.g. ``downloading``, ``adding role member``).
     *name* is an optional display name; omit when absent. Prefer resolving via
     ``status_item_label`` / ``item_display_name`` — pass a GUID only as lookup
-    fallback (truncated by ``_format_label``).
+    fallback (truncated by ``_format_label``). *detail* is optional live progress
+    appended after ``·`` (e.g. ``pipeline: running (Sales) · 3/12 Copy1…``).
     """
+    text = f"{module}: {action}"
     if name:
-        return f"{module}: {action} ({_format_label(name)})…"
-    return f"{module}: {action}…"
+        text = f"{text} ({_format_label(name)})"
+    if detail:
+        text = f"{text} · {_format_label(detail)}"
+    return f"{text}…"
 
 
 def _format_label(label: str, *, max_length: int = 48) -> str:
