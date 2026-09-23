@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from fabric_tools.colours import STYLE_DIM, STYLE_OK, env_status_style
+from fabric_tools.colours import (
+    STYLE_DIM,
+    STYLE_HEADER,
+    STYLE_OK,
+    env_status_style,
+)
 from fabric_tools.display import DEFAULT_GUID_LENGTH, GUID_LENGTH_ENV
 from fabric_tools.readonly import READONLY_ENV, is_readonly_enabled
 from fabric_tools.update_check import DISABLE_UPDATE_CHECK_ENV
@@ -138,29 +144,63 @@ def collect_env_statuses() -> list[EnvVarStatus]:
     return [_resolve_status(spec) for spec in ENV_VAR_SPECS]
 
 
+_COL_GAP = "  "
+_HEADERS = ("NAME", "VALUE", "STATUS", "DESCRIPTION")
+
+
+def env_row_cells(row: EnvVarStatus) -> tuple[str, str, str, str]:
+    """Return ``(NAME, VALUE, STATUS, DESCRIPTION)`` cells for one var."""
+    return (row.name, row.value, row.status, row.description)
+
+
+def format_env_table(rows: Sequence[EnvVarStatus]) -> str:
+    """Plain aligned env table (header + rows) for tests."""
+    if not rows:
+        return ""
+    cells = [env_row_cells(row) for row in rows]
+    widths = _column_widths(_HEADERS, cells)
+    lines = [_COL_GAP.join(_pad_row(_HEADERS, widths))]
+    for row in cells:
+        lines.append(_COL_GAP.join(_pad_row(row, widths)))
+    return "\n".join(lines)
+
+
 def print_env_report() -> None:
-    """Print supported env vars and current values (plain lines, light color)."""
+    """Print supported env vars as an aligned header table, then Effective."""
     from rich.console import Console
     from rich.text import Text
 
     from fabric_tools.auth import service_principal_configured
 
     rows = collect_env_statuses()
-    name_w = max(len(row.name) for row in rows)
-    value_w = max(len(row.value) for row in rows)
-    status_w = max(len(row.status) for row in rows)
+    cells = [env_row_cells(row) for row in rows]
+    widths = _column_widths(_HEADERS, cells)
     console = Console()
+
+    header_line = Text()
+    for i, cell in enumerate(_pad_row(_HEADERS, widths)):
+        if i:
+            header_line.append(_COL_GAP)
+        header_line.append(cell, style=STYLE_HEADER)
+    console.print(header_line)
 
     for row in rows:
         line = Text()
-        line.append(f"{row.name:<{name_w}}  {row.value:<{value_w}}  ")
-        line.append(f"{row.status:<{status_w}}", style=env_status_style(row.status))
-        line.append(f"  {row.description}")
+        padded = _pad_row(env_row_cells(row), widths)
+        for i, cell in enumerate(padded):
+            if i:
+                line.append(_COL_GAP)
+            if i == 2:
+                line.append(cell, style=env_status_style(row.status))
+            elif i == 3:
+                line.append(cell, style=STYLE_DIM)
+            else:
+                line.append(cell)
         console.print(line)
 
     readonly = is_readonly_enabled()
     sp = service_principal_configured()
-    summary = Text("\nEffective: read-only=")
+    summary = Text("Effective: read-only=")
     summary.append(
         "on" if readonly else "off",
         style=STYLE_OK if readonly else STYLE_DIM,
@@ -170,7 +210,23 @@ def print_env_report() -> None:
         "configured" if sp else "not configured",
         style=STYLE_OK if sp else STYLE_DIM,
     )
+    console.print()
     console.print(summary)
+
+
+def _column_widths(
+    headers: Sequence[str],
+    rows: Sequence[Sequence[str]],
+) -> list[int]:
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+    return widths
+
+
+def _pad_row(cells: Sequence[str], widths: Sequence[int]) -> list[str]:
+    return [f"{cell:<{widths[i]}}" for i, cell in enumerate(cells)]
 
 
 def set_user_env(name: str, value: str) -> EnvVarSpec:

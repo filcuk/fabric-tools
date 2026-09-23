@@ -78,6 +78,7 @@ Shared formatting rules for multi-column / key-value CLI output:
 - **No trailing colon** on keys or header labels (use `Status`, not `Status:`).
 - **Key / value rows** (inspect get, setup status): left column is the key, **right-aligned** within the widest key width, styled **dim**; value column is **left-aligned** primary text (or a semantic colour when the value itself is a status token).
 - **List tables** (inspect workspace/item list): header row is **blue**; first data column (name) is primary; remaining columns are **dim**.
+- **Env report** (`env list`): header row is **blue**; columns `NAME`, `VALUE`, `STATUS`, `DESCRIPTION` (one row per catalogued variable). `NAME` / `VALUE` are primary. `STATUS` is a coloured token (see Env report statuses). `DESCRIPTION` is dim. After the table, one blank line, then the Effective summary (`read-only=` / `service principal=`).
 - **Compare summary** (all `compare` commands): header row is **blue**; columns `REMOTE`, `LOCAL`, `STATUS`, `TARGET` (one row per comparison). `REMOTE` / `LOCAL` are primary (display name or local basename — not a full path). `STATUS` is a coloured token (`identical` green, `differences` yellow, `error` red). `TARGET` is dim `workspaceId:itemId`. After the table, one blank line, then: Error panels for failed rows, dim advisory notes, then unified diffs for non-identical rows (primary text).
 
 Example setup status shape:
