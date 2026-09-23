@@ -84,6 +84,60 @@ def test_save_load_round_trip_relative_paths(tmp_path: Path) -> None:
     assert work_items[0].file == nb.resolve()
 
 
+def test_save_outside_manifest_dir_uses_parent_relative_paths(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    nb = src / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    remap = tmp_path / "maps" / "prod.json"
+    remap.parent.mkdir()
+    remap.write_text("{}", encoding="utf-8")
+    packs = tmp_path / "packs"
+    packs.mkdir()
+
+    built = manifest_from_work_items([WorkItem(Target(WS, ITEM), nb)], remap=remap)
+    path, _ = save_manifest(packs / "deploy", built)
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["schemaVersion"] == 3
+    assert raw["entries"][0]["file"] == "../src/etl.ipynb"
+    assert raw["remap"] == "../maps/prod.json"
+
+    loaded = load_manifest(path)
+    assert loaded.entries[0].file == nb.resolve()
+    assert loaded.remap == remap.resolve()
+
+
+def test_load_absolute_paths_still_supported(tmp_path: Path) -> None:
+    nb = tmp_path / "etl.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    path = tmp_path / "packs" / "abs.ftdep"
+    path.parent.mkdir()
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 3,
+                "kind": "pack",
+                "entries": [
+                    {
+                        "kind": "notebook",
+                        "workspaceId": WS,
+                        "itemId": ITEM,
+                        "file": str(nb.resolve()),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = load_manifest(path)
+    assert loaded.entries[0].file == nb.resolve()
+
+    save_manifest(path, loaded)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["entries"][0]["file"] == "../etl.ipynb"
+
+
 def test_create_guid_backfill() -> None:
     items = [WorkItem(Target(WS, None), Path("a.ipynb"))]
     built = manifest_from_work_items(

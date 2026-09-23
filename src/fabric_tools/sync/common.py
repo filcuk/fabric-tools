@@ -15,6 +15,7 @@ from fabric_tools.confirm import (
     ConfirmationAborted,
     abort_interrupt_message,
 )
+from fabric_tools.display import format_local_path
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.manifest import (
     KIND_DATAFLOW,
@@ -1083,7 +1084,7 @@ def _write_manifest_after_success(
         print_warn_panel(f"manifest not written: {exc}")
         return
     if written:
-        typer.secho(f"Wrote manifest: {path}", fg=FG_OK)
+        typer.secho(f"Wrote manifest: {format_local_path(path)}", fg=FG_OK)
 
 
 def _print_op_results(results: list[OpResult]) -> None:

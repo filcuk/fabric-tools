@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from fabric_tools.display import format_local_path
 from fabric_tools.guid_map import GuidMapError, GuidMapSpec, load_guid_map
 from fabric_tools.parsing import Target, WorkItem
 
@@ -586,11 +588,11 @@ def format_inspect(manifest: DeploymentManifest, *, path: Path | None = None) ->
     """Human-readable summary for ``fabric-tools manifest inspect``."""
     lines: list[str] = []
     if path is not None:
-        lines.append(f"manifest: {path}")
+        lines.append(f"manifest: {format_local_path(path)}")
     lines.append(f"schemaVersion: {manifest.schema_version}")
     lines.append(f"kind: {manifest.kind}")
     if manifest.remap is not None:
-        lines.append(f"remap: {manifest.remap}")
+        lines.append(f"remap: {format_local_path(manifest.remap)}")
     lines.append(f"entries: {len(manifest.entries)}")
     for index, entry in enumerate(manifest.entries, start=1):
         target = (
@@ -604,11 +606,16 @@ def format_inspect(manifest: DeploymentManifest, *, path: Path | None = None) ->
             if entry.semantic_model_id
             else ""
         )
-        remap_part = f", remap={entry.remap}" if entry.remap is not None else ""
+        remap_part = (
+            f", remap={format_local_path(entry.remap)}"
+            if entry.remap is not None
+            else ""
+        )
         if entry.has_origin:
             source = f"{entry.origin_workspace_id}:{entry.origin_item_id}"
         else:
-            source = str(entry.file)
+            assert entry.file is not None
+            source = format_local_path(entry.file)
         lines.append(
             f"  {index}. [{entry.kind}] {target} <- {source}"
             f"{name_part}{sm_part}{remap_part}"
@@ -782,10 +789,15 @@ def _parse_entry(
 
 
 def _path_to_stored(path: Path, *, base: Path) -> str:
+    """Store *path* relative to the ``.ftdep`` folder (``../`` allowed).
+
+    Absolute only when no relative path exists (e.g. another Windows drive).
+    """
+    resolved = path.resolve()
     try:
-        return path.resolve().relative_to(base.resolve()).as_posix()
+        return Path(os.path.relpath(resolved, base.resolve())).as_posix()
     except ValueError:
-        return str(path.resolve())
+        return str(resolved)
 
 
 def _entry_to_json(entry: ManifestEntry, *, base: Path) -> dict[str, Any]:
