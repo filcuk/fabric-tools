@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -13,6 +16,8 @@ from fabric_tools.status import set_percent
 DEFAULT_BASE_URL = "https://api.fabric.microsoft.com/v1"
 DEFAULT_RETRY_AFTER_SECONDS = 5
 TERMINAL_STATUSES = frozenset({"Succeeded", "Failed", "Canceled"})
+JOB_STATUS_COMPLETED = "Completed"
+JOB_FAILED_STATUSES = frozenset({"Failed", "Cancelled", "Canceled", "Deduped"})
 
 
 class FabricApiError(Exception):
@@ -42,6 +47,18 @@ class FabricApiError(Exception):
         if self.request_id:
             parts.append(f"requestId={self.request_id}")
         return " | ".join(parts)
+
+
+@dataclass(frozen=True)
+class ItemJobStart:
+    """Accepted on-demand item job (Job Scheduler 202 response)."""
+
+    workspace_id: str
+    item_id: str
+    job_type: str
+    job_instance_id: str | None
+    location: str | None
+    retry_after: int
 
 
 class FabricClient:
@@ -171,6 +188,138 @@ class FabricClient:
             f"/workspaces/{workspace_id}/dataflows/{dataflow_id}"
             "/jobs/applyChanges/instances",
         )
+
+    def run_on_demand_item_job(
+        self,
+        workspace_id: str,
+        item_id: str,
+        job_type: str,
+        *,
+        execution_data: dict[str, Any] | None = None,
+    ) -> ItemJobStart:
+        """POST /workspaces/{ws}/items/{id}/jobs/{jobType}/instances (no wait).
+
+        Returns the accepted job; poll it with :meth:`wait_for_item_job`.
+        """
+        body = {"executionData": execution_data} if execution_data else None
+        response = self._send(
+            "POST",
+            f"/workspaces/{workspace_id}/items/{item_id}/jobs/{job_type}/instances",
+            json=body,
+        )
+        if response.status_code not in (200, 201, 202):
+            self._raise_api_error(response)
+        location = response.headers.get("Location") or None
+        return ItemJobStart(
+            workspace_id=workspace_id,
+            item_id=item_id,
+            job_type=job_type,
+            job_instance_id=_job_instance_id_from_location(location),
+            location=location,
+            retry_after=_parse_retry_after(response.headers.get("Retry-After")),
+        )
+
+    def get_item_job_instance(
+        self,
+        workspace_id: str,
+        item_id: str,
+        job_instance_id: str,
+    ) -> dict[str, Any]:
+        """GET /workspaces/{ws}/items/{id}/jobs/instances/{jobInstanceId}."""
+        result = self.request(
+            "GET",
+            f"/workspaces/{workspace_id}/items/{item_id}"
+            f"/jobs/instances/{job_instance_id}",
+        )
+        if not isinstance(result, dict):
+            raise FabricApiError("Unexpected empty job instance response")
+        return result
+
+    def wait_for_item_job(
+        self,
+        job: ItemJobStart,
+        *,
+        on_poll: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
+        """Poll an item job instance until ``Completed``; raise on failure.
+
+        *on_poll* receives each non-terminal job instance payload (progress hooks).
+        ``Failed`` / ``Cancelled`` / ``Deduped`` raise :class:`FabricApiError`.
+        """
+        if job.job_instance_id:
+            state_url = (
+                f"{self.base_url}/workspaces/{job.workspace_id}/items/{job.item_id}"
+                f"/jobs/instances/{job.job_instance_id}"
+            )
+        elif job.location:
+            state_url = job.location
+        else:
+            raise FabricApiError(
+                "Job response missing Location header; cannot poll job status",
+                status_code=202,
+            )
+
+        retry_after = job.retry_after
+        while True:
+            self._sleep(retry_after)
+            response = self._client.get(state_url, headers=self._headers())
+            retry_after = _parse_retry_after(
+                response.headers.get("Retry-After"),
+                default=DEFAULT_RETRY_AFTER_SECONDS,
+            )
+            if response.status_code != 200:
+                self._raise_api_error(response)
+            payload = self._json_or_none(response)
+            if not isinstance(payload, dict):
+                raise FabricApiError("Unexpected empty job instance response")
+
+            status = payload.get("status")
+            if status == JOB_STATUS_COMPLETED:
+                return payload
+            if status in JOB_FAILED_STATUSES:
+                raise _job_failure_error(payload, status)
+            if on_poll is not None:
+                on_poll(payload)
+
+    def query_pipeline_activity_runs(
+        self,
+        workspace_id: str,
+        job_instance_id: str,
+        *,
+        updated_after: str,
+        updated_before: str,
+    ) -> list[dict[str, Any]]:
+        """POST .../datapipelines/pipelineruns/{jobInstanceId}/queryactivityruns.
+
+        *updated_after* / *updated_before* are ISO-8601 UTC timestamps. Collects
+        all pages; accepts both a bare list and a ``value`` + token envelope.
+        """
+        path = (
+            f"/workspaces/{workspace_id}/datapipelines/pipelineruns"
+            f"/{job_instance_id}/queryactivityruns"
+        )
+        body: dict[str, Any] = {
+            "filters": [],
+            "orderBy": [{"orderBy": "ActivityRunStart", "order": "ASC"}],
+            "lastUpdatedAfter": updated_after,
+            "lastUpdatedBefore": updated_before,
+        }
+        runs: list[dict[str, Any]] = []
+        while True:
+            result = self.request("POST", path, json=body, wait=False)
+            if isinstance(result, list):
+                runs.extend(entry for entry in result if isinstance(entry, dict))
+                break
+            if not isinstance(result, dict):
+                break
+            page = result.get("value")
+            if isinstance(page, list):
+                runs.extend(entry for entry in page if isinstance(entry, dict))
+            token = result.get("continuationToken")
+            if not token or not isinstance(token, str):
+                break
+            body = {**body, "continuationToken": token}
+        return runs
 
     def _list_paginated(
         self,
@@ -359,6 +508,36 @@ def _parse_retry_after(
     except ValueError:
         return default
     return max(parsed, 1)
+
+
+def _job_instance_id_from_location(location: str | None) -> str | None:
+    """Last path segment after ``/jobs/instances/`` (``None`` when absent)."""
+    if not location:
+        return None
+    segments = [part for part in urlparse(location).path.split("/") if part]
+    if len(segments) >= 2 and segments[-2].lower() == "instances":
+        return segments[-1]
+    return None
+
+
+def _job_failure_error(payload: dict[str, Any], status: str) -> FabricApiError:
+    reason = payload.get("failureReason")
+    message = f"Fabric job {status.lower()}"
+    error_code = None
+    request_id = None
+    if status == "Deduped":
+        message = "Fabric job skipped: another run of this job type is in progress"
+        error_code = "Deduped"
+    if isinstance(reason, dict):
+        message = reason.get("message") or message
+        error_code = reason.get("errorCode") or error_code
+        request_id = reason.get("requestId")
+    return FabricApiError(
+        message,
+        error_code=error_code,
+        request_id=request_id,
+        details=payload,
+    )
 
 
 def _operation_percent(payload: Any) -> int | None:

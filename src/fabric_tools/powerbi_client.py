@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -11,7 +15,10 @@ from fabric_tools.auth import POWER_BI_SCOPE, TokenProvider, token_provider
 
 DEFAULT_BASE_URL = "https://api.powerbi.com/v1.0/myorg"
 DEFAULT_RETRY_AFTER_SECONDS = 2
+REFRESH_POLL_SECONDS = 5
 IMPORT_TERMINAL_STATES = frozenset({"Succeeded", "Failed"})
+# Refresh history ``status``: ``Unknown`` means in progress.
+REFRESH_FAILED_STATUSES = frozenset({"Failed", "Disabled", "Cancelled", "TimedOut"})
 
 
 class PowerBiApiError(Exception):
@@ -41,6 +48,17 @@ class PowerBiApiError(Exception):
         if self.request_id:
             parts.append(f"requestId={self.request_id}")
         return " | ".join(parts)
+
+
+@dataclass(frozen=True)
+class DatasetRefreshStart:
+    """Accepted semantic model (dataset) refresh request."""
+
+    group_id: str
+    dataset_id: str
+    request_id: str | None
+    refresh_id: str | None
+    location: str | None
 
 
 class PowerBiClient:
@@ -460,6 +478,86 @@ class PowerBiClient:
                 # Unknown non-terminal state — keep polling briefly.
                 pass
 
+    def refresh_dataset(
+        self,
+        group_id: str,
+        dataset_id: str,
+        *,
+        notify_option: str = "NoNotification",
+    ) -> DatasetRefreshStart:
+        """POST /groups/{groupId}/datasets/{datasetId}/refreshes (no wait).
+
+        Standard (non-enhanced) refresh. ``NoNotification`` is the only notify
+        option a service principal may use.
+        """
+        response = self._client.post(
+            f"{self.base_url}/groups/{group_id}/datasets/{dataset_id}/refreshes",
+            headers=self._json_headers(),
+            json={"notifyOption": notify_option},
+        )
+        if response.status_code not in (200, 202):
+            self._raise_api_error(response)
+        location = response.headers.get("Location") or None
+        return DatasetRefreshStart(
+            group_id=group_id,
+            dataset_id=dataset_id,
+            request_id=response.headers.get("x-ms-request-id") or None,
+            refresh_id=_refresh_id_from_location(location),
+            location=location,
+        )
+
+    def list_dataset_refreshes(
+        self, group_id: str, dataset_id: str, *, top: int = 10
+    ) -> list[dict[str, Any]]:
+        """GET /groups/{groupId}/datasets/{datasetId}/refreshes (newest first)."""
+        response = self._client.get(
+            f"{self.base_url}/groups/{group_id}/datasets/{dataset_id}/refreshes",
+            headers=self._json_headers(),
+            params={"$top": str(top)},
+        )
+        if response.status_code != 200:
+            self._raise_api_error(response)
+        result = self._json_or_none(response)
+        if not isinstance(result, dict):
+            raise PowerBiApiError("Unexpected empty refresh history response")
+        value = result.get("value")
+        if not isinstance(value, list):
+            raise PowerBiApiError("Refresh history response missing 'value'")
+        return [entry for entry in value if isinstance(entry, dict)]
+
+    def wait_for_dataset_refresh(
+        self,
+        refresh: DatasetRefreshStart,
+        *,
+        poll_seconds: int = REFRESH_POLL_SECONDS,
+        on_poll: Callable[[dict[str, Any] | None], None] | None = None,
+    ) -> dict[str, Any]:
+        """Poll refresh history until the started refresh completes; raise on failure.
+
+        Matches the history entry by ``requestId`` (the refresh id from
+        ``Location`` or the ``x-ms-request-id`` header). *on_poll* receives the
+        in-progress entry, or ``None`` before it appears in history.
+        """
+        wanted = {rid for rid in (refresh.refresh_id, refresh.request_id) if rid}
+        if not wanted:
+            raise PowerBiApiError(
+                "Refresh response missing request id; cannot poll refresh status"
+            )
+        while True:
+            self._sleep(poll_seconds)
+            entries = self.list_dataset_refreshes(refresh.group_id, refresh.dataset_id)
+            entry = next(
+                (e for e in entries if str(e.get("requestId") or "") in wanted),
+                None,
+            )
+            status = entry.get("status") if entry else None
+            if status == "Completed":
+                return entry
+            if entry is not None and status in REFRESH_FAILED_STATUSES:
+                raise _refresh_failure_error(entry, str(status))
+            if on_poll is not None:
+                on_poll(entry)
+
     def get_import(self, group_id: str, import_id: str) -> dict[str, Any]:
         """GET /groups/{groupId}/imports/{importId}."""
         response = self._client.get(
@@ -512,6 +610,40 @@ class PowerBiClient:
             request_id=request_id,
             details=details,
         )
+
+
+def _refresh_id_from_location(location: str | None) -> str | None:
+    """Last path segment after ``/refreshes/`` (``None`` when absent)."""
+    if not location:
+        return None
+    segments = [part for part in urlparse(location).path.split("/") if part]
+    if len(segments) >= 2 and segments[-2].lower() == "refreshes":
+        return segments[-1]
+    return None
+
+
+def _refresh_failure_error(entry: dict[str, Any], status: str) -> PowerBiApiError:
+    message = f"Semantic model refresh {status.lower()}"
+    error_code = None
+    raw = entry.get("serviceExceptionJson")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            error_code = parsed.get("errorCode")
+            description = parsed.get("errorDescription")
+            if isinstance(description, str) and description.strip():
+                message = description.strip()
+            elif error_code:
+                message = f"{message} ({error_code})"
+    return PowerBiApiError(
+        message,
+        error_code=error_code,
+        request_id=entry.get("requestId"),
+        details=entry,
+    )
 
 
 def dataflow_id_from_import(import_payload: dict[str, Any]) -> str | None:
