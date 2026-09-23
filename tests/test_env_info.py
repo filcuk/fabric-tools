@@ -9,7 +9,9 @@ from fabric_tools.cli import app
 from fabric_tools.env_info import (
     ENV_VAR_SPECS,
     EnvError,
+    EnvVarStatus,
     collect_env_statuses,
+    format_env_table,
     format_set_confirmation,
     get_spec,
     set_user_env,
@@ -123,11 +125,50 @@ def test_format_set_confirmation_hides_secret() -> None:
     assert "value hidden" in text
 
 
+def test_format_env_table_alignment() -> None:
+    text = format_env_table(
+        [
+            EnvVarStatus(
+                name="FABRIC_TOOLS_READONLY",
+                value="1",
+                status="enabled",
+                description="Refuse deploy.",
+                kind="flag",
+            ),
+            EnvVarStatus(
+                name="AZURE_CLIENT_SECRET",
+                value="***",
+                status="set",
+                description="Service principal secret.",
+                kind="secret",
+            ),
+        ]
+    )
+    lines = text.splitlines()
+    assert lines[0].startswith("NAME")
+    assert "VALUE" in lines[0]
+    assert "STATUS" in lines[0]
+    assert "DESCRIPTION" in lines[0]
+    assert "FABRIC_TOOLS_READONLY" in lines[1]
+    assert "enabled" in lines[1]
+    assert "Refuse deploy." in lines[1]
+    assert "AZURE_CLIENT_SECRET" in lines[2]
+    status_col = lines[0].index("STATUS")
+    assert lines[1][status_col:].startswith("enabled")
+    assert lines[2][status_col:].startswith("set")
+    assert "  " in lines[1]
+
+
 def test_cli_env_list(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(READONLY_ENV, "true")
     monkeypatch.delenv("AZURE_CLIENT_SECRET", raising=False)
     result = CliRunner().invoke(app, ["env", "list"])
     assert result.exit_code == EXIT_OK
+    header = result.stdout.splitlines()[0]
+    assert header.startswith("NAME")
+    assert "VALUE" in header
+    assert "STATUS" in header
+    assert "DESCRIPTION" in header
     assert READONLY_ENV in result.stdout
     assert "enabled" in result.stdout
     assert "Effective:" in result.stdout
