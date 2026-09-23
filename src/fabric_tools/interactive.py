@@ -11,7 +11,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from questionary import Choice, Style
 
-from fabric_tools.colours import FG_OK, print_warn_panel
+from fabric_tools.colours import FG_OK, echo_cli_hint, print_warn_panel
 from fabric_tools.confirm import CONFIRM_ABORT_MESSAGE
 from fabric_tools.exit_codes import EXIT_USER
 from fabric_tools.manifest import (
@@ -115,7 +115,7 @@ def run_interactive_wizard() -> None:
         run_variable_library_command,
     )
 
-    typer.echo("fabric-tools interactive mode")
+    echo_cli_hint("fabric-tools interactive mode")
     typer.echo(
         "Use arrow keys or 1-9 + Enter to select. "
         "Esc or ← Back goes to the previous step. Ctrl+C cancels.\n"
@@ -801,10 +801,11 @@ def _collect_options(answers: dict[str, Any]) -> None:
         and tool in {"notebook", "dataflow", "pipeline", "udf"}
         and _confirm("Apply GUID remap file(s)?", default=False)
     ):
+        echo_cli_hint("  Same as --remap / -r on deploy.")
         paths: list[str] = []
         while True:
             path = _text(
-                "GUID remap JSON path (--remap / -r)",
+                "GUID remap JSON path",
                 allow_empty=False,
             )
             paths.append(path)
