@@ -13,12 +13,12 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Error / failure | red | Typer `fg=RED` / Rich `"red"`; **Error** panel | All error messages (`print_error_panel` / `_exit_error`), including per-item op/compare failures |
 | Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | Command-level warnings and cancel (`print_warn_panel` / `_exit_warn`); under-spinner notices (`status.warn_aside`); update notices; compare STATUS `differences` and other inline status tokens stay Rich yellow text only |
 | Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare STATUS `identical`, enabled/set |
-| Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands, **Usage** command path and `COMMAND` placeholder |
+| Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands (`fabric-tools setup update`), unknown/suggested command names in usage errors, **Usage** command path and `COMMAND` placeholder |
 | Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Options/Arguments metavar column (`TEXT`, …); Usage / synopsis placeholders (`<PATH>`, `[ARGS]...`); **Power BI** in help text; optional Rich `[metavar]…[/metavar]` in prose |
 | Help required marker (`*`) | red | Typer Rich `STYLE_REQUIRED_SHORT` (pinned in `apply_help_theme`) | Leading `*` on always-required options/arguments in `--help` |
 | Help required marker (`[required]`) | dim red | Typer Rich `STYLE_REQUIRED_LONG` (pinned in `apply_help_theme`) | Trailing `[required]` on always-required help lines |
-| Command option — long (help) | magenta | Typer Rich `STYLE_OPTION` | Long options in `--help` (e.g. `--target`); **Usage** `[OPTIONS]` |
-| Command option — alias (help) | bright magenta (`#ff9cf5`) | Typer Rich `STYLE_SWITCH` | Short aliases in `--help` (e.g. `-t`). Truecolor so it stays distinct from magenta when ANSI bright magenta matches magenta. |
+| Command option — long | magenta | Typer Rich `STYLE_OPTION` / `STYLE_OPTION` | Long options (e.g. `--target`) in `--help`, **Usage** `[OPTIONS]`, and Error / Warning / aside bodies |
+| Command option — alias | bright magenta (`#ff9cf5`) | Typer Rich `STYLE_SWITCH` / `STYLE_OPTION_ALIAS` | Short aliases (e.g. `-t`) in `--help` and Error / Warning / aside bodies. Truecolor so it stays distinct from magenta when ANSI bright magenta matches magenta. |
 | Muted hint | dim | Typer `dim=True` / Rich `"dim"` | Secondary prose; root help subtitle; **Usage:** label |
 | Secondary columns / keys | dim | Rich `"dim"` | Inspect list non-name columns; inspect get / setup status keys |
 | Table headers | blue | Rich `"blue"` | Inspect list header row |
@@ -37,6 +37,15 @@ Command-level failure and warning messages use a Rich `Panel` on stderr, matchin
 - **Warning** — yellow border, title `Warning`, left-aligned (`print_warn_panel` / `_exit_warn`) for cancel, soft abort, update notices, and other command-level soft fails.
 
 **Usage errors** (unknown command/option, missing required args, …) print `Usage:` (same highlighting as `--help`) then the Error panel. Do **not** print Typer’s default `Try '… --help' for help.` line — it is suppressed in `apply_help_theme` (`rich_format_error`). The Error panel already carries the useful hint (e.g. Did you mean … / No such option).
+
+**Panel body highlighting.** Every Error / Warning panel and `warn_aside` body is highlighted at print time (`highlight_cli_prose` in `fabric_tools.colours`) — message strings stay plain; do not embed Rich markup in them:
+
+- long options (`--target`) magenta; short aliases (`-t`) bright magenta
+- `fabric-tools …` invocations cyan (program name plus following known command words, see `CLI_COMMAND_WORDS`)
+- `<placeholders>` bright yellow
+- other words stay primary — bare mode words mid-sentence (`download requires …`) are not coloured
+
+Usage errors additionally drop Click / Typer’s quotes around command and option names (`format_usage_error_message`): `No such command dowload. Did you mean download?` with both names cyan, `Missing option --role / -r.` Quoted **values** (`'abc' is not valid`, selectors, paths) keep their quotes and stay primary. Callers that pass a pre-styled Rich `Text` keep their spans unchanged.
 
 Do not invent a different boxed style. Success / identifier lines (GUIDs, remap ok) stay unboxed `secho`. Inline value colours in tables (setup status, env list, compare STATUS) stay Rich styles, not panels. Diff body text stays primary (uncoloured). Compare advisories (e.g. joined-model notes) print as **dim** lines after the summary table — not Warning panels.
 
@@ -101,7 +110,7 @@ Do **not** auto-colour bare ALL-CAPS words in help prose (`GUID`, `OK`, `XMLA`, 
 
 **Usage** lines are highlighted the same way: dim `Usage:` label, cyan command path (`fabric-tools notebook …`) and `COMMAND` placeholder, magenta `[OPTIONS]` / `--flags`, bright yellow argument placeholders (`[ARGS]...`, `<…>`).
 
-Usage-error output reuses that Usage line, then the Error panel only — Typer’s `Try '… --help' for help.` hint is omitted (see Error and warning panels).
+Usage-error output reuses that Usage line, then the Error panel only — Typer’s `Try '… --help' for help.` hint is omitted, and the panel body is unquoted and highlighted (see Error and warning panels).
 
 In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is bright yellow (`fabric-tools` is left alone). Do not grow an acronym highlighter list for other product terms.
 

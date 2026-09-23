@@ -67,6 +67,111 @@ def test_usage_error_omits_try_help_hint() -> None:
     assert "for help." not in option_text
 
 
+def _styled_tokens(text) -> dict[str, str]:
+    return {text.plain[s.start : s.end]: str(s.style) for s in text.spans}
+
+
+def test_usage_error_unquotes_and_colours_command_suggestion() -> None:
+    text = colours.format_usage_error_message(
+        "No such command 'dowload'. Did you mean 'download'?"
+    )
+    assert text.plain == "No such command dowload. Did you mean download?"
+    tokens = _styled_tokens(text)
+    assert tokens["dowload"] == colours.STYLE_ID
+    assert tokens["download"] == colours.STYLE_ID
+
+
+def test_usage_error_unquotes_multiple_suggestions_and_options() -> None:
+    text = colours.format_usage_error_message(
+        "No such command 'depoly'. Did you mean 'deploy', 'delete'?"
+    )
+    assert "'" not in text.plain
+    tokens = _styled_tokens(text)
+    assert tokens["deploy"] == colours.STYLE_ID
+    assert tokens["delete"] == colours.STYLE_ID
+
+    missing = colours.format_usage_error_message("Missing option '--role' / '-r'.")
+    assert missing.plain == "Missing option --role / -r."
+    tokens = _styled_tokens(missing)
+    assert tokens["--role"] == colours.STYLE_OPTION
+    assert tokens["-r"] == colours.STYLE_OPTION_ALIAS
+
+
+def test_usage_error_keeps_quoted_values() -> None:
+    text = colours.format_usage_error_message(
+        "Invalid value for '--target' / '-t': 'abc' is not valid."
+    )
+    assert text.plain == "Invalid value for --target / -t: 'abc' is not valid."
+
+
+def test_cli_usage_error_panel_has_no_quoted_names() -> None:
+    result = CliRunner().invoke(app, ["report", "dowload"])
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "No such command dowload" in combined
+    assert "Did you mean download?" in combined
+    assert "'download'" not in combined
+
+
+def test_highlight_cli_prose_styles_options_aliases_and_invocations() -> None:
+    text = colours.highlight_cli_prose(
+        "download requires a local --target path (-t). "
+        "Run: fabric-tools setup update. See <workspaceId>."
+    )
+    tokens = _styled_tokens(text)
+    assert tokens["--target"] == colours.STYLE_OPTION
+    assert tokens["-t"] == colours.STYLE_OPTION_ALIAS
+    assert tokens["fabric-tools setup update"] == colours.STYLE_ID
+    assert tokens["<workspaceId>"] == colours.STYLE_METAVAR
+    assert "download" not in tokens
+
+
+def test_highlight_cli_prose_skips_guids_paths_and_prose() -> None:
+    text = colours.highlight_cli_prose(
+        "fabric-tools is not found; item 1b396529-da9c-453a-bb58-7b2ab95117e2 "
+        r"in temp\my-report -> done; non-TTY"
+    )
+    tokens = _styled_tokens(text)
+    assert tokens == {"fabric-tools": colours.STYLE_ID}
+
+
+def test_highlight_cli_prose_leaves_rich_text_unchanged() -> None:
+    from rich.text import Text
+
+    body = Text("Use ")
+    body.append("--independent", style="bold")
+    assert colours.highlight_cli_prose(body) is body
+
+
+def test_cli_command_words_cover_registered_commands() -> None:
+    import typer.main
+
+    def walk(group) -> set[str]:
+        names: set[str] = set()
+        for name, cmd in getattr(group, "commands", {}).items():
+            names.add(name)
+            names |= walk(cmd)
+        return names
+
+    registered = walk(typer.main.get_command(app))
+    assert registered <= colours.CLI_COMMAND_WORDS
+
+
+def test_print_error_panel_highlights_options(capsys, monkeypatch) -> None:
+    from rich.console import Console
+
+    captured: list[object] = []
+
+    class _Recorder(Console):
+        def print(self, *objects, **kwargs) -> None:  # type: ignore[override]
+            captured.extend(objects)
+
+    monkeypatch.setattr("rich.console.Console", _Recorder)
+    colours.print_error_panel("download requires a local --target path")
+    panel = captured[0]
+    tokens = _styled_tokens(panel.renderable)
+    assert tokens["--target"] == colours.STYLE_OPTION
+
+
 def _span_styles_covering(text, start: int, end: int) -> set[str]:
     """Return Rich style names covering ``text.plain[start:end]``."""
     styles: set[str] = set()

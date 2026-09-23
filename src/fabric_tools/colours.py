@@ -6,9 +6,14 @@ ad-hoc ``typer.colors`` / Rich style strings.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import typer
+
+if TYPE_CHECKING:
+    from rich.text import Text
 
 # Typer / Click foreground names (``typer.secho(..., fg=...)``).
 FG_ERROR = typer.colors.RED
@@ -82,6 +87,111 @@ _HELP_NEGATIVE_HIGHLIGHTS = [
     r"(?P<negative_switch>(?<![\w\-])\-[a-zA-Z0-9]+)(?![\w\-])",
 ]
 
+# Command / subcommand words that may follow ``fabric-tools`` in a suggested
+# invocation. Kept explicit so prose like "fabric-tools is not found" does not
+# turn cyan past the program name; tests assert it covers every registered name.
+CLI_COMMAND_WORDS: frozenset[str] = frozenset(
+    {
+        "add",
+        "clean",
+        "color",
+        "compare",
+        "dataflow",
+        "dataflow-gen1",
+        "debug",
+        "delete",
+        "deploy",
+        "download",
+        "env",
+        "environment",
+        "get",
+        "inspect",
+        "install",
+        "item",
+        "list",
+        "manifest",
+        "member",
+        "member-add",
+        "member-remove",
+        "move",
+        "notebook",
+        "org-app",
+        "pack",
+        "paginated-report",
+        "pipeline",
+        "remove",
+        "report",
+        "role",
+        "semantic-model",
+        "set",
+        "setup",
+        "status",
+        "udf",
+        "uninstall",
+        "unset",
+        "update",
+        "variable-library",
+        "workspace",
+        "xmla-roles",
+    }
+)
+_CLI_WORD_ALT = "|".join(
+    re.escape(word) for word in sorted(CLI_COMMAND_WORDS, key=len, reverse=True)
+)
+
+# Error / Warning / aside prose: whole-match regex → concrete style, so panels
+# render correctly on a plain Console (no help theme needed).
+_PROSE_HIGHLIGHTS: tuple[tuple[str, str], ...] = (
+    (
+        rf"(?<![\w\-])fabric-tools(?:\s+(?:{_CLI_WORD_ALT}))*(?![\w\-])",
+        STYLE_ID,
+    ),
+    (r"(?<![\w\-])\-\-[a-zA-Z0-9][\w\-]*", STYLE_OPTION),
+    (r"(?<![\w\-])\-[a-zA-Z][a-zA-Z0-9]*(?![\w\-])", STYLE_OPTION_ALIAS),
+    (r"<[^<>\s][^<>]*>", STYLE_METAVAR),
+)
+
+# Click / Typer quote names with ``{name!r}``: ``No such command 'x'.``,
+# ``Did you mean 'a', 'b'?``, ``Missing option '--role' / '-r'.``
+_USAGE_COMMAND_CLAUSE_RE = re.compile(
+    r"(No such command |Did you mean )((?:'[\w\-]+'(?:, )?)+)"
+)
+_QUOTED_WORD_RE = re.compile(r"'([\w\-]+)'")
+_QUOTED_OPTION_RE = re.compile(r"'(\-{1,2}[a-zA-Z0-9][\w\-]*)'")
+
+
+def highlight_cli_prose(message: str | Text) -> Text:
+    """Style options, aliases, ``fabric-tools …`` invocations, and ``<metavars>``.
+
+    Plain strings are highlighted. A Rich ``Text`` is returned unchanged so
+    callers that already styled their tokens keep their spans.
+    """
+    from rich.text import Text
+
+    if isinstance(message, Text):
+        return message
+    text = Text(message)
+    for pattern, style in _PROSE_HIGHLIGHTS:
+        text.highlight_regex(pattern, style)
+    return text
+
+
+def format_usage_error_message(message: str) -> Text:
+    """Unquote Click command/option names and highlight them for the Error panel."""
+    commands: list[str] = []
+
+    def _unquote_clause(match: re.Match[str]) -> str:
+        names = _QUOTED_WORD_RE.findall(match.group(2))
+        commands.extend(name for name in names if not name.startswith("-"))
+        return match.group(1) + _QUOTED_WORD_RE.sub(r"\1", match.group(2))
+
+    plain = _USAGE_COMMAND_CLAUSE_RE.sub(_unquote_clause, message)
+    plain = _QUOTED_OPTION_RE.sub(r"\1", plain)
+    text = highlight_cli_prose(plain)
+    for name in dict.fromkeys(commands):
+        text.highlight_regex(rf"(?<![\w\-]){re.escape(name)}(?![\w\-])", STYLE_ID)
+    return text
+
 
 @dataclass(frozen=True)
 class PaletteRow:
@@ -114,13 +224,18 @@ PALETTE_ROWS: tuple[PaletteRow, ...] = (
     PaletteRow(
         "cyan",
         STYLE_ID,
-        "Identifier / command hint; Usage command path / COMMAND; created GUIDs",
+        "Identifier / command hint; Usage command path / COMMAND; created GUIDs; "
+        "usage-error command names",
     ),
-    PaletteRow("magenta", STYLE_OPTION, "Command option — long (help); [OPTIONS]"),
+    PaletteRow(
+        "magenta",
+        STYLE_OPTION,
+        "Command option — long (help, errors, warnings); [OPTIONS]",
+    ),
     PaletteRow(
         "bright magenta",
         STYLE_OPTION_ALIAS,
-        "Command option — alias (help)",
+        "Command option — alias (help, errors, warnings)",
     ),
     PaletteRow(
         "dim",
@@ -224,7 +339,7 @@ def apply_help_theme() -> None:
             console.print(ctx.get_usage())
         console.print(
             Panel(
-                rich_utils.highlighter(self.format_message()),
+                format_usage_error_message(self.format_message()),
                 border_style=rich_utils.STYLE_ERRORS_PANEL_BORDER,
                 title=rich_utils.ERRORS_PANEL_TITLE,
                 title_align=rich_utils.ALIGN_ERRORS_PANEL,
@@ -235,7 +350,15 @@ def apply_help_theme() -> None:
     rich_utils._fabric_tools_help_theme_patched = True
 
 
-def print_error_panel(message: str) -> None:
+def _panel_body(message: str | Text, default: str) -> Text:
+    from rich.text import Text
+
+    if isinstance(message, Text):
+        return message if message.plain.strip() else Text(default)
+    return highlight_cli_prose((message or "").strip() or default)
+
+
+def print_error_panel(message: str | Text) -> None:
     """Print a Typer-style Error panel on stderr (red border, title Error)."""
     from rich.console import Console
     from rich.panel import Panel
@@ -243,10 +366,9 @@ def print_error_panel(message: str) -> None:
     from fabric_tools.status import clear
 
     clear()
-    text = (message or "").strip() or "Operation failed."
     Console(stderr=True).print(
         Panel(
-            text,
+            _panel_body(message, "Operation failed."),
             border_style=STYLE_ERROR,
             title="Error",
             title_align="left",
@@ -254,7 +376,7 @@ def print_error_panel(message: str) -> None:
     )
 
 
-def print_warn_panel(message: str) -> None:
+def print_warn_panel(message: str | Text) -> None:
     """Print a Warning panel on stderr (yellow border, title Warning)."""
     from rich.console import Console
     from rich.panel import Panel
@@ -263,10 +385,9 @@ def print_warn_panel(message: str) -> None:
     from fabric_tools.status import clear
 
     clear()
-    text = (message or "").strip() or CONFIRM_ABORT_MESSAGE
     Console(stderr=True).print(
         Panel(
-            text,
+            _panel_body(message, CONFIRM_ABORT_MESSAGE),
             border_style=STYLE_WARN,
             title="Warning",
             title_align="left",

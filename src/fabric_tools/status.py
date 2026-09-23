@@ -257,14 +257,15 @@ def warn_aside(message: str | Text) -> None:
 
     Same yellow Warning panel styling as ``print_warn_panel``, but stays under
     the spinner via ``set_aside``. *message* may be plain text or a Rich
-    ``Text`` (e.g. cyan command hints). Outside ``busy``, prints the panel once.
+    ``Text`` (kept as-is); plain strings get the shared option / command
+    highlighting. Outside ``busy``, prints the panel once.
     """
-    from fabric_tools.colours import STYLE_WARN
+    from fabric_tools.colours import STYLE_WARN, highlight_cli_prose
 
     if isinstance(message, Text):
-        body: str | Text = message
+        body = message
     else:
-        body = (message or "").strip() or "Warning."
+        body = highlight_cli_prose((message or "").strip() or "Warning.")
     set_aside(
         Panel(
             body,
