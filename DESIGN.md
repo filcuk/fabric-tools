@@ -12,13 +12,14 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 |------|--------|-----------|-------------|
 | Error / failure | red | Typer `fg=RED` / Rich `"red"`; **Error** panel | All error messages (`print_error_panel` / `_exit_error`), including per-item op/compare failures |
 | Warning / cancel / soft fail | yellow | Typer `fg=YELLOW` / Rich `"yellow"`; **Warning** panel | Command-level warnings and cancel (`print_warn_panel` / `_exit_warn`); under-spinner notices (`status.warn_aside`); update notices; compare STATUS `differences` and other inline status tokens stay Rich yellow text only |
-| Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"` | Confirmations, successful ops, compare STATUS `identical`, enabled/set |
+| Success / affirmative | green | Typer `fg=GREEN` / Rich `"green"`; **Success** panel | Confirmations, successful ops, compare STATUS `identical`, enabled/set; notable command-level success (`print_success_panel`). Routine per-item op lines stay unboxed `secho` |
+| Info / tip | bright blue | Typer `fg=BRIGHT_BLUE` / Rich `"bright_blue"`; **Info** panel | Command-level tips and extra information (`print_info_panel`). Not for dim compare advisories or Warning / cancel / soft fail |
 | Identifier / command hint | cyan | Typer `fg=CYAN` / Rich `"cyan"` | Created GUIDs, suggested commands (`fabric-tools setup update`), unknown/suggested command names in usage errors, **Usage** command path and `COMMAND` placeholder |
 | Help metavar | bright yellow | Typer Rich `STYLE_METAVAR` | Options/Arguments metavar column (`TEXT`, …); Usage / synopsis placeholders (`<PATH>`, `[ARGS]...`); **Power BI** in help text; optional Rich `[metavar]…[/metavar]` in prose |
 | Help required marker (`*`) | red | Typer Rich `STYLE_REQUIRED_SHORT` (pinned in `apply_help_theme`) | Leading `*` on always-required options/arguments in `--help` |
 | Help required marker (`[required]`) | dim red | Typer Rich `STYLE_REQUIRED_LONG` (pinned in `apply_help_theme`) | Trailing `[required]` on always-required help lines |
-| Command option — long | magenta | Typer Rich `STYLE_OPTION` / `STYLE_OPTION` | Long options (e.g. `--target`) in `--help`, **Usage** `[OPTIONS]`, and Error / Warning / aside bodies |
-| Command option — alias | bright magenta (`#ff9cf5`) | Typer Rich `STYLE_SWITCH` / `STYLE_OPTION_ALIAS` | Short aliases (e.g. `-t`) in `--help` and Error / Warning / aside bodies. Truecolor so it stays distinct from magenta when ANSI bright magenta matches magenta. |
+| Command option — long | magenta | Typer Rich `STYLE_OPTION` / `STYLE_OPTION` | Long options (e.g. `--target`) in `--help`, **Usage** `[OPTIONS]`, and panel / aside bodies |
+| Command option — alias | bright magenta (`#ff9cf5`) | Typer Rich `STYLE_SWITCH` / `STYLE_OPTION_ALIAS` | Short aliases (e.g. `-t`) in `--help` and panel / aside bodies. Truecolor so it stays distinct from magenta when ANSI bright magenta matches magenta. |
 | Muted hint | dim | Typer `dim=True` / Rich `"dim"` | Secondary prose; root help subtitle; **Usage:** label |
 | Secondary columns / keys | dim | Rich `"dim"` | Inspect list non-name columns; inspect get / setup status keys |
 | Table headers | blue | Rich `"blue"` | Inspect list header row |
@@ -29,16 +30,18 @@ Terminal output uses a fixed role → colour contract. Prefer the shared helpers
 | Primary text | default | no colour | Names, values, plain echoes, spinner **text**, unified diffs |
 | Activity spinner glyph | green | Rich `"green"` | Dots in `status.busy` / Live spinner only |
 
-### Error and warning panels
+### Command-level panels
 
-Command-level failure and warning messages use a Rich `Panel` on stderr, matching Typer’s usage-error box:
+Command-level messages use a Rich `Panel` on stderr, matching Typer’s usage-error box. All four titles share the same geometry (left-aligned title, primary body, stderr, `status.clear()` first). Do not invent a fifth boxed style.
 
-- **Error** — red border, title `Error`, left-aligned (`fabric_tools.colours.print_error_panel` / `cli._exit_error`). Also used for per-item compare failure detail after the summary table.
-- **Warning** — yellow border, title `Warning`, left-aligned (`print_warn_panel` / `_exit_warn`) for cancel, soft abort, update notices, and other command-level soft fails.
+- **Error** — red border, title `Error` (`fabric_tools.colours.print_error_panel` / `fabric_tools.sync.common._exit_error`). Also used for per-item compare failure detail after the summary table. Empty / blank default: `Operation failed.`
+- **Warning** — yellow border, title `Warning` (`print_warn_panel` / `_exit_warn`) for cancel, soft abort, update notices, and other command-level soft fails. Empty / blank default: `Aborted by user.`
+- **Info** — bright blue border, title `Info` (`print_info_panel`) for additional information or tips that deserve boxed chrome. Empty / blank default: `Info.` Not for dim compare advisories, and not for Warning / cancel / soft fail. No `_exit_info` until a call site needs a terminating info status.
+- **Success** — green border, title `Success` (`print_success_panel`) for notable command-level success. Empty / blank default: `Success.` No `_exit_success`. Routine per-item op results, remap-ok, and created GUIDs stay unboxed `secho` (see Success / op result lines).
 
 **Usage errors** (unknown command/option, missing required args, …) print `Usage:` (same highlighting as `--help`) then the Error panel. Do **not** print Typer’s default `Try '… --help' for help.` line — it is suppressed in `apply_help_theme` (`rich_format_error`). The Error panel already carries the useful hint (e.g. Did you mean … / No such option).
 
-**Panel body highlighting.** Every Error / Warning panel and `warn_aside` body is highlighted at print time (`highlight_cli_prose` in `fabric_tools.colours`) — message strings stay plain; do not embed Rich markup in them:
+**Panel body highlighting.** Every Error / Warning / Info / Success panel and `warn_aside` body is highlighted at print time (`highlight_cli_prose` in `fabric_tools.colours`) — message strings stay plain; do not embed Rich markup in them:
 
 - long options (`--target`) magenta; short aliases (`-t`) bright magenta
 - `fabric-tools …` invocations cyan (program name plus following known command words, see `CLI_COMMAND_WORDS`)
@@ -47,7 +50,7 @@ Command-level failure and warning messages use a Rich `Panel` on stderr, matchin
 
 Usage errors additionally drop Click / Typer’s quotes around command and option names (`format_usage_error_message`): `No such command dowload. Did you mean download?` with both names cyan, `Missing option --role / -r.` Quoted **values** (`'abc' is not valid`, selectors, paths) keep their quotes and stay primary. Callers that pass a pre-styled Rich `Text` keep their spans unchanged. Plain stdout hint lines that name an invocation (e.g. setup `then run: fabric-tools --help`) use `echo_cli_hint` for the same styling. Do not quote command or option names in messages (`use fabric-tools env unset NAME`, not `use 'fabric-tools env unset NAME'`).
 
-Do not invent a different boxed style. Success / identifier lines (GUIDs, remap ok) stay unboxed `secho`. Inline value colours in tables (setup status, env list, compare STATUS) stay Rich styles, not panels. Diff body text stays primary (uncoloured). Compare advisories (e.g. joined-model notes) print as **dim** lines after the summary table — not Warning panels.
+Do not invent a different boxed style. Identifier lines (GUIDs, remap ok) stay unboxed `secho`. Inline value colours in tables (setup status, env list, compare STATUS) stay Rich styles, not panels. Diff body text stays primary (uncoloured). Compare advisories (e.g. joined-model notes) print as **dim** lines after the summary table — not Info or Warning panels. Boxed Success is opt-in for notable command-level messages; do not wrap `_print_op_results` or other routine success `secho` lines.
 
 ### Success / op result lines
 
@@ -110,7 +113,7 @@ Do **not** auto-colour bare ALL-CAPS words in help prose (`GUID`, `OK`, `XMLA`, 
 
 **Usage** lines are highlighted the same way: dim `Usage:` label, cyan command path (`fabric-tools notebook …`) and `COMMAND` placeholder, magenta `[OPTIONS]` / `--flags`, bright yellow argument placeholders (`[ARGS]...`, `<…>`).
 
-Usage-error output reuses that Usage line, then the Error panel only — Typer’s `Try '… --help' for help.` hint is omitted, and the panel body is unquoted and highlighted (see Error and warning panels).
+Usage-error output reuses that Usage line, then the Error panel only — Typer’s `Try '… --help' for help.` hint is omitted, and the panel body is unquoted and highlighted (see Command-level panels).
 
 In help prose (group/command descriptions and short help), **Fabric** is teal and **Power BI** is bright yellow (`fabric-tools` is left alone). Do not grow an acronym highlighter list for other product terms.
 
@@ -166,7 +169,9 @@ While a Fabric long-running operation (HTTP 202) is polled, a numeric `percentCo
 
 The dots spinner glyph is **green**; the status text stays primary (default). Do not append long hints onto the spinner line (auth stays `auth: authenticating (Windows)…` — device-code URI/user code print as a separate stderr line).
 
-Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error/Warning panels so they are not printed mid-line. For **non-blocking** notices that must stay visible while work continues, use `status.set_aside(renderable)` / `status.warn_aside(message)` — these draw under the live spinner without stopping it (replacing any prior aside). `status.clear_aside()` removes the aside. Outside `busy`, `set_aside` / `warn_aside` print once to stderr.
+Nested `busy` / auth announcements may rewrite the same spinner; keep the same format. Clear the spinner (`status.clear`) before Error / Warning / Info / Success panels so they are not printed mid-line. For **non-blocking** notices that must stay visible while work continues, use `status.set_aside(renderable)` / `status.warn_aside(message)` — these draw under the live spinner without stopping it (replacing any prior aside). `status.clear_aside()` removes the aside. Outside `busy`, `set_aside` / `warn_aside` print once to stderr. There is no `info_aside` / `success_aside` until a call site needs one.
+
+`fabric-tools debug spinner` (hidden from root `--help`) runs a three-step activity-spinner demo on one Live line: connecting (1s), loading (2s), then deploying (5s) with `set_percent` from `0%` to `100%`.
 
 Stopping a spinner must not leave a blank line and must not cursor-up into the previous prompt (use in-place erase, not Rich `restore_cursor`). Live must not redirect stdout/stderr, or prompts get swallowed into the spinner.
 
@@ -178,7 +183,11 @@ XMLA role ops update the same spinner across stages (`connecting via XMLA` → `
 
 ### Visual swatch
 
-`fabric-tools debug color` (hidden from root `--help`) prints a two-column swatch using the same alignment as key/value rows: **right-aligned** colour name (in that style), then **left-aligned** primary text describing the role. A single `dim` row covers muted hints and secondary columns/keys. Use it to review terminal rendering after palette changes.
+Hidden debug commands (not listed on root `--help`) review terminal rendering after palette or chrome changes:
+
+- `fabric-tools debug color` — two-column palette swatch using the same alignment as key/value rows: **right-aligned** colour name (in that style), then **left-aligned** primary text describing the role. A single `dim` row covers muted hints and secondary columns/keys.
+- `fabric-tools debug banner` — one boxed example of each command-level panel on stderr (Error, Warning, Info, Success).
+- `fabric-tools debug spinner` — activity-spinner demo (see Activity spinner).
 
 ### Out of scope (for now)
 

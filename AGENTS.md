@@ -242,6 +242,8 @@ py -3 -m fabric_tools pipeline --help
 py -3 -m fabric_tools udf --help
 py -3 -m fabric_tools setup --help
 py -3 -m fabric_tools debug color
+py -3 -m fabric_tools debug banner
+py -3 -m fabric_tools debug spinner
 py -3 -m fabric_tools debug xmla-roles --help
 py -3 -m ruff check .
 py -3 -m ruff format --check .
