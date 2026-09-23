@@ -29,6 +29,8 @@ def test_env_var_specs_cover_known_names() -> None:
     assert "AZURE_CLIENT_SECRET" in names
     assert "FABRIC_TOOLS_XMLA_SCRIPT" in names
     assert "FABRIC_TOOLS_XMLA_TIMEOUT" in names
+    assert "FABRIC_TOOLS_XMLA_CONNECT_TIMEOUT" in names
+    assert "FABRIC_TOOLS_GUID_LENGTH" in names
 
 
 def test_collect_env_statuses_redacts_secret(monkeypatch: pytest.MonkeyPatch) -> None:

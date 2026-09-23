@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from fabric_tools.colours import STYLE_DIM, STYLE_OK, env_status_style
+from fabric_tools.display import DEFAULT_GUID_LENGTH, GUID_LENGTH_ENV
 from fabric_tools.readonly import READONLY_ENV, is_readonly_enabled
 from fabric_tools.update_check import DISABLE_UPDATE_CHECK_ENV
 
@@ -51,6 +52,12 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         DISABLE_UPDATE_CHECK_ENV,
         "Disable once-per-day background update notice.",
         "flag",
+    ),
+    EnvVarSpec(
+        GUID_LENGTH_ENV,
+        f"GUID prefix length in messages (default {DEFAULT_GUID_LENGTH}; "
+        "full for whole GUIDs).",
+        "value",
     ),
     EnvVarSpec(
         "FABRIC_TOOLS_XMLA_SCRIPT",
