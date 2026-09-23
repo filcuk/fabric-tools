@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from time import sleep
 
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
@@ -257,14 +258,15 @@ def warn_aside(message: str | Text) -> None:
 
     Same yellow Warning panel styling as ``print_warn_panel``, but stays under
     the spinner via ``set_aside``. *message* may be plain text or a Rich
-    ``Text`` (e.g. cyan command hints). Outside ``busy``, prints the panel once.
+    ``Text`` (kept as-is); plain strings get the shared option / command
+    highlighting. Outside ``busy``, prints the panel once.
     """
-    from fabric_tools.colours import STYLE_WARN
+    from fabric_tools.colours import STYLE_WARN, highlight_cli_prose
 
     if isinstance(message, Text):
-        body: str | Text = message
+        body = message
     else:
-        body = (message or "").strip() or "Warning."
+        body = highlight_cli_prose((message or "").strip() or "Warning.")
     set_aside(
         Panel(
             body,
@@ -305,3 +307,30 @@ def current_aside() -> RenderableType | None:
     if handle is None:
         return None
     return handle.aside
+
+
+def run_spinner_swatch(
+    *,
+    step_seconds: tuple[float, float, float] = (1.0, 2.0, 5.0),
+    percent_interval: float = 0.05,
+) -> None:
+    """Run a three-step activity-spinner demo (``debug spinner``)."""
+    actions = ("connecting", "loading", "deploying")
+    total = len(actions)
+    name = "Example"
+    first = progress_message(1, total, status_detail("debug", actions[0], name))
+    with busy(first):
+        if step_seconds[0] > 0:
+            sleep(step_seconds[0])
+        update(progress_message(2, total, status_detail("debug", actions[1], name)))
+        if step_seconds[1] > 0:
+            sleep(step_seconds[1])
+        update(progress_message(3, total, status_detail("debug", actions[2], name)))
+        if step_seconds[2] <= 0 or percent_interval <= 0:
+            set_percent(0)
+            set_percent(100)
+            return
+        set_percent(0)
+        for percent in range(1, 101):
+            sleep(percent_interval)
+            set_percent(percent)

@@ -67,6 +67,142 @@ def test_usage_error_omits_try_help_hint() -> None:
     assert "for help." not in option_text
 
 
+def _styled_tokens(text) -> dict[str, str]:
+    return {text.plain[s.start : s.end]: str(s.style) for s in text.spans}
+
+
+def test_usage_error_unquotes_and_colours_command_suggestion() -> None:
+    text = colours.format_usage_error_message(
+        "No such command 'dowload'. Did you mean 'download'?"
+    )
+    assert text.plain == "No such command dowload. Did you mean download?"
+    tokens = _styled_tokens(text)
+    assert tokens["dowload"] == colours.STYLE_ID
+    assert tokens["download"] == colours.STYLE_ID
+
+
+def test_usage_error_unquotes_multiple_suggestions_and_options() -> None:
+    text = colours.format_usage_error_message(
+        "No such command 'depoly'. Did you mean 'deploy', 'delete'?"
+    )
+    assert "'" not in text.plain
+    tokens = _styled_tokens(text)
+    assert tokens["deploy"] == colours.STYLE_ID
+    assert tokens["delete"] == colours.STYLE_ID
+
+    missing = colours.format_usage_error_message("Missing option '--role' / '-r'.")
+    assert missing.plain == "Missing option --role / -r."
+    tokens = _styled_tokens(missing)
+    assert tokens["--role"] == colours.STYLE_OPTION
+    assert tokens["-r"] == colours.STYLE_OPTION_ALIAS
+
+
+def test_usage_error_keeps_quoted_values() -> None:
+    text = colours.format_usage_error_message(
+        "Invalid value for '--target' / '-t': 'abc' is not valid."
+    )
+    assert text.plain == "Invalid value for --target / -t: 'abc' is not valid."
+
+
+def test_cli_usage_error_panel_has_no_quoted_names() -> None:
+    result = CliRunner().invoke(app, ["report", "dowload"])
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "No such command dowload" in combined
+    assert "Did you mean download?" in combined
+    assert "'download'" not in combined
+
+
+def test_highlight_cli_prose_styles_options_aliases_and_invocations() -> None:
+    text = colours.highlight_cli_prose(
+        "download requires a local --target path (-t). "
+        "Run: fabric-tools setup update. See <workspaceId>."
+    )
+    tokens = _styled_tokens(text)
+    assert tokens["--target"] == colours.STYLE_OPTION
+    assert tokens["-t"] == colours.STYLE_OPTION_ALIAS
+    assert tokens["fabric-tools setup update"] == colours.STYLE_ID
+    assert tokens["<workspaceId>"] == colours.STYLE_METAVAR
+    assert "download" not in tokens
+
+
+def test_highlight_cli_prose_skips_guids_paths_and_prose() -> None:
+    text = colours.highlight_cli_prose(
+        "fabric-tools is not found; item 1b396529-da9c-453a-bb58-7b2ab95117e2 "
+        r"in temp\my-report -> done; non-TTY"
+    )
+    tokens = _styled_tokens(text)
+    assert tokens == {"fabric-tools": colours.STYLE_ID}
+
+
+def test_highlight_cli_prose_leaves_rich_text_unchanged() -> None:
+    from rich.text import Text
+
+    body = Text("Use ")
+    body.append("--independent", style="bold")
+    assert colours.highlight_cli_prose(body) is body
+
+
+def test_cli_command_words_cover_registered_commands() -> None:
+    import typer.main
+
+    def walk(group) -> set[str]:
+        names: set[str] = set()
+        for name, cmd in getattr(group, "commands", {}).items():
+            names.add(name)
+            names |= walk(cmd)
+        return names
+
+    registered = walk(typer.main.get_command(app))
+    assert registered <= colours.CLI_COMMAND_WORDS
+
+
+def test_joined_model_aside_uses_option_and_alias_colours() -> None:
+    from fabric_tools.report.ops import joined_model_aside_text
+
+    tokens = _styled_tokens(joined_model_aside_text(provisional="Joined model."))
+    assert tokens["--independent"] == colours.STYLE_OPTION
+    assert tokens["-i"] == colours.STYLE_OPTION_ALIAS
+
+
+def test_echo_cli_hint_prints_plain_text(capsys) -> None:
+    colours.echo_cli_hint("Open a new terminal, then run: fabric-tools --help")
+    assert capsys.readouterr().out == (
+        "Open a new terminal, then run: fabric-tools --help\n"
+    )
+
+
+def test_render_cli_prose_plain_when_not_a_terminal() -> None:
+    message = "Pipeline-only (use --include-schedules / -i to sync schedules)."
+    assert colours.render_cli_prose(message) == message
+
+
+def test_render_cli_prose_emits_ansi_on_colour_terminal(monkeypatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("TERM", "xterm-256color")
+    out = colours.render_cli_prose("use --include-schedules / -i")
+    assert "\x1b[35m--include-schedules\x1b[0m" in out
+    # Alias colour depth depends on detected colour system; only require styling.
+    assert "m-i\x1b[0m" in out
+    assert "\x1b[35m-i" not in out
+
+
+def test_print_error_panel_highlights_options(capsys, monkeypatch) -> None:
+    from rich.console import Console
+
+    captured: list[object] = []
+
+    class _Recorder(Console):
+        def print(self, *objects, **kwargs) -> None:  # type: ignore[override]
+            captured.extend(objects)
+
+    monkeypatch.setattr("rich.console.Console", _Recorder)
+    colours.print_error_panel("download requires a local --target path")
+    panel = captured[0]
+    tokens = _styled_tokens(panel.renderable)
+    assert tokens["--target"] == colours.STYLE_OPTION
+
+
 def _span_styles_covering(text, start: int, end: int) -> set[str]:
     """Return Rich style names covering ``text.plain[start:end]``."""
     styles: set[str] = set()
@@ -114,6 +250,8 @@ def test_palette_rows_cover_core_roles() -> None:
     assert by_name["bright magenta"].style == colours.STYLE_OPTION_ALIAS
     assert by_name["dim"].style == colours.STYLE_DIM
     assert by_name["blue"].style == colours.STYLE_HEADER
+    assert by_name["bright blue"].style == colours.STYLE_INFO
+    assert by_name["bright blue"].usage.startswith("Info")
     assert by_name["default"].style is None
 
 
@@ -124,6 +262,45 @@ def test_debug_color_emits_palette_labels() -> None:
         assert row.name in result.stdout
         # Rich may wrap long usage cells; match a stable leading phrase.
         assert row.usage.split(";")[0] in result.stdout
+
+
+def test_debug_banner_emits_all_panel_titles() -> None:
+    result = CliRunner().invoke(app, ["debug", "banner"])
+    assert result.exit_code == EXIT_OK
+    err = result.stderr or ""
+    for title, body in (
+        ("Error", "Example error."),
+        ("Warning", "Example warning."),
+        ("Info", "Example info."),
+        ("Success", "Example success."),
+    ):
+        assert title in err
+        assert body in err
+
+
+def test_debug_spinner_emits_step_labels(monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from fabric_tools import status as status_mod
+
+    printed: list[str] = []
+    console = MagicMock()
+    console.is_terminal = False
+    console.print = lambda msg, **_kwargs: printed.append(str(msg))
+    monkeypatch.setattr(status_mod, "_console", console)
+
+    original = status_mod.run_spinner_swatch
+
+    def _fast(**_kwargs) -> None:
+        original(step_seconds=(0.0, 0.0, 0.0), percent_interval=0.0)
+
+    monkeypatch.setattr(status_mod, "run_spinner_swatch", _fast)
+    result = CliRunner().invoke(app, ["debug", "spinner"])
+    assert result.exit_code == EXIT_OK
+    joined = "\n".join(printed)
+    assert "1 of 3" in joined
+    assert "3 of 3" in joined
+    assert "debug:" in joined
 
 
 def test_debug_hidden_from_root_help() -> None:
@@ -153,6 +330,64 @@ def test_print_warn_panel_empty_defaults_to_aborted(capsys) -> None:
     err = capsys.readouterr().err
     assert "Warning" in err
     assert "Aborted by user." in err
+
+
+def test_print_info_panel_uses_info_title(capsys) -> None:
+    colours.print_info_panel("After deploy, configure credentials in the service.")
+    err = capsys.readouterr().err
+    assert "Info" in err
+    assert "configure credentials" in err
+
+
+def test_print_info_panel_empty_defaults_to_info(capsys) -> None:
+    colours.print_info_panel("  ")
+    err = capsys.readouterr().err
+    assert "Info" in err
+    assert "Info." in err
+
+
+def test_print_success_panel_uses_success_title(capsys) -> None:
+    colours.print_success_panel("Installed fabric-tools to the user PATH.")
+    err = capsys.readouterr().err
+    assert "Success" in err
+    assert "Installed fabric-tools" in err
+
+
+def test_print_success_panel_empty_defaults_to_success(capsys) -> None:
+    colours.print_success_panel("")
+    err = capsys.readouterr().err
+    assert "Success" in err
+    assert "Success." in err
+
+
+def test_print_info_panel_highlights_options(capsys, monkeypatch) -> None:
+    from rich.console import Console
+
+    captured: list[object] = []
+
+    class _Recorder(Console):
+        def print(self, *objects, **kwargs) -> None:  # type: ignore[override]
+            captured.extend(objects)
+
+    monkeypatch.setattr("rich.console.Console", _Recorder)
+    colours.print_info_panel("Tip: pass --filter / -f with workspace:*")
+    panel = captured[0]
+    tokens = _styled_tokens(panel.renderable)
+    assert tokens["--filter"] == colours.STYLE_OPTION
+    assert tokens["-f"] == colours.STYLE_OPTION_ALIAS
+
+
+def test_print_panel_swatch_prints_all_titles(capsys) -> None:
+    colours.print_panel_swatch()
+    err = capsys.readouterr().err
+    assert "Error" in err
+    assert "Example error." in err
+    assert "Warning" in err
+    assert "Example warning." in err
+    assert "Info" in err
+    assert "Example info." in err
+    assert "Success" in err
+    assert "Example success." in err
 
 
 def test_print_compare_results_prints_note_messages(capsys) -> None:

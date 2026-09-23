@@ -11,7 +11,7 @@ from rich.text import Text
 
 from fabric_tools import status as status_mod
 from fabric_tools.client import FabricApiError, FabricClient
-from fabric_tools.colours import STYLE_ID
+from fabric_tools.colours import STYLE_OPTION, STYLE_OPTION_ALIAS
 from fabric_tools.confirm import status_item_label, status_item_label_for_id
 from fabric_tools.definition_parts import encode_part
 from fabric_tools.parsing import WorkItem
@@ -848,11 +848,11 @@ def _deploy_joined_folder(
 
 
 def _independent_opt_hint() -> Text:
-    """Cyan ``--independent / -i`` hint (command-hint role; see DESIGN.md)."""
+    """``--independent / -i`` hint in option / alias colours (see DESIGN.md)."""
     text = Text()
-    text.append("--independent", style=STYLE_ID)
+    text.append("--independent", style=STYLE_OPTION)
     text.append(" / ")
-    text.append("-i", style=STYLE_ID)
+    text.append("-i", style=STYLE_OPTION_ALIAS)
     return text
 
 

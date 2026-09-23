@@ -81,9 +81,13 @@ def prompt_confirm(
 
     Prefer this over raw ``typer.confirm`` so interrupt is not an empty
     ``typer.Abort`` that becomes a red ``Operation failed.`` panel mid-line.
+    Options and ``fabric-tools …`` invocations in *message* are highlighted.
     """
+    from fabric_tools.colours import render_cli_prose
+
+    text = render_cli_prose(message, stderr=err)
     try:
-        return bool(typer.confirm(message, default=default, err=err))
+        return bool(typer.confirm(text, default=default, err=err))
     except typer.Abort:
         finish_prompt_line(err=err)
         return False

@@ -534,7 +534,9 @@ def test_interactive_pipeline_deploy_include_schedules(
     ]
 
 
-def test_interactive_notebook_deploy_remap(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_interactive_notebook_deploy_remap(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     # another pair? silent? apply remap? another remap? proceed?
     selects = iter(
         [
@@ -580,6 +582,9 @@ def test_interactive_notebook_deploy_remap(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured["mode"] is CommandMode.DEPLOY
     assert captured["kwargs"]["remap_values"] == [r".\prod.remap.json"]
     assert captured["kwargs"]["origin_values"] == [r".\etl.ipynb"]
+    out = capsys.readouterr().out
+    assert "fabric-tools interactive mode" in out
+    assert "Same as --remap / -r on deploy." in out
     assert captured["kwargs"].get("file_values") is None
 
 
