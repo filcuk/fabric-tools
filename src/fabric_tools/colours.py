@@ -176,6 +176,13 @@ def highlight_cli_prose(message: str | Text) -> Text:
     return text
 
 
+def echo_cli_hint(message: str) -> None:
+    """Print a primary-text stdout line with ``highlight_cli_prose`` styling."""
+    from rich.console import Console
+
+    Console(soft_wrap=True).print(highlight_cli_prose(message))
+
+
 def format_usage_error_message(message: str) -> Text:
     """Unquote Click command/option names and highlight them for the Error panel."""
     commands: list[str] = []

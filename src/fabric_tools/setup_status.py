@@ -28,6 +28,7 @@ def print_setup_status(*, exit_error: Any) -> None:
         FG_ID,
         STYLE_DIM,
         STYLE_ERROR,
+        STYLE_ID,
         STYLE_OK,
         STYLE_WARN,
     )
@@ -104,7 +105,9 @@ def print_setup_status(*, exit_error: Any) -> None:
             if which:
                 line.append(f" → {which}")
             else:
-                line.append(" (open a new terminal if 'fabric-tools' is not found)")
+                line.append(" (open a new terminal if ")
+                line.append("fabric-tools", style=STYLE_ID)
+                line.append(" is not found)")
         else:
             line.append("not registered", style=STYLE_ERROR)
         return line

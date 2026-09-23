@@ -45,7 +45,7 @@ Command-level failure and warning messages use a Rich `Panel` on stderr, matchin
 - `<placeholders>` bright yellow
 - other words stay primary — bare mode words mid-sentence (`download requires …`) are not coloured
 
-Usage errors additionally drop Click / Typer’s quotes around command and option names (`format_usage_error_message`): `No such command dowload. Did you mean download?` with both names cyan, `Missing option --role / -r.` Quoted **values** (`'abc' is not valid`, selectors, paths) keep their quotes and stay primary. Callers that pass a pre-styled Rich `Text` keep their spans unchanged.
+Usage errors additionally drop Click / Typer’s quotes around command and option names (`format_usage_error_message`): `No such command dowload. Did you mean download?` with both names cyan, `Missing option --role / -r.` Quoted **values** (`'abc' is not valid`, selectors, paths) keep their quotes and stay primary. Callers that pass a pre-styled Rich `Text` keep their spans unchanged. Plain stdout hint lines that name an invocation (e.g. setup `then run: fabric-tools --help`) use `echo_cli_hint` for the same styling. Do not quote command or option names in messages (`use fabric-tools env unset NAME`, not `use 'fabric-tools env unset NAME'`).
 
 Do not invent a different boxed style. Success / identifier lines (GUIDs, remap ok) stay unboxed `secho`. Inline value colours in tables (setup status, env list, compare STATUS) stay Rich styles, not panels. Diff body text stays primary (uncoloured). Compare advisories (e.g. joined-model notes) print as **dim** lines after the summary table — not Warning panels.
 

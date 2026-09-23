@@ -156,6 +156,21 @@ def test_cli_command_words_cover_registered_commands() -> None:
     assert registered <= colours.CLI_COMMAND_WORDS
 
 
+def test_joined_model_aside_uses_option_and_alias_colours() -> None:
+    from fabric_tools.report.ops import joined_model_aside_text
+
+    tokens = _styled_tokens(joined_model_aside_text(provisional="Joined model."))
+    assert tokens["--independent"] == colours.STYLE_OPTION
+    assert tokens["-i"] == colours.STYLE_OPTION_ALIAS
+
+
+def test_echo_cli_hint_prints_plain_text(capsys) -> None:
+    colours.echo_cli_hint("Open a new terminal, then run: fabric-tools --help")
+    assert capsys.readouterr().out == (
+        "Open a new terminal, then run: fabric-tools --help\n"
+    )
+
+
 def test_print_error_panel_highlights_options(capsys, monkeypatch) -> None:
     from rich.console import Console
 

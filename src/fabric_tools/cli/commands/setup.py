@@ -11,6 +11,7 @@ from fabric_tools.cli.options import (
 )
 from fabric_tools.colours import (
     FG_OK,
+    echo_cli_hint,
 )
 from fabric_tools.exit_codes import EXIT_API, EXIT_OK, EXIT_USER
 from fabric_tools.sync.common import (
@@ -69,7 +70,7 @@ def setup_install() -> None:
         typer.echo("Removed onefile extract cache.")
     elif result.get("cache_cleanup_scheduled"):
         typer.echo("Scheduled onefile extract cache cleanup after this process exits.")
-    typer.echo(
+    echo_cli_hint(
         "Open a new terminal (restart your IDE if needed), then run: fabric-tools --help"
     )
     raise typer.Exit(code=EXIT_OK)
@@ -204,5 +205,5 @@ def setup_update(
     )
     if result.get("exe_path"):
         typer.echo(f"Downloaded: {result['exe_path']}")
-    typer.echo("Open a new terminal afterward, then run: fabric-tools --version")
+    echo_cli_hint("Open a new terminal afterward, then run: fabric-tools --version")
     raise typer.Exit(code=EXIT_OK)

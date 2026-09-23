@@ -171,7 +171,7 @@ def set_user_env(name: str, value: str) -> EnvVarSpec:
     spec = get_spec(name)
     if value == "":
         raise EnvError(
-            f"Empty value for {spec.name}; use 'fabric-tools env unset {spec.name}' "
+            f"Empty value for {spec.name}; use fabric-tools env unset {spec.name} "
             "to remove it."
         )
     _write_user_env(spec.name, value)

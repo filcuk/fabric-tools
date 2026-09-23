@@ -180,7 +180,7 @@ def test_warn_aside_accepts_rich_text() -> None:
     token = status._active.set(handle)  # type: ignore[arg-type]
     try:
         body = Text("Use ")
-        body.append("--independent", style="cyan")
+        body.append("--independent", style="magenta")
         status.warn_aside(body)
         assert handle.aside is not None
     finally:

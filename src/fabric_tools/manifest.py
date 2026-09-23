@@ -634,7 +634,7 @@ def _require_homogeneous_kind(
         found = ", ".join(sorted(kinds))
         raise ManifestError(
             f"manifest pack entry kinds are [{found}], expected all "
-            f"'{expected_kind}' for this command (use 'fabric-tools pack …' "
+            f"'{expected_kind}' for this command (use fabric-tools pack "
             "for mixed packs)"
         )
 
