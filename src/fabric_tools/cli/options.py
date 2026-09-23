@@ -155,10 +155,15 @@ TARGET_JOB_HELP = conditional_required_help(
     f"Also accepts {_MV_WS_STAR} (all items of this kind).",
     without="-m",
 )
+FILTER_JOB_HELP = option_help(
+    f"Case-insensitive displayName substring; only valid with {_MV_WS_STAR} "
+    "on --target."
+)
 MANIFEST_JOB_HELP = option_help(
     f"Load {_MV_WS_ARTIFACT} targets from a .ftdep "
     "(entries with itemId). Manifest is not rewritten."
 )
+DRY_RUN_JOB_HELP = option_help("Validate targets only; do not start jobs.")
 NO_WAIT_HELP = option_help(
     "Return once the service accepts each job; do not wait for it to finish."
 )
