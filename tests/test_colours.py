@@ -278,6 +278,31 @@ def test_debug_banner_emits_all_panel_titles() -> None:
         assert body in err
 
 
+def test_debug_spinner_emits_step_labels(monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from fabric_tools import status as status_mod
+
+    printed: list[str] = []
+    console = MagicMock()
+    console.is_terminal = False
+    console.print = lambda msg, **_kwargs: printed.append(str(msg))
+    monkeypatch.setattr(status_mod, "_console", console)
+
+    original = status_mod.run_spinner_swatch
+
+    def _fast(**_kwargs) -> None:
+        original(step_seconds=(0.0, 0.0, 0.0), percent_interval=0.0)
+
+    monkeypatch.setattr(status_mod, "run_spinner_swatch", _fast)
+    result = CliRunner().invoke(app, ["debug", "spinner"])
+    assert result.exit_code == EXIT_OK
+    joined = "\n".join(printed)
+    assert "1 of 3" in joined
+    assert "3 of 3" in joined
+    assert "debug:" in joined
+
+
 def test_debug_hidden_from_root_help() -> None:
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == EXIT_OK

@@ -289,3 +289,41 @@ def test_print_success_panel_clears_busy_spinner() -> None:
     ):
         print_success_panel("done")
     clear_mock.assert_called_once_with()
+
+
+def test_run_spinner_swatch_zero_waits_prints_steps() -> None:
+    printed: list[str] = []
+    console = MagicMock()
+    console.is_terminal = False
+    console.print = lambda msg, **_kwargs: printed.append(str(msg))
+
+    with patch.object(status, "_console", console):
+        status.run_spinner_swatch(step_seconds=(0.0, 0.0, 0.0), percent_interval=0.0)
+
+    assert printed == [
+        "1 of 3 · debug: connecting (Example)…",
+        "2 of 3 · debug: loading (Example)…",
+        "3 of 3 · debug: deploying (Example)…",
+    ]
+
+
+def test_run_spinner_swatch_ticks_percent(monkeypatch: object) -> None:
+    from contextlib import contextmanager
+
+    percents: list[int | None] = []
+    sleeps: list[float] = []
+
+    @contextmanager
+    def _busy(_message: str):
+        yield
+
+    monkeypatch.setattr(status, "busy", _busy)
+    monkeypatch.setattr(status, "update", lambda _msg: None)
+    monkeypatch.setattr(status, "set_percent", lambda p: percents.append(p))
+    monkeypatch.setattr(status, "sleep", lambda s: sleeps.append(s))
+
+    status.run_spinner_swatch()
+
+    assert percents == list(range(0, 101))
+    assert sleeps[:2] == [1.0, 2.0]
+    assert sleeps[2:] == [0.05] * 100

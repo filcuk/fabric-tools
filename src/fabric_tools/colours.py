@@ -128,6 +128,7 @@ CLI_COMMAND_WORDS: frozenset[str] = frozenset(
         "semantic-model",
         "set",
         "setup",
+        "spinner",
         "status",
         "udf",
         "uninstall",

@@ -46,6 +46,15 @@ def debug_banner_cmd() -> None:
     raise typer.Exit(code=EXIT_OK)
 
 
+@debug_app.command("spinner", help="Run an example activity spinner.")
+def debug_spinner_cmd() -> None:
+    """Show a three-step busy spinner with a percent suffix (see DESIGN.md)."""
+    from fabric_tools.status import run_spinner_swatch
+
+    run_spinner_swatch()
+    raise typer.Exit(code=EXIT_OK)
+
+
 xmla_roles_app = typer.Typer(
     name="xmla-roles",
     help=(
