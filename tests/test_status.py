@@ -267,3 +267,25 @@ def test_print_warn_panel_clears_busy_spinner() -> None:
     ):
         print_warn_panel("careful")
     clear_mock.assert_called_once_with()
+
+
+def test_print_info_panel_clears_busy_spinner() -> None:
+    from fabric_tools.colours import print_info_panel
+
+    with (
+        patch("fabric_tools.status.clear") as clear_mock,
+        patch("rich.console.Console"),
+    ):
+        print_info_panel("tip")
+    clear_mock.assert_called_once_with()
+
+
+def test_print_success_panel_clears_busy_spinner() -> None:
+    from fabric_tools.colours import print_success_panel
+
+    with (
+        patch("fabric_tools.status.clear") as clear_mock,
+        patch("rich.console.Console"),
+    ):
+        print_success_panel("done")
+    clear_mock.assert_called_once_with()

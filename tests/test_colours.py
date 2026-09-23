@@ -250,6 +250,8 @@ def test_palette_rows_cover_core_roles() -> None:
     assert by_name["bright magenta"].style == colours.STYLE_OPTION_ALIAS
     assert by_name["dim"].style == colours.STYLE_DIM
     assert by_name["blue"].style == colours.STYLE_HEADER
+    assert by_name["bright blue"].style == colours.STYLE_INFO
+    assert by_name["bright blue"].usage.startswith("Info")
     assert by_name["default"].style is None
 
 
@@ -289,6 +291,64 @@ def test_print_warn_panel_empty_defaults_to_aborted(capsys) -> None:
     err = capsys.readouterr().err
     assert "Warning" in err
     assert "Aborted by user." in err
+
+
+def test_print_info_panel_uses_info_title(capsys) -> None:
+    colours.print_info_panel("After deploy, configure credentials in the service.")
+    err = capsys.readouterr().err
+    assert "Info" in err
+    assert "configure credentials" in err
+
+
+def test_print_info_panel_empty_defaults_to_info(capsys) -> None:
+    colours.print_info_panel("  ")
+    err = capsys.readouterr().err
+    assert "Info" in err
+    assert "Info." in err
+
+
+def test_print_success_panel_uses_success_title(capsys) -> None:
+    colours.print_success_panel("Installed fabric-tools to the user PATH.")
+    err = capsys.readouterr().err
+    assert "Success" in err
+    assert "Installed fabric-tools" in err
+
+
+def test_print_success_panel_empty_defaults_to_success(capsys) -> None:
+    colours.print_success_panel("")
+    err = capsys.readouterr().err
+    assert "Success" in err
+    assert "Success." in err
+
+
+def test_print_info_panel_highlights_options(capsys, monkeypatch) -> None:
+    from rich.console import Console
+
+    captured: list[object] = []
+
+    class _Recorder(Console):
+        def print(self, *objects, **kwargs) -> None:  # type: ignore[override]
+            captured.extend(objects)
+
+    monkeypatch.setattr("rich.console.Console", _Recorder)
+    colours.print_info_panel("Tip: pass --filter / -f with workspace:*")
+    panel = captured[0]
+    tokens = _styled_tokens(panel.renderable)
+    assert tokens["--filter"] == colours.STYLE_OPTION
+    assert tokens["-f"] == colours.STYLE_OPTION_ALIAS
+
+
+def test_print_panel_swatch_prints_all_titles(capsys) -> None:
+    colours.print_panel_swatch()
+    err = capsys.readouterr().err
+    assert "Error" in err
+    assert "Example error." in err
+    assert "Warning" in err
+    assert "Example warning." in err
+    assert "Info" in err
+    assert "Example info." in err
+    assert "Success" in err
+    assert "Example success." in err
 
 
 def test_print_compare_results_prints_note_messages(capsys) -> None:

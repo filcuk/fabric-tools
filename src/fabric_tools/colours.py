@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 FG_ERROR = typer.colors.RED
 FG_WARN = typer.colors.YELLOW
 FG_OK = typer.colors.GREEN
+FG_INFO = typer.colors.BRIGHT_BLUE
 FG_ID = typer.colors.CYAN
 FG_OPTION = typer.colors.MAGENTA
 FG_OPTION_ALIAS = typer.colors.BRIGHT_MAGENTA
@@ -35,6 +36,7 @@ STYLE_OPTION = "magenta"
 STYLE_OPTION_ALIAS = "#ff9cf5"
 STYLE_DIM = "dim"
 STYLE_HEADER = "blue"
+STYLE_INFO = "bright_blue"
 # Rich has no named ``teal``; truecolor keeps the Fabric panel distinct from cyan.
 STYLE_PANEL_FABRIC = "#8acfb3"
 # Root help ASCII banner: ``FABRIC`` / ``-`` / ``TOOLS``.
@@ -139,7 +141,7 @@ _CLI_WORD_ALT = "|".join(
     re.escape(word) for word in sorted(CLI_COMMAND_WORDS, key=len, reverse=True)
 )
 
-# Error / Warning / aside prose: whole-match regex → concrete style, so panels
+# Panel / aside prose: whole-match regex → concrete style, so panels
 # render correctly on a plain Console (no help theme needed).
 _PROSE_HIGHLIGHTS: tuple[tuple[str, str], ...] = (
     (
@@ -241,7 +243,7 @@ PALETTE_ROWS: tuple[PaletteRow, ...] = (
         STYLE_METAVAR,
         "Help metavar column / <placeholders>; Power BI; optional [metavar] prose",
     ),
-    PaletteRow("green", STYLE_OK, "Success / affirmative"),
+    PaletteRow("green", STYLE_OK, "Success / affirmative; Success panel"),
     PaletteRow(
         "cyan",
         STYLE_ID,
@@ -251,12 +253,12 @@ PALETTE_ROWS: tuple[PaletteRow, ...] = (
     PaletteRow(
         "magenta",
         STYLE_OPTION,
-        "Command option — long (help, errors, warnings); [OPTIONS]",
+        "Command option — long (help, panels); [OPTIONS]",
     ),
     PaletteRow(
         "bright magenta",
         STYLE_OPTION_ALIAS,
-        "Command option — alias (help, errors, warnings)",
+        "Command option — alias (help, panels)",
     ),
     PaletteRow(
         "dim",
@@ -264,6 +266,7 @@ PALETTE_ROWS: tuple[PaletteRow, ...] = (
         "Muted hint; secondary columns / keys; root help subtitle; Usage: label",
     ),
     PaletteRow("blue", STYLE_HEADER, "Table header"),
+    PaletteRow("bright blue", STYLE_INFO, "Info / tip panel"),
     PaletteRow(
         "teal",
         STYLE_PANEL_FABRIC,
@@ -379,8 +382,13 @@ def _panel_body(message: str | Text, default: str) -> Text:
     return highlight_cli_prose((message or "").strip() or default)
 
 
-def print_error_panel(message: str | Text) -> None:
-    """Print a Typer-style Error panel on stderr (red border, title Error)."""
+def _print_role_panel(
+    message: str | Text,
+    *,
+    border_style: str,
+    title: str,
+    empty_default: str,
+) -> None:
     from rich.console import Console
     from rich.panel import Panel
 
@@ -389,30 +397,53 @@ def print_error_panel(message: str | Text) -> None:
     clear()
     Console(stderr=True).print(
         Panel(
-            _panel_body(message, "Operation failed."),
-            border_style=STYLE_ERROR,
-            title="Error",
+            _panel_body(message, empty_default),
+            border_style=border_style,
+            title=title,
             title_align="left",
         )
     )
 
 
+def print_error_panel(message: str | Text) -> None:
+    """Print a Typer-style Error panel on stderr (red border, title Error)."""
+    _print_role_panel(
+        message,
+        border_style=STYLE_ERROR,
+        title="Error",
+        empty_default="Operation failed.",
+    )
+
+
 def print_warn_panel(message: str | Text) -> None:
     """Print a Warning panel on stderr (yellow border, title Warning)."""
-    from rich.console import Console
-    from rich.panel import Panel
-
     from fabric_tools.confirm import CONFIRM_ABORT_MESSAGE
-    from fabric_tools.status import clear
 
-    clear()
-    Console(stderr=True).print(
-        Panel(
-            _panel_body(message, CONFIRM_ABORT_MESSAGE),
-            border_style=STYLE_WARN,
-            title="Warning",
-            title_align="left",
-        )
+    _print_role_panel(
+        message,
+        border_style=STYLE_WARN,
+        title="Warning",
+        empty_default=CONFIRM_ABORT_MESSAGE,
+    )
+
+
+def print_info_panel(message: str | Text) -> None:
+    """Print an Info panel on stderr (bright blue border, title Info)."""
+    _print_role_panel(
+        message,
+        border_style=STYLE_INFO,
+        title="Info",
+        empty_default="Info.",
+    )
+
+
+def print_success_panel(message: str | Text) -> None:
+    """Print a Success panel on stderr (green border, title Success)."""
+    _print_role_panel(
+        message,
+        border_style=STYLE_OK,
+        title="Success",
+        empty_default="Success.",
     )
 
 
@@ -449,3 +480,11 @@ def print_color_swatch() -> None:
         line.append(gap)
         line.append(row.usage)
         console.print(line)
+
+
+def print_panel_swatch() -> None:
+    """Print one example of each command-level panel (``debug banner``)."""
+    print_error_panel("Example error.")
+    print_warn_panel("Example warning.")
+    print_info_panel("Example info.")
+    print_success_panel("Example success.")
